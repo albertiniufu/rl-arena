@@ -206,6 +206,27 @@ def test_tensorboard_writer_smoke(tmp_path):
     assert any(tmp_path.rglob("events.out.tfevents*"))
 
 
+def test_play_recording_produces_video(tmp_path):
+    pytest.importorskip("imageio")
+    pytest.importorskip("imageio_ffmpeg")
+    import imageio
+    from play import record_frame
+    # SDL dummy (definido no topo do módulo) permite renderizar headless.
+    env = ArenaEnv(ArenaConfig(episode_seconds=0.1), render_mode="human")
+    env.reset(seed=1)
+    out = tmp_path / "video.mp4"
+    writer = imageio.get_writer(str(out), fps=env.cfg.fps)
+    for _ in range(3):
+        env.step(0)
+        record_frame(writer)
+    writer.close()
+    env.close()
+    assert out.stat().st_size > 1000
+    reader = imageio.get_reader(str(out))
+    assert reader.get_meta_data()["fps"] == pytest.approx(env.cfg.fps)
+    assert reader.count_frames() == 3
+
+
 def test_checkpoint_stores_episodes(tmp_path):
     env = ArenaEnv()
     env.reset(seed=1)

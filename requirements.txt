@@ -4,3 +4,5 @@ torch>=2.2
 pygame>=2.5
 pytest>=8.0
 tensorboard>=2.14
+imageio>=2.34
+imageio-ffmpeg>=0.5

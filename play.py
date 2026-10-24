@@ -1,11 +1,22 @@
 import argparse
 import time
+
+import numpy as np
+
 from agents.baseline import PolicyContext, make_policy
 from arena.environment import ArenaEnv
 from arena.config import ArenaConfig
 from arena.skins import list_skins
 from dqn.agent import DQNAgent
 from dqn.checkpoint import load_checkpoint
+
+
+def record_frame(writer):
+    """Captura o frame atual da janela e anexa ao vídeo (H, W, 3 uint8)."""
+    import pygame
+    import pygame.surfarray  # noqa: F401 — submódulo precisa de import explícito
+    frame = np.transpose(pygame.surfarray.array3d(pygame.display.get_surface()), (1, 0, 2))
+    writer.append_data(frame)
 
 def main():
     ap = argparse.ArgumentParser()
@@ -19,11 +30,21 @@ def main():
                     help="política baseline para o jogador em vez do checkpoint DQN "
                          "(ex.: coins contra coins: --player coins --opponent coins; "
                          "humano no teclado: --player human)")
+    ap.add_argument("--record", default=None, metavar="ARQUIVO.mp4",
+                    help="grava a sessão em vídeo (ativa o render; com "
+                         "SDL_VIDEODRIVER=dummy grava sem janela)")
     args = ap.parse_args()
-    # Humano só faz sentido com janela; ativa o render automaticamente.
-    render_mode = "human" if (args.render or args.player == "human") else None
+    # Humano e gravação só fazem sentido com janela; ativam o render.
+    render_mode = "human" if (args.render or args.player == "human" or args.record) else None
     env = ArenaEnv(ArenaConfig(), render_mode=render_mode, opponent_policy=args.opponent, skin=args.skin)
     obs, _ = env.reset(seed=1)
+    video_writer = None
+    if args.record:
+        try:
+            import imageio
+        except ImportError as exc:
+            raise SystemExit("Gravar vídeo requer: pip install imageio imageio-ffmpeg") from exc
+        video_writer = imageio.get_writer(args.record, fps=env.cfg.fps)
     # Sem --player, comportamento antigo: política gulosa do checkpoint DQN.
     player_policy = None
     if args.player == "human":
@@ -37,18 +58,29 @@ def main():
         agent = DQNAgent(env.observation_space.shape, env.action_space.n)
         load_checkpoint(args.checkpoint, agent, resume=False)
         agent.epsilon = 0.0
-    for ep in range(args.episodes):
-        obs, _ = env.reset(seed=ep + 1)
-        while True:
-            if player_policy is not None:
-                ctx = PolicyContext(obs=obs, rng=env.np_random)
-                action = player_policy.act(ctx)
-            else:
-                action = agent.act(obs, greedy=True)
-            obs, _, terminated, truncated, info = env.step(action)
-            if terminated or truncated: break
-        print(f"episode {ep+1}: coins={info['coins']} deaths={info['deaths']} eliminations={info['eliminations']}")
-        if not args.render: time.sleep(.1)
+    try:
+        for ep in range(args.episodes):
+            obs, _ = env.reset(seed=ep + 1)
+            if video_writer is not None:
+                env.render()  # estado inicial do episódio também entra no vídeo
+                record_frame(video_writer)
+            while True:
+                if player_policy is not None:
+                    ctx = PolicyContext(obs=obs, rng=env.np_random)
+                    action = player_policy.act(ctx)
+                else:
+                    action = agent.act(obs, greedy=True)
+                obs, _, terminated, truncated, info = env.step(action)
+                if video_writer is not None:
+                    record_frame(video_writer)
+                if terminated or truncated: break
+            print(f"episode {ep+1}: coins={info['coins']} deaths={info['deaths']} eliminations={info['eliminations']}")
+            if env.render_mode is None: time.sleep(.1)
+    finally:
+        # Fechar mesmo se a janela for fechada no meio (SystemExit).
+        if video_writer is not None:
+            video_writer.close()
+            print(f"vídeo salvo em {args.record}")
     env.close()
 
 if __name__ == "__main__":

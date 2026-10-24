@@ -131,6 +131,14 @@ python play.py --player human --opponent coins
 | Q | Empurrar para a esquerda (força máxima) |
 | E | Empurrar para a direita (força máxima) |
 
+Para gravar a sessão em vídeo (a janela abre automaticamente, ou use `SDL_VIDEODRIVER=dummy` para gravar sem janela):
+
+```bash
+python play.py --player coins --opponent coins --record demonstracao.mp4
+```
+
+O vídeo sai em 30fps com a resolução da arena (requer `imageio` e `imageio-ffmpeg`).
+
 ## Visual (skins)
 
 `train.py`, `evaluate.py` e `play.py` aceitam `--skin` para escolher o renderizador:
