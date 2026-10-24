@@ -3,6 +3,7 @@ from pathlib import Path
 import numpy as np
 from arena.environment import ArenaEnv
 from arena.config import ArenaConfig
+from arena.skins import list_skins
 from dqn.agent import DQNAgent
 from dqn.checkpoint import load_checkpoint
 
@@ -12,9 +13,11 @@ def main():
     ap.add_argument("--episodes", type=int, default=20)
     ap.add_argument("--render", action="store_true")
     ap.add_argument("--seed", type=int, default=1000)
+    ap.add_argument("--skin", choices=list_skins(), default=None,
+                    help="visual do renderer (arena/renderer_<skin>.py; padrão: clássico)")
     args = ap.parse_args()
     cfg = ArenaConfig()
-    env = ArenaEnv(cfg, render_mode="human" if args.render else None)
+    env = ArenaEnv(cfg, render_mode="human" if args.render else None, skin=args.skin)
     obs, _ = env.reset(seed=args.seed)
     agent = DQNAgent(env.observation_space.shape, env.action_space.n)
     load_checkpoint(args.checkpoint, agent, resume=False)

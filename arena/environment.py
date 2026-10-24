@@ -7,6 +7,7 @@ from gymnasium import spaces
 from agents.baseline import PolicyContext, make_policy
 from .config import ArenaConfig
 from .engine import ArenaEngine, Character, Coin
+from .skins import load_renderer_class
 
 ACTIONS = 12
 
@@ -18,12 +19,13 @@ class ArenaEnv(gym.Env):
     """
     metadata = {"render_modes": ["human"], "render_fps": 30}
 
-    def __init__(self, config=None, render_mode=None, opponent_policy="rule"):
+    def __init__(self, config=None, render_mode=None, opponent_policy="rule", skin=None):
         super().__init__()
         self.cfg = config or ArenaConfig()
         self.render_mode = render_mode
         self.engine = ArenaEngine(self.cfg)
         self.opponent_policy = make_policy(opponent_policy)
+        self.skin = skin
         self.action_space = spaces.Discrete(ACTIONS)
         self.grid_h = self.cfg.height // self.cfg.cell
         self.grid_w = self.cfg.width // self.cfg.cell
@@ -118,8 +120,7 @@ class ArenaEnv(gym.Env):
 
     def render(self):
         if self._renderer is None:
-            from .renderer import ArenaRenderer
-            self._renderer = ArenaRenderer(self.cfg)
+            self._renderer = load_renderer_class(self.skin)(self.cfg)
         self._renderer.render(self.engine, self.elapsed, self._last_info)
 
     def close(self):

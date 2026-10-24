@@ -91,6 +91,34 @@ def test_human_policy_returns_valid_action_headless():
     assert 0 <= policy.act(ctx) <= 11
 
 
+def test_skins_discovery_and_loading():
+    from arena.renderer import ArenaRenderer as BaseRenderer
+    from arena.skins import list_skins, load_renderer_class
+    skins = list_skins()
+    assert "neon" in skins and "plain" in skins
+    # Skin None = renderer clássico (arena/renderer.py).
+    assert load_renderer_class(None) is BaseRenderer
+    neon = load_renderer_class("neon")
+    assert neon.__name__ == "ArenaRenderer"
+    assert hasattr(neon, "render") and hasattr(neon, "close")
+    with pytest.raises(ValueError):
+        load_renderer_class("inexistente")
+
+
+def test_env_skin_selection():
+    from unittest.mock import patch
+    env = ArenaEnv(skin="neon")
+    with patch("arena.environment.load_renderer_class") as loader:
+        env.render()
+        loader.assert_called_once_with("neon")
+    env.close()
+    env = ArenaEnv()
+    with patch("arena.environment.load_renderer_class") as loader:
+        env.render()
+        loader.assert_called_once_with(None)
+    env.close()
+
+
 def test_make_policy_registry():
     assert isinstance(make_policy("rule"), PushRulePolicy)
     assert isinstance(make_policy("random"), RandomPolicy)

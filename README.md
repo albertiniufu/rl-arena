@@ -97,6 +97,16 @@ python play.py --player human --opponent coins
 | Q | Empurrar para a esquerda (força máxima) |
 | E | Empurrar para a direita (força máxima) |
 
+## Visual (skins)
+
+`train.py`, `evaluate.py` e `play.py` aceitam `--skin` para escolher o renderizador:
+
+```bash
+python play.py --player human --opponent coins --skin neon
+```
+
+Cada skin é um arquivo `arena/renderer_<skin>.py` que define uma classe `ArenaRenderer`; o clássico é `arena/renderer.py`. As opções de `--skin` são descobertas automaticamente pelos arquivos existentes — para criar uma skin nova (ex.: `arena/renderer_dinosaur.py`), basta adicionar o arquivo, sem tocar em mais nenhum código.
+
 ## Ações
 
 | Índice | Ação |

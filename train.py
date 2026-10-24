@@ -4,6 +4,7 @@ import numpy as np
 import torch
 from arena.environment import ArenaEnv
 from arena.config import ArenaConfig
+from arena.skins import list_skins
 from dqn.agent import DQNAgent
 from dqn.checkpoint import save_checkpoint, load_checkpoint
 
@@ -15,6 +16,8 @@ def main():
     ap.add_argument("--save-every", type=int, default=10)
     ap.add_argument("--seed", type=int, default=7)
     ap.add_argument("--opponent", choices=["rule", "random", "coins"], default="rule")
+    ap.add_argument("--skin", choices=list_skins(), default=None,
+                    help="visual do renderer (arena/renderer_<skin>.py; padrão: clássico)")
     args = ap.parse_args()
     # Os RNGs globais precisam ser semeados para o treino ser reproduzível:
     # a exploração usa o módulo `random` e o buffer amostra com `random.sample`.
@@ -22,7 +25,7 @@ def main():
     np.random.seed(args.seed)
     torch.manual_seed(args.seed)
     cfg = ArenaConfig()
-    env = ArenaEnv(cfg, render_mode="human" if args.render else None, opponent_policy=args.opponent)
+    env = ArenaEnv(cfg, render_mode="human" if args.render else None, opponent_policy=args.opponent, skin=args.skin)
     agent = DQNAgent(env.observation_space.shape, env.action_space.n)
     start_ep, best = 1, -float("inf")
     if args.resume:

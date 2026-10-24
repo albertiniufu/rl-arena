@@ -3,6 +3,7 @@ import time
 from agents.baseline import PolicyContext, make_policy
 from arena.environment import ArenaEnv
 from arena.config import ArenaConfig
+from arena.skins import list_skins
 from dqn.agent import DQNAgent
 from dqn.checkpoint import load_checkpoint
 
@@ -12,6 +13,8 @@ def main():
     ap.add_argument("--episodes", type=int, default=3)
     ap.add_argument("--render", action="store_true")
     ap.add_argument("--opponent", choices=["rule", "random", "coins"], default="rule")
+    ap.add_argument("--skin", choices=list_skins(), default=None,
+                    help="visual do renderer (arena/renderer_<skin>.py; padrão: clássico)")
     ap.add_argument("--player", choices=["coins", "random", "human"], default=None,
                     help="política baseline para o jogador em vez do checkpoint DQN "
                          "(ex.: coins contra coins: --player coins --opponent coins; "
@@ -19,7 +22,7 @@ def main():
     args = ap.parse_args()
     # Humano só faz sentido com janela; ativa o render automaticamente.
     render_mode = "human" if (args.render or args.player == "human") else None
-    env = ArenaEnv(ArenaConfig(), render_mode=render_mode, opponent_policy=args.opponent)
+    env = ArenaEnv(ArenaConfig(), render_mode=render_mode, opponent_policy=args.opponent, skin=args.skin)
     obs, _ = env.reset(seed=1)
     # Sem --player, comportamento antigo: política gulosa do checkpoint DQN.
     player_policy = None
