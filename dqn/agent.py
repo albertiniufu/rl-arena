@@ -20,6 +20,7 @@ class DQNAgent:
         self.loss_fn = nn.SmoothL1Loss()
         self.buffer = ReplayBuffer(buffer_size)
         self.steps = 0
+        self.last_grad_norm = 0.0
 
     @torch.no_grad()
     def act(self, state, greedy=False):
@@ -27,6 +28,13 @@ class DQNAgent:
             return random.randrange(self.n_actions)
         x = torch.as_tensor(np.asarray(state), dtype=torch.float32, device=self.device).unsqueeze(0)
         return int(self.online(x).argmax(dim=1).item())
+
+    @torch.no_grad()
+    def q_stats(self, state):
+        """(média, máximo) dos Q-valores da rede online para um estado."""
+        x = torch.as_tensor(np.asarray(state), dtype=torch.float32, device=self.device).unsqueeze(0)
+        q = self.online(x)
+        return float(q.mean()), float(q.max())
 
     def learn(self):
         if len(self.buffer) < self.batch_size:
@@ -45,10 +53,24 @@ class DQNAgent:
         loss = self.loss_fn(q, target)
         self.optimizer.zero_grad(set_to_none=True)
         loss.backward()
-        torch.nn.utils.clip_grad_norm_(self.online.parameters(), 10.0)
+        # clip_grad_norm_ devolve a norma total ANTES do clip.
+        self.last_grad_norm = float(torch.nn.utils.clip_grad_norm_(self.online.parameters(), 10.0))
         self.optimizer.step()
         self.steps += 1
         self.epsilon = max(self.epsilon_min, self.epsilon * self.epsilon_decay)
         if self.steps % self.target_update == 0:
             self.target.load_state_dict(self.online.state_dict())
         return float(loss.item())
+
+
+class CheckpointPolicy:
+    """Adapta um `DQNAgent` ao contrato de política `act(ctx) -> int`.
+
+    Age sempre de forma gulosa; permite colocar um agente treinado no lugar
+    do adversário (ex.: `--opponent auto` no train.py).
+    """
+    def __init__(self, agent):
+        self.agent = agent
+
+    def act(self, ctx):
+        return int(self.agent.act(ctx.obs, greedy=True))

@@ -1,9 +1,10 @@
 """Checkpoints do treino, incluindo tudo o que uma retomada reproduzível precisa.
 
-Além de pesos, otimizador, passos e epsilon, o checkpoint guarda o replay
-buffer, o estado de todos os RNGs (Python, NumPy, Torch, engine e ambiente)
-e um snapshot do ambiente. Com isso, retomar com os mesmos argumentos
-(ex.: mesmo --seed) continua o treino bit a bit idêntico.
+Além de pesos, otimizador, passos, epsilon e do número de episódios
+consumidos (`episodes`), o checkpoint guarda o replay buffer, o estado de
+todos os RNGs (Python, NumPy, Torch, engine e ambiente) e um snapshot do
+ambiente. Com isso, retomar com os mesmos argumentos (ex.: mesmo --seed)
+continua o treino bit a bit idêntico.
 """
 from pathlib import Path
 import random
@@ -43,14 +44,15 @@ def restore_rng_state(state, env=None):
         env.np_random.bit_generator.state = state["env_np_random"]
 
 
-def save_checkpoint(path, agent, config=None, extra=None, env=None):
+def save_checkpoint(path, agent, config=None, extra=None, env=None, episodes=None):
     path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
     payload = {
         "env_version": ENV_VERSION, "arch_version": ARCH_VERSION, "n_actions": agent.n_actions,
         "online": agent.online.state_dict(), "target": agent.target.state_dict(),
         "optimizer": agent.optimizer.state_dict(), "steps": agent.steps, "epsilon": agent.epsilon,
-        "gamma": agent.gamma, "config": vars(config) if config is not None else {},
+        "gamma": agent.gamma, "episodes": episodes,
+        "config": vars(config) if config is not None else {},
         "buffer": agent.buffer.state_dict(),
         "rng_state": capture_rng_state(env),
         "env_state": env.get_state() if env is not None else None,

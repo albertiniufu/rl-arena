@@ -40,7 +40,9 @@ Escolher adversário aleatório:
 python train.py --episodes 300 --opponent random
 ```
 
-O adversário pode ser `rule` (padrão: aproxima do jogador e às vezes empurra), `random` (sorteia entre as 6 primeiras ações) ou `coins` (persegue a moeda visível):
+O adversário padrão é `auto`, um currículo de adversários: começa com `random` (50 episódios), depois alterna `coins`/`rule` (100 episódios) e, na sequência, joga contra o melhor checkpoint até o momento (guloso), alternando ocasionalmente (10% dos episódios) para `random`, `coins`, `rule` ou outro checkpoint disponível em `checkpoints/`. As fases usam contagens absolutas de episódios, então retomar continua o currículo de onde parou.
+
+Também dá para fixar o adversário: `rule` (aproxima do jogador e às vezes empurra), `random` (sorteia entre as 6 primeiras ações) ou `coins` (persegue a moeda visível):
 
 ```bash
 python train.py --episodes 300 --opponent coins
@@ -54,7 +56,25 @@ Continuar treinamento a partir de checkpoint:
 python train.py --episodes 300 --resume checkpoints/latest.pt
 ```
 
+Com `--checkpoint-dir`, os saves e a leitura do adversário `auto` usam outro diretório, e o `--resume` pode passar só o nome do arquivo:
+
+```bash
+python train.py --episodes 300 --checkpoint-dir /caminho/para/run1 --resume latest.pt
+```
+
+```bash
+python train.py --episodes 300 --resume checkpoints/latest.pt
+```
+
 O argumento `--episodes` indica quantos episódios adicionais serão executados. Os checkpoints são salvos em `checkpoints/latest.pt` e `checkpoints/best.pt`; métricas em `logs/training.csv`.
+
+Para acompanhar estatísticas mais detalhadas do treino da CNN, use `--stats`:
+
+```bash
+python train.py --episodes 300 --stats
+```
+
+Isso grava `logs/stats.csv` com, por episódio: recompensa, perda (média/mín/máx), norma do gradiente antes do clip (média/máx), Q-valores da rede online (média/máx), epsilon e tamanho do buffer — e imprime um resumo no terminal. A coleta não consome números aleatórios, então o treino continua bit a bit reproduzível com ou sem a flag.
 
 ## Avaliação sem atualizar pesos
 
@@ -122,7 +142,7 @@ Cada skin é um arquivo `arena/renderer_<skin>.py` que define uma classe `ArenaR
 
 - A simulação usa tempo discreto de `1 / fps` segundos.
 - O cenário e a configuração inicial são fixos.
-- O episódio termina pelo limite de tempo (truncamento), nunca apenas por morte. Ao morrer, o personagem perde 10 moedas (saldo mínimo zero), fica inativo por 10 segundos simulados e reaparece sobre uma plataforma escolhida aleatoriamente.
+- O episódio termina pelo limite de tempo (truncamento), nunca apenas por morte. Ao morrer, o personagem perde 10 moedas (saldo mínimo zero), fica inativo por 5 segundos simulados e reaparece sobre uma plataforma escolhida aleatoriamente.
 - A observação é uma grade semântica simples. Velocidades e temporizadores não estão explicitamente codificados, portanto a observação não é totalmente Markoviana; isso é uma simplificação para a primeira experiência com CNN.
 - O crédito por eliminações é deliberadamente simplificado.
 - A retomada (`--resume`) é reproduzível bit a bit: o checkpoint persiste pesos, rede-alvo, otimizador, passos, epsilon, replay buffer, o estado de todos os RNGs (Python, NumPy, Torch, engine e ambiente) e um snapshot do ambiente. Com os mesmos argumentos (em especial o mesmo `--seed`), retomar produz exatamente os mesmos episódios, pesos e arquivos de checkpoint de um treino contínuo. Checkpoints antigos, sem esses campos, ainda carregam (sem reproduzibilidade).

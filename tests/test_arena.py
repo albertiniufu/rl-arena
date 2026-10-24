@@ -1,8 +1,14 @@
+import os
 import random
 
 import numpy as np
 import pytest
 import torch
+
+# Vídeo/áudio dummy do SDL: os testes que tocam pygame rodam headless,
+# sem abrir janela (e sem depender de um display na máquina).
+os.environ.setdefault("SDL_VIDEODRIVER", "dummy")
+os.environ.setdefault("SDL_AUDIODRIVER", "dummy")
 
 from agents.baseline import CoinRulePolicy, PolicyContext, PushRulePolicy, RandomPolicy, make_policy
 from arena.environment import ArenaEnv
@@ -91,6 +97,21 @@ def test_human_policy_returns_valid_action_headless():
     assert 0 <= policy.act(ctx) <= 11
 
 
+def test_dino_renderer_does_not_touch_global_random():
+    # Skins não podem deslocar o fluxo global de `random`: a exploração e a
+    # amostragem do buffer dependem dele, então treinar com --render deve
+    # produzir a mesma trajetória que sem janela.
+    from arena.renderer_dino import ArenaRenderer as DinoRenderer
+    env = ArenaEnv(ArenaConfig(opponent_count=0))
+    env.reset(seed=1)
+    renderer = DinoRenderer(env.cfg)
+    before = random.getstate()
+    renderer.render(env.engine, 0.1, {})
+    assert random.getstate() == before
+    renderer.close()
+    env.close()
+
+
 def test_skins_discovery_and_loading():
     from arena.renderer import ArenaRenderer as BaseRenderer
     from arena.skins import list_skins, load_renderer_class
@@ -150,6 +171,112 @@ def test_coins_opponent_runs_full_episode():
     env.close()
 
 
+def test_resolve_resume_path(tmp_path):
+    from train import resolve_resume_path
+    assert resolve_resume_path("latest.pt", tmp_path) == tmp_path / "latest.pt"
+    other = tmp_path / "outra" / "run.pt"
+    assert resolve_resume_path(str(other), "checkpoints") == other
+
+
+def test_checkpoint_stores_episodes(tmp_path):
+    env = ArenaEnv()
+    env.reset(seed=1)
+    agent = DQNAgent(env.observation_space.shape, env.action_space.n)
+    p = tmp_path / "ep.pt"
+    save_checkpoint(p, agent, env=env, episodes=42)
+    payload = torch.load(p, map_location="cpu", weights_only=False)
+    assert payload["episodes"] == 42
+    # Sem informar, o campo existe mas fica None (compatível com checkpoints antigos).
+    p2 = tmp_path / "sem.pt"
+    save_checkpoint(p2, agent)
+    payload2 = torch.load(p2, map_location="cpu", weights_only=False)
+    assert payload2["episodes"] is None
+    env.close()
+
+
+def test_checkpoint_policy_acts_greedily():
+    from dqn.agent import CheckpointPolicy
+    env = ArenaEnv()
+    obs, _ = env.reset(seed=1)
+    agent = DQNAgent(env.observation_space.shape, env.action_space.n)
+    cp = CheckpointPolicy(agent)
+    ctx = PolicyContext(obs=obs, rng=env.np_random)
+    assert cp.act(ctx) == agent.act(obs, greedy=True)
+    env.close()
+
+
+def test_agent_q_stats_and_grad_norm():
+    env = ArenaEnv()
+    obs, _ = env.reset(seed=1)
+    agent = DQNAgent(env.observation_space.shape, env.action_space.n, batch_size=2)
+    mean_q, max_q = agent.q_stats(obs)
+    assert isinstance(mean_q, float) and isinstance(max_q, float)
+    assert max_q >= mean_q
+    # learn() preenche last_grad_norm (norma do gradiente antes do clip).
+    agent.last_grad_norm = -1.0
+    for _ in range(2):
+        action = agent.act(obs)
+        next_obs, reward, term, trunc, _ = env.step(action)
+        agent.buffer.add(obs, action, reward, next_obs, term, trunc)
+        obs = next_obs
+    loss = agent.learn()
+    assert loss is not None
+    assert agent.last_grad_norm >= 0.0
+    env.close()
+
+
+def _make_auto_opponent(tmp_path):
+    from train import AutoOpponent
+    env = ArenaEnv(ArenaConfig(), opponent_policy="random")
+    env.reset(seed=1)
+    agent = DQNAgent(env.observation_space.shape, env.action_space.n)
+    auto = AutoOpponent(env, checkpoint_dir=str(tmp_path),
+                        random_episodes=2, baseline_episodes=3, alt_prob=0.0)
+    return env, agent, auto
+
+
+def test_auto_opponent_phases(tmp_path):
+    from dqn.agent import CheckpointPolicy
+    env, agent, auto = _make_auto_opponent(tmp_path)
+    # Fase 1 (n <= 2): random.
+    assert isinstance(auto.choose(1), RandomPolicy)
+    assert isinstance(auto.choose(2), RandomPolicy)
+    # Fase 2 (3..5): alterna coins/rule.
+    assert {type(auto.choose(3)), type(auto.choose(4))} == {CoinRulePolicy, PushRulePolicy}
+    # update_best congela os pesos atuais do treino como oponente.
+    auto.update_best(agent)
+    for p_c, p_a in zip(auto.checkpoint_agent.online.parameters(), agent.online.parameters()):
+        assert torch.equal(p_c, p_a)
+    # Fase 3 (6+): melhor checkpoint até o momento.
+    assert isinstance(auto.choose(6), CheckpointPolicy)
+    env.close()
+
+
+def test_auto_opponent_alternates_in_checkpoint_phase(tmp_path):
+    from dqn.agent import CheckpointPolicy
+    env, agent, auto = _make_auto_opponent(tmp_path)
+    auto.alt_prob = 1.0
+    save_checkpoint(tmp_path / "outro.pt", agent, env=env)
+    auto.update_best(agent)
+    random.seed(0)
+    seen = {type(auto.choose(6)) for _ in range(40)}
+    assert seen == {CheckpointPolicy, RandomPolicy, PushRulePolicy, CoinRulePolicy}
+    env.close()
+
+
+def test_auto_opponent_init_from_disk(tmp_path):
+    from train import AutoOpponent
+    env = ArenaEnv()
+    env.reset(seed=1)
+    agent = DQNAgent(env.observation_space.shape, env.action_space.n)
+    save_checkpoint(tmp_path / "best.pt", agent, env=env)
+    auto = AutoOpponent(env, checkpoint_dir=str(tmp_path))
+    auto.init_from_disk()
+    for p_c, p_a in zip(auto.checkpoint_agent.online.parameters(), agent.online.parameters()):
+        assert torch.equal(p_c, p_a)
+    env.close()
+
+
 def _run_episodes(cfg, seed, n_episodes, save_at=None, path=None, resume_from=None):
     """Mini-loop espelhando train.py, para testar retomada bit a bit."""
     random.seed(seed)
@@ -160,7 +287,10 @@ def _run_episodes(cfg, seed, n_episodes, save_at=None, path=None, resume_from=No
     start, best = 1, -float("inf")
     if resume_from is not None:
         payload = load_checkpoint(resume_from, agent, resume=True, env=env)
-        start = int(payload.get("extra", {}).get("episodes_done", 0)) + 1
+        episodes_done = payload.get("episodes")
+        if episodes_done is None:
+            episodes_done = payload.get("extra", {}).get("episodes_done", 0)
+        start = int(episodes_done) + 1
         best = float(payload.get("extra", {}).get("best_reward", -float("inf")))
     trace = []
     for ep in range(start, n_episodes + 1):
@@ -182,7 +312,7 @@ def _run_episodes(cfg, seed, n_episodes, save_at=None, path=None, resume_from=No
         if ep == save_at:
             save_checkpoint(path, agent, cfg,
                             {"episode": ep, "reward": total, "episodes_done": ep, "best_reward": best},
-                            env=env)
+                            env=env, episodes=ep)
             break
     return trace, agent, env
 
@@ -192,6 +322,8 @@ def test_resume_is_bit_identical(tmp_path):
     seed = 123
     ckpt = tmp_path / "mid.pt"
     half, agent_half, env_half = _run_episodes(cfg, seed, 2, save_at=2, path=ckpt)
+    payload = torch.load(ckpt, map_location="cpu", weights_only=False)
+    assert payload["episodes"] == 2
     resumed, agent_resumed, env_resumed = _run_episodes(cfg, seed, 4, resume_from=ckpt)
     full, agent_full, env_full = _run_episodes(cfg, seed, 4)
     # A retomada continua a numeração e reproduz exatamente os episódios 3 e 4.

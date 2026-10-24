@@ -14,7 +14,7 @@ def main():
     ap.add_argument("--render", action="store_true")
     ap.add_argument("--opponent", choices=["rule", "random", "coins"], default="rule")
     ap.add_argument("--skin", choices=list_skins(), default=None,
-                    help="visual do renderer (arena/renderer_<skin>.py; padrão: clássico)")
+                    help="visual do renderer (arena/renderer_<skin>.py; padrão: renderer.py)")
     ap.add_argument("--player", choices=["coins", "random", "human"], default=None,
                     help="política baseline para o jogador em vez do checkpoint DQN "
                          "(ex.: coins contra coins: --player coins --opponent coins; "
