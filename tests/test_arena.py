@@ -178,6 +178,34 @@ def test_resolve_resume_path(tmp_path):
     assert resolve_resume_path(str(other), "checkpoints") == other
 
 
+def test_obs_to_image_colors():
+    from train import obs_to_image
+    obs = np.zeros((5, 3, 4), dtype=np.float32)
+    obs[0, 0, 0] = 1.0  # plataforma
+    obs[1, 1, 1] = 1.0  # jogador
+    obs[2, 2, 2] = 1.0  # oponente
+    obs[3, 0, 3] = 1.0  # moeda
+    obs[4, 2, 3] = 1.0  # morto/respawn
+    img = obs_to_image(obs)
+    assert img.shape == (3, 4, 3)
+    assert img.dtype == np.uint8
+    assert img[0, 0].tolist() == [120, 130, 140]
+    assert img[1, 1].tolist() == [70, 190, 250]
+    assert img[2, 2].tolist() == [240, 90, 95]
+    assert img[0, 3].tolist() == [245, 195, 55]
+    assert img[2, 3].tolist() == [180, 120, 200]
+
+
+def test_tensorboard_writer_smoke(tmp_path):
+    pytest.importorskip("torch.utils.tensorboard")
+    from torch.utils.tensorboard import SummaryWriter
+    writer = SummaryWriter(str(tmp_path))
+    writer.add_scalar("train/loss", 1.0, 1)
+    writer.add_scalar("train/loss", 0.5, 2)
+    writer.close()
+    assert any(tmp_path.rglob("events.out.tfevents*"))
+
+
 def test_checkpoint_stores_episodes(tmp_path):
     env = ArenaEnv()
     env.reset(seed=1)

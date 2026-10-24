@@ -76,6 +76,20 @@ python train.py --episodes 300 --stats
 
 Isso grava `logs/stats.csv` com, por episódio: recompensa, perda (média/mín/máx), norma do gradiente antes do clip (média/máx), Q-valores da rede online (média/máx), epsilon e tamanho do buffer — e imprime um resumo no terminal. A coleta não consome números aleatórios, então o treino continua bit a bit reproduzível com ou sem a flag.
 
+Para acompanhar o treino visualmente, use `--tensorboard`:
+
+```bash
+python train.py --episodes 300 --tensorboard
+```
+
+e, em outro terminal:
+
+```bash
+tensorboard --logdir logs/runs
+```
+
+O TensorBoard mostra, por episódio: recompensa, perda (média/mín/máx, além da curva por passo), Q-valores da rede online, gradiente, epsilon, tamanho do buffer, histogramas dos pesos da CNN e a observação do agente como imagem. Cada seed escreve em `logs/runs/seed<N>` — retomar com o mesmo seed continua as curvas. Como o `--stats`, a coleta não altera a trajetória do treino.
+
 ## Avaliação sem atualizar pesos
 
 ```bash

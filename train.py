@@ -18,6 +18,25 @@ def resolve_resume_path(resume, checkpoint_dir):
     return path
 
 
+def obs_to_image(obs):
+    """Grade semântica (5, H, W) -> imagem RGB (H, W, 3) para o TensorBoard.
+
+    Canais: 0 plataformas, 1 jogador, 2 oponentes, 3 moedas, 4 mortos/respawn.
+    """
+    h, w = obs.shape[1], obs.shape[2]
+    img = np.zeros((h, w, 3), dtype=np.uint8)
+    colors = {
+        0: (120, 130, 140),
+        1: (70, 190, 250),
+        2: (240, 90, 95),
+        3: (245, 195, 55),
+        4: (180, 120, 200),
+    }
+    for channel, color in colors.items():
+        img[obs[channel] > 0] = color
+    return img
+
+
 class AutoOpponent:
     """Currículo de adversários do `--opponent auto` (padrão).
 
@@ -92,6 +111,9 @@ def main():
     ap.add_argument("--stats", action="store_true",
                     help="coleta estatísticas do treino da CNN (perda, gradiente, Q) "
                          "em logs/stats.csv e no terminal")
+    ap.add_argument("--tensorboard", action="store_true",
+                    help="grava escalares, histogramas e a observação em "
+                         "logs/runs/seed<N> (abra com: tensorboard --logdir logs/runs)")
     ap.add_argument("--skin", choices=list_skins(), default=None,
                     help="visual do renderer (arena/renderer_<skin>.py; padrão: clássico)")
     args = ap.parse_args()
@@ -141,6 +163,14 @@ def main():
             "grad_mean", "grad_max", "q_mean", "q_max", "epsilon", "buffer_size"])
         if stats_new:
             stats_writer.writeheader()
+    tb_writer = None
+    if args.tensorboard:
+        try:
+            from torch.utils.tensorboard import SummaryWriter
+        except ImportError as exc:
+            raise SystemExit("TensorBoard não está instalado. Instale com: pip install tensorboard") from exc
+        # Um diretório por seed: retomar com o mesmo seed continua as curvas.
+        tb_writer = SummaryWriter(str(Path("logs/runs") / f"seed{args.seed}"))
     with log_path.open("w" if new_file else "a", newline="") as f:
         writer = csv.DictWriter(f, fieldnames=["episode", "steps", "reward", "coins", "deaths", "eliminations", "mean_loss", "epsilon"])
         if new_file: writer.writeheader()
@@ -156,15 +186,18 @@ def main():
                 action = agent.act(obs)
                 next_obs, reward, terminated, truncated, info = env.step(action)
                 agent.buffer.add(obs, action, reward, next_obs, terminated, truncated)
-                if args.stats:
+                if args.stats or args.tensorboard:
                     qm, qx = agent.q_stats(obs)
                     q_means.append(qm)
                     q_maxes.append(qx)
                 loss = agent.learn()
                 if loss is not None:
                     losses.append(loss)
-                    if args.stats:
+                    if args.stats or args.tensorboard:
                         grad_norms.append(agent.last_grad_norm)
+                    if tb_writer is not None:
+                        tb_writer.add_scalar("train/loss_step", loss, agent.steps)
+                        tb_writer.add_scalar("train/grad_norm_step", agent.last_grad_norm, agent.steps)
                 obs = next_obs; total += reward; steps += 1
                 if terminated or truncated: break
             last_total = total
@@ -172,16 +205,33 @@ def main():
                    "deaths": info.get("deaths", 0), "eliminations": info.get("eliminations", 0),
                    "mean_loss": float(np.mean(losses)) if losses else "", "epsilon": agent.epsilon}
             writer.writerow(row); f.flush()
+            if args.stats or tb_writer is not None:
+                agg = {
+                    "mean_loss": float(np.mean(losses)) if losses else 0.0,
+                    "min_loss": float(np.min(losses)) if losses else 0.0,
+                    "max_loss": float(np.max(losses)) if losses else 0.0,
+                    "grad_mean": float(np.mean(grad_norms)) if grad_norms else 0.0,
+                    "grad_max": float(np.max(grad_norms)) if grad_norms else 0.0,
+                    "q_mean": float(np.mean(q_means)) if q_means else 0.0,
+                    "q_max": float(np.max(q_maxes)) if q_maxes else 0.0,
+                }
+            if tb_writer is not None:
+                tb_writer.add_scalar("train/reward", total, ep)
+                tb_writer.add_scalar("train/coins", info.get("coins", 0), ep)
+                tb_writer.add_scalar("train/deaths", info.get("deaths", 0), ep)
+                tb_writer.add_scalar("train/eliminations", info.get("eliminations", 0), ep)
+                for name in ("mean_loss", "min_loss", "max_loss", "grad_mean", "grad_max", "q_mean", "q_max"):
+                    tb_writer.add_scalar(f"train/{name}", agg[name], ep)
+                tb_writer.add_scalar("train/epsilon", agent.epsilon, ep)
+                tb_writer.add_scalar("train/buffer_size", len(agent.buffer), ep)
+                tb_writer.add_image("env/observation", obs_to_image(obs), ep, dataformats="HWC")
+                tb_writer.add_histogram("weights/conv1", agent.online.features[0].weight, ep)
+                tb_writer.add_histogram("weights/head", agent.online.head[-1].weight, ep)
+                tb_writer.flush()
             if stats_writer is not None:
                 stats_row = {
                     "episode": ep, "steps": steps, "reward": total,
-                    "mean_loss": float(np.mean(losses)) if losses else "",
-                    "min_loss": float(np.min(losses)) if losses else "",
-                    "max_loss": float(np.max(losses)) if losses else "",
-                    "grad_mean": float(np.mean(grad_norms)) if grad_norms else "",
-                    "grad_max": float(np.max(grad_norms)) if grad_norms else "",
-                    "q_mean": float(np.mean(q_means)) if q_means else "",
-                    "q_max": float(np.max(q_maxes)) if q_maxes else "",
+                    **{k: agg[k] for k in ("mean_loss", "min_loss", "max_loss", "grad_mean", "grad_max", "q_mean", "q_max")},
                     "epsilon": agent.epsilon, "buffer_size": len(agent.buffer),
                 }
                 stats_writer.writerow(stats_row)
@@ -203,6 +253,8 @@ def main():
             print(f"episode={ep} reward={total:.2f} coins={row['coins']} deaths={row['deaths']} epsilon={agent.epsilon:.3f}")
     if stats_f is not None:
         stats_f.close()
+    if tb_writer is not None:
+        tb_writer.close()
     save_checkpoint(ckpt_dir / "latest.pt", agent, cfg,
                     {"episode": last_ep, "reward": last_total, "episodes_done": last_ep, "best_reward": best},
                     env=env, episodes=last_ep)
