@@ -1,0 +1,5 @@
+numpy>=1.26
+gymnasium>=1.0
+torch>=2.2
+pygame>=2.5
+pytest>=8.0

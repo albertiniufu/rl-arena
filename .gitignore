@@ -1,0 +1,10 @@
+# Ambiente virtual
+venv/
+.venv/
+
+# Artefatos gerados
+checkpoints/
+logs/
+__pycache__/
+*.pyc
+.pytest_cache/
