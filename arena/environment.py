@@ -91,20 +91,31 @@ class ArenaEnv(gym.Env):
         return int(self.opponent_policy.act(ctx))
 
     def step(self, action):
+        """Avança `frame_skip` substeps de física com a ação do jogador repetida.
+
+        A cada substep o adversário decide de novo, sobre a observação corrente,
+        e a recompensa acumula. O `info` traz os valores finais do personagem
+        (não somas) e os totais do step em `*_this_step`.
+        """
         if not self.action_space.contains(action):
             raise ValueError(f"Invalid action: {action}")
         dt = 1.0 / self.cfg.fps
-        # Observação pré-passo: é o estado sobre o qual as políticas decidem.
-        policy_obs = self._observation()
-        actions = [int(action)] + [self._opponent_action(i, policy_obs) for i in range(1, len(self.engine.characters))]
-        event = self.engine.step(actions, dt)
-        self.elapsed += dt
+        reward = 0.0
+        collected = deaths = 0
+        for _ in range(self.cfg.frame_skip):
+            # Observação pré-substep: é o estado sobre o qual as políticas decidem.
+            policy_obs = self._observation()
+            actions = [int(action)] + [self._opponent_action(i, policy_obs) for i in range(1, len(self.engine.characters))]
+            event = self.engine.step(actions, dt)
+            self.elapsed += dt
+            reward += (
+                event["collected"][0] * self.cfg.coin_reward
+                + event["eliminations_delta"][0] * self.cfg.elimination_reward
+                + event["deaths_delta"][0] * self.cfg.death_penalty
+            )
+            collected += event["collected"][0]
+            deaths += event["deaths_delta"][0]
         p = self.engine.characters[0]
-        reward = (
-            event["collected"][0] * self.cfg.coin_reward
-            + event["eliminations_delta"][0] * self.cfg.elimination_reward
-            + event["deaths_delta"][0] * self.cfg.death_penalty
-        )
         # Episodes end only when the configured simulation-time limit is reached.
         # Death does not end the episode: the character loses coins and respawns later.
         terminated = False
@@ -114,8 +125,8 @@ class ArenaEnv(gym.Env):
             "deaths": p.deaths,
             "eliminations": p.eliminations,
             "sim_time": self.engine.sim_time,
-            "collected_this_step": event["collected"][0],
-            "deaths_this_step": event["deaths_delta"][0],
+            "collected_this_step": collected,
+            "deaths_this_step": deaths,
         }
         self._last_info = info
         self._frames.append(self._observation())

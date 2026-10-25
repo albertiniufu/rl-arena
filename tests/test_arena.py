@@ -35,6 +35,19 @@ def test_frame_stack_observation():
     assert np.array_equal(obs2[:5], obs[-5:])  # frame antigo virou o mais antigo
     env.close()
 
+def test_frame_skip_repeats_action():
+    env = ArenaEnv(ArenaConfig(frame_skip=3))
+    env.reset(seed=1)
+    t0 = env.elapsed
+    # Moeda posta na posição do personagem antes do step (padrão dos testes:
+    # manipular o engine diretamente): a coleta deve acontecer nos substeps.
+    c = env.engine.characters[0]
+    env.engine.coins[0].x, env.engine.coins[0].y = c.x, c.y
+    obs, reward, *_ = env.step(1)
+    assert env.elapsed - t0 == pytest.approx(3 / env.cfg.fps)
+    assert reward == pytest.approx(env.cfg.coin_reward)
+    env.close()
+
 def test_invalid_action():
     env = ArenaEnv()
     env.reset(seed=1)
