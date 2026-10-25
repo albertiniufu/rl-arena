@@ -18,6 +18,15 @@ def resolve_resume_path(resume, checkpoint_dir):
     return path
 
 
+def epsilon_for_episode(ep, ramp_end, floor):
+    """Epsilon linear de 1.0 até `floor` ao longo de `ramp_end` episódios.
+
+    Usa o número absoluto do episódio: uma retomada continua a rampa de onde
+    parou, em vez de reiniciá-la.
+    """
+    return max(floor, 1.0 - (1.0 - floor) * ep / ramp_end)
+
+
 def budget_snapshots(total_episodes):
     """Episódios (absolutos) em que vale salvar um snapshot de orçamento.
 
@@ -176,6 +185,8 @@ def main():
         if auto is not None:
             auto.init_from_disk()
     last_ep = start_ep + args.episodes - 1
+    # A rampa de exploração cobre 20% dos episódios pedidos nesta execução.
+    ramp_end = max(1, round(args.episodes * 0.2))
     # Orçamentos contam episódios absolutos (retomada continua a numeração),
     # então o snapshot compara fases com o mesmo total de treino.
     budgets = budget_snapshots(last_ep)
@@ -208,6 +219,9 @@ def main():
         if new_file: writer.writeheader()
         last_total = 0.0
         for ep in range(start_ep, last_ep + 1):
+            # Epsilon agendado por episódio (número absoluto): o agente não o
+            # altera no learn(); retomadas continuam a rampa de onde pararam.
+            agent.epsilon = epsilon_for_episode(ep, ramp_end, 0.1)
             if auto is not None:
                 env.opponent_policy = auto.choose(ep)
             obs, _ = env.reset(seed=args.seed + ep)

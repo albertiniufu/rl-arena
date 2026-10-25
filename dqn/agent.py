@@ -7,11 +7,11 @@ from .replay_buffer import ReplayBuffer
 
 class DQNAgent:
     def __init__(self, obs_shape, n_actions=12, lr=1e-3, gamma=.99,
-                 epsilon=1.0, epsilon_min=.05, epsilon_decay=.9995,
+                 epsilon=1.0, epsilon_min=.1,
                  batch_size=64, target_update=500, buffer_size=50000, device=None):
         self.device = torch.device(device or ("cuda" if torch.cuda.is_available() else "cpu"))
         self.n_actions, self.gamma = n_actions, gamma
-        self.epsilon, self.epsilon_min, self.epsilon_decay = epsilon, epsilon_min, epsilon_decay
+        self.epsilon, self.epsilon_min = epsilon, epsilon_min
         self.batch_size, self.target_update = batch_size, target_update
         self.online = DQN(obs_shape, n_actions).to(self.device)
         self.target = DQN(obs_shape, n_actions).to(self.device)
@@ -57,7 +57,6 @@ class DQNAgent:
         self.last_grad_norm = float(torch.nn.utils.clip_grad_norm_(self.online.parameters(), 10.0))
         self.optimizer.step()
         self.steps += 1
-        self.epsilon = max(self.epsilon_min, self.epsilon * self.epsilon_decay)
         if self.steps % self.target_update == 0:
             self.target.load_state_dict(self.online.state_dict())
         return float(loss.item())
