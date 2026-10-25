@@ -90,15 +90,18 @@ class AutoOpponent:
     `random` (seedado pelo --seed).
     """
     def __init__(self, env, checkpoint_dir="checkpoints",
-                 random_episodes=50, baseline_episodes=100, alt_prob=0.1):
+                 random_episodes=50, baseline_episodes=100, alt_prob=0.1,
+                 dueling=False):
         self.env = env
         self.checkpoint_dir = Path(checkpoint_dir)
         self.random_episodes = random_episodes
         self.baseline_episodes = baseline_episodes
         self.alt_prob = alt_prob
         shape, n_actions = env.observation_space.shape, env.action_space.n
-        self.checkpoint_agent = DQNAgent(shape, n_actions)
-        self.alt_agent = DQNAgent(shape, n_actions)
+        # A cabeça acompanha o treino: o state_dict do melhor checkpoint é
+        # copiado para cá em `update_best`, e as chaves precisam casar.
+        self.checkpoint_agent = DQNAgent(shape, n_actions, dueling=dueling)
+        self.alt_agent = DQNAgent(shape, n_actions, dueling=dueling)
 
     def init_from_disk(self):
         """Na retomada, carrega o melhor checkpoint existente como oponente.
@@ -171,6 +174,8 @@ def parse_args(argv=None):
                     help="repetições da ação por step do agente")
     ap.add_argument("--n-step", type=int, default=1,
                     help="retornos n-step no replay buffer")
+    ap.add_argument("--dueling", action="store_true",
+                    help="usa a cabeça dueling (V + vantagens centralizadas) nas redes")
     ap.add_argument("--no-double", action="store_false", dest="double", default=True,
                     help="desliga o Double DQN (ligado por padrão)")
     return ap.parse_args(argv)
@@ -192,10 +197,11 @@ def main():
                    opponent_policy="random" if args.opponent == "auto" else args.opponent,
                    skin=args.skin)
     agent = DQNAgent(env.observation_space.shape, env.action_space.n,
-                     double=args.double, n_step=args.n_step)
+                     double=args.double, n_step=args.n_step, dueling=args.dueling)
     # O `auto` é criado antes do load para que a retomada já possa chamar
     # `init_from_disk` nele (carregar o melhor checkpoint como adversário).
-    auto = AutoOpponent(env, checkpoint_dir=ckpt_dir) if args.opponent == "auto" else None
+    auto = (AutoOpponent(env, checkpoint_dir=ckpt_dir, dueling=args.dueling)
+            if args.opponent == "auto" else None)
     start_ep, best = 1, -float("inf")
     if resume_path:
         payload = load_checkpoint(resume_path, agent, resume=True)
@@ -292,7 +298,10 @@ def main():
                 tb_writer.add_scalar("train/buffer_size", len(agent.buffer), ep)
                 tb_writer.add_image("env/observation", obs_to_image(obs), ep, dataformats="HWC")
                 tb_writer.add_histogram("weights/conv1", agent.online.features[0].weight, ep)
-                tb_writer.add_histogram("weights/head", agent.online.head[-1].weight, ep)
+                # Nos dois modos a última camada é a linear de saída da cabeça:
+                # no dueling, o ramo de valor (escalar) faz o papel do head.
+                head = agent.online.v_head if agent.dueling else agent.online.head
+                tb_writer.add_histogram("weights/head", head[-1].weight, ep)
                 tb_writer.flush()
             if stats_writer is not None:
                 stats_row = {

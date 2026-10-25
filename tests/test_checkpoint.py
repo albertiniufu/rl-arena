@@ -18,6 +18,29 @@ def test_checkpoint_meta_reads_config_and_dueling(tmp_path):
     assert meta["dueling"] is False
 
 
+def test_checkpoint_meta_detects_dueling(tmp_path):
+    from dqn.checkpoint import checkpoint_meta
+
+    agent = DQNAgent((5, 32, 20), 12, dueling=True)
+    path = tmp_path / "dueling.pt"
+    save_checkpoint(path, agent)
+    assert checkpoint_meta(path)["dueling"] is True
+
+
+def test_load_checkpoint_rejects_dueling_mismatch(tmp_path):
+    """Checkpoint e agente precisam concordar sobre a cabeça dueling."""
+    dueling_agent = DQNAgent((5, 32, 20), 12, dueling=True)
+    plain_agent = DQNAgent((5, 32, 20), 12)
+    dueling_path = tmp_path / "dueling.pt"
+    plain_path = tmp_path / "plain.pt"
+    save_checkpoint(dueling_path, dueling_agent)
+    save_checkpoint(plain_path, plain_agent)
+    with pytest.raises(ValueError):
+        load_checkpoint(dueling_path, plain_agent)
+    with pytest.raises(ValueError):
+        load_checkpoint(plain_path, dueling_agent)
+
+
 def test_apply_env_config():
     from arena.config import ArenaConfig
     from dqn.checkpoint import apply_env_config

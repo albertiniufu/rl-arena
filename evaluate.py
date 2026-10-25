@@ -25,13 +25,15 @@ def main():
     args = parse_args()
     # A config gravada no checkpoint (frame_stack/frame_skip) define o formato
     # da observação; sem isso a avaliação usaria 1/1 e não casaria com fases
-    # treinadas com obs empilhada.
+    # treinadas com obs empilhada. A mesma leitura revela se a rede é dueling.
+    meta = checkpoint_meta(args.checkpoint)
     cfg = ArenaConfig()
-    apply_env_config(cfg, checkpoint_meta(args.checkpoint))
+    apply_env_config(cfg, meta)
     env = ArenaEnv(cfg, render_mode="human" if args.render else None,
                    opponent_policy=args.opponent, skin=args.skin)
     obs, _ = env.reset(seed=args.seed)
-    agent = DQNAgent(env.observation_space.shape, env.action_space.n)
+    agent = DQNAgent(env.observation_space.shape, env.action_space.n,
+                     dueling=meta["dueling"])
     load_checkpoint(args.checkpoint, agent, resume=False)
     rows = []
     for ep in range(args.episodes):
