@@ -223,8 +223,11 @@ def test_play_recording_produces_video(tmp_path):
     env.close()
     assert out.stat().st_size > 1000
     reader = imageio.get_reader(str(out))
-    assert reader.get_meta_data()["fps"] == pytest.approx(env.cfg.fps)
+    meta = reader.get_meta_data()
+    assert meta["fps"] == pytest.approx(env.cfg.fps)
     assert reader.count_frames() == 3
+    # H.264: o formato aceito pelo WhatsApp (e por qualquer player).
+    assert meta["codec"].startswith("h264")
 
 
 def test_checkpoint_stores_episodes(tmp_path):

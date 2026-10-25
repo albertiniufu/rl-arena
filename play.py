@@ -44,7 +44,12 @@ def main():
             import imageio
         except ImportError as exc:
             raise SystemExit("Gravar vídeo requer: pip install imageio imageio-ffmpeg") from exc
-        video_writer = imageio.get_writer(args.record, fps=env.cfg.fps)
+        # H.264 + yuv420p + crf 23 + faststart: compatível com WhatsApp e
+        # outros players, com tamanho razoável (o padrão do imageio é crf 5,
+        # quase sem perdas — arquivos enormes).
+        video_writer = imageio.get_writer(
+            args.record, fps=env.cfg.fps, codec="libx264",
+            output_params=["-pix_fmt", "yuv420p", "-crf", "23", "-movflags", "+faststart"])
     # Sem --player, comportamento antigo: política gulosa do checkpoint DQN.
     player_policy = None
     if args.player == "human":

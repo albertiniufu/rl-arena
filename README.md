@@ -137,7 +137,7 @@ Para gravar a sessão em vídeo (a janela abre automaticamente, ou use `SDL_VIDE
 python play.py --player coins --opponent coins --record demonstracao.mp4
 ```
 
-O vídeo sai em 30fps com a resolução da arena (requer `imageio` e `imageio-ffmpeg`).
+O vídeo sai em 30fps com a resolução da arena, codificado em H.264 (`yuv420p`, crf 23, `faststart`) — compatível com WhatsApp e players comuns, com ~1–2 MB por episódio (requer `imageio` e `imageio-ffmpeg`).
 
 ## Visual (skins)
 
@@ -183,3 +183,4 @@ rl-arena/
 ├── requirements.txt
 └── README.md
 ```
+SDL_VIDEODRIVER=dummy python play.py --opponent coins --record demo.mp4 
