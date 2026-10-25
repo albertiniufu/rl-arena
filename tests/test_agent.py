@@ -2,7 +2,7 @@ import numpy as np
 import pytest
 
 from dqn.agent import DQNAgent
-from dqn.replay_buffer import ReplayBuffer
+from dqn.replay_buffer import PrioritizedReplayBuffer, ReplayBuffer
 from train import obs_to_image
 
 
@@ -142,6 +142,92 @@ def test_dueling_learn_smoke():
         agent.buffer.add(obs, action, 1.0, obs, False, False)
     loss = agent.learn()
     assert loss is not None
+
+
+def test_per_sample_favors_high_priority():
+    """Rank-based: prioridade alta vira rank 1 e domina a amostragem."""
+    buf = PrioritizedReplayBuffer(100)
+    # Sorteio usa o RNG global (semeado pelo train.py). Seed fixa deixa a
+    # contagem determinística; seed 1 dá ~139 vs ~8, representando o esperado.
+    np.random.seed(1)
+    obs = np.zeros((5, 20, 32), dtype=np.float32)
+    for i in range(20):
+        buf.add(obs, 0, float(i + 1), obs, False, False)
+    # Sem erro informado, todas as transições nascem com a mesma prioridade.
+    assert len(set(buf.priorities)) == 1
+    buf.update_priorities([3], [1000.0])  # índice 3 vira rank 1
+    out = buf.sample(500, n=1)
+    assert len(out) == 7  # s, a, r_n, ns, term, window, indices
+    s, a, r_n, ns, term, window, indices = out
+    assert indices.dtype == np.int64
+    assert len(indices) == 500
+    # O índice 17 ficou com rank 18 (peso 1/18): aparece bem menos.
+    count_high = int((indices == 3).sum())
+    count_low = int((indices == 17).sum())
+    assert count_high > 10 * count_low
+    # Consistência dos campos: com n=1, r_n é a recompensa da transição amostrada.
+    for j in range(8):
+        assert r_n[j] == pytest.approx(float(indices[j] + 1))
+        assert np.array_equal(s[j], obs)
+        assert np.array_equal(ns[j], obs)
+        assert window[j] == 1
+
+
+def test_per_sample_n_step_windows():
+    """O walk n-step do PER é idêntico ao do ReplayBuffer, sobre o snapshot."""
+    buf = PrioritizedReplayBuffer(10)
+    states = [np.full((2, 2), float(i)) for i in range(5)]
+    for i in range(4):
+        buf.add(states[i], i, float(i + 1), states[i + 1], False, False)
+    s, a, r_n, ns, term, window, indices = buf.sample(4, n=3, gamma=0.99)
+    assert window.dtype == np.int64
+    assert indices.dtype == np.int64
+    for j in range(4):
+        idx = int(indices[j])
+        # Sem terminais, a janela para só no fim do buffer.
+        expected_window = min(3, 4 - idx)
+        assert window[j] == expected_window
+        expected_r = sum(0.99 ** k * float(idx + k + 1) for k in range(expected_window))
+        assert r_n[j] == pytest.approx(expected_r)
+        assert a[j] == idx
+        assert np.array_equal(s[j], states[idx])
+        assert np.array_equal(ns[j], states[idx + expected_window])
+        assert term[j] == 0.0
+
+
+def test_per_update_priorities_and_new_default():
+    """update_priorities grava |erro| + 1e-6; add sem prioridade herda a máxima."""
+    buf = PrioritizedReplayBuffer(100)
+    obs = np.zeros((5, 20, 32), dtype=np.float32)
+    buf.add(obs, 0, 1.0, obs, False, False)
+    buf.add(obs, 1, 2.0, obs, False, False)
+    assert list(buf.priorities) == [1.0, 1.0]
+    buf.update_priorities([0], [0.5])
+    assert buf.priorities[0] == pytest.approx(0.5 + 1e-6)
+    buf.add(obs, 2, 3.0, obs, False, False)  # sem prioridade
+    assert buf.priorities[2] == pytest.approx(1.0)  # maior prioridade atual
+    assert len(buf) == 3
+
+
+def test_agent_per_learn_updates_priorities():
+    """Com per=True, learn() amostra com índices e reescreve as prioridades."""
+    # Seeds fixas: o sorteio do buffer e a init da rede ficam determinísticos
+    # e as duas transições são amostradas (índices [0, 1]).
+    import torch
+    np.random.seed(0)
+    torch.manual_seed(0)
+    agent = DQNAgent((5, 20, 32), 12, per=True, batch_size=2)
+    assert isinstance(agent.buffer, PrioritizedReplayBuffer)
+    assert isinstance(DQNAgent((5, 20, 32), 12).buffer, ReplayBuffer)
+    obs = np.zeros((5, 20, 32), dtype=np.float32)
+    for action in (0, 1):
+        agent.buffer.add(obs, action, 1.0, obs, False, False)
+    loss = agent.learn()
+    assert loss is not None
+    assert agent._last_indices is not None
+    assert len(agent._last_indices) == 2
+    # As prioridades deixaram de ser 1.0: foram trocadas por |erro| + 1e-6.
+    assert all(p != pytest.approx(1.0) for p in agent.buffer.priorities)
 
 
 def test_checkpoint_policy_uses_stacked_obs():

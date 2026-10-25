@@ -178,6 +178,8 @@ def parse_args(argv=None):
                     help="usa a cabeça dueling (V + vantagens centralizadas) nas redes")
     ap.add_argument("--no-double", action="store_false", dest="double", default=True,
                     help="desliga o Double DQN (ligado por padrão)")
+    ap.add_argument("--per", action="store_true",
+                    help="replay priorizado rank-based")
     return ap.parse_args(argv)
 
 
@@ -197,7 +199,8 @@ def main():
                    opponent_policy="random" if args.opponent == "auto" else args.opponent,
                    skin=args.skin)
     agent = DQNAgent(env.observation_space.shape, env.action_space.n,
-                     double=args.double, n_step=args.n_step, dueling=args.dueling)
+                     double=args.double, n_step=args.n_step, dueling=args.dueling,
+                     per=args.per)
     # O `auto` é criado antes do load para que a retomada já possa chamar
     # `init_from_disk` nele (carregar o melhor checkpoint como adversário).
     auto = (AutoOpponent(env, checkpoint_dir=ckpt_dir, dueling=args.dueling)

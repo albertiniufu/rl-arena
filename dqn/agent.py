@@ -3,7 +3,7 @@ import numpy as np
 import torch
 from torch import nn
 from .model import DQN
-from .replay_buffer import ReplayBuffer
+from .replay_buffer import PrioritizedReplayBuffer, ReplayBuffer
 
 def _td_targets(online, target, r_n, ns, term, gamma, window, double=True):
     """Alvo de TD para um batch amostrado do buffer (retornos n-step).
@@ -31,13 +31,13 @@ class DQNAgent:
     def __init__(self, obs_shape, n_actions=12, lr=1e-3, gamma=.99,
                  epsilon=1.0, epsilon_min=.05, epsilon_decay=.9995,
                  batch_size=64, target_update=500, buffer_size=50000, device=None,
-                 double=True, n_step=1, dueling=False):
+                 double=True, n_step=1, dueling=False, per=False):
         self.device = torch.device(device or ("cuda" if torch.cuda.is_available() else "cpu"))
         self.n_actions, self.gamma = n_actions, gamma
         self.epsilon, self.epsilon_min, self.epsilon_decay = epsilon, epsilon_min, epsilon_decay
         self.batch_size, self.target_update = batch_size, target_update
         self.double, self.n_step = double, n_step
-        self.dueling = dueling
+        self.dueling, self.per = dueling, per
         # Online e target precisam da mesma cabeça para o load_state_dict da
         # sincronização periódica casar as chaves.
         self.online = DQN(obs_shape, n_actions, dueling=dueling).to(self.device)
@@ -45,9 +45,13 @@ class DQNAgent:
         self.target.load_state_dict(self.online.state_dict())
         self.optimizer = torch.optim.Adam(self.online.parameters(), lr=lr)
         self.loss_fn = nn.SmoothL1Loss()
-        self.buffer = ReplayBuffer(buffer_size)
+        self.buffer = (PrioritizedReplayBuffer(buffer_size)
+                       if per else ReplayBuffer(buffer_size))
         self.steps = 0
         self.last_grad_norm = 0.0
+        # Índices do último sample() priorizado (None sem PER), expostos para
+        # inspeção/testes; o `learn()` os usa antes de qualquer outro `add`.
+        self._last_indices = None
 
     @torch.no_grad()
     def act(self, state, greedy=False):
@@ -67,8 +71,13 @@ class DQNAgent:
         # O batch_size é um piso: o sample() exige pelo menos isso.
         if len(self.buffer) < self.batch_size:
             return None
-        states, actions, r_n, next_states, term_np, window_np = self.buffer.sample(
+        sample = self.buffer.sample(
             self.batch_size, n=self.n_step, gamma=self.gamma)
+        if self.per:
+            # Replay priorizado devolve também as posições amostradas.
+            states, actions, r_n, next_states, term_np, window_np, indices = sample
+        else:
+            states, actions, r_n, next_states, term_np, window_np = sample
         s = torch.as_tensor(states, dtype=torch.float32, device=self.device)
         a = torch.as_tensor(actions, dtype=torch.int64, device=self.device).unsqueeze(1)
         r = torch.as_tensor(r_n, dtype=torch.float32, device=self.device)
@@ -79,6 +88,12 @@ class DQNAgent:
         target = _td_targets(self.online, self.target, r, ns, term,
                              self.gamma, window, self.double)
         loss = self.loss_fn(q, target)
+        if self.per:
+            # O erro de TD do batch vira a prioridade da próxima amostragem.
+            # Nenhum `add` aconteceu desde o sample, então os índices valem.
+            self.buffer.update_priorities(
+                indices, (target - q).detach().abs().cpu().numpy())
+            self._last_indices = indices
         self.optimizer.zero_grad(set_to_none=True)
         loss.backward()
         # clip_grad_norm_ devolve a norma total ANTES do clip.

@@ -124,6 +124,13 @@ def test_train_cli_double_and_n_step():
     assert parse_args(["--no-double"]).double is False
 
 
+def test_train_cli_per_flag():
+    from train import parse_args
+
+    assert parse_args([]).per is False
+    assert parse_args(["--per"]).per is True
+
+
 def test_budget_snapshots():
     from train import budget_snapshots
 
