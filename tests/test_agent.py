@@ -2,6 +2,7 @@ import numpy as np
 import pytest
 
 from dqn.agent import DQNAgent
+from dqn.replay_buffer import ReplayBuffer
 from train import epsilon_for_episode, obs_to_image
 
 
@@ -38,6 +39,60 @@ def test_obs_to_image_uses_last_frames():
     obs[-5:, 1, 1] = 1.0  # frame atual com jogador
     img = obs_to_image(obs)
     assert np.array_equal(img, obs_to_image(obs[-5:]))
+
+
+def test_sample_n_step():
+    """Retornos n-step: acumula γ^k·r_{t+k} e para na fronteira de episódio."""
+    buf = ReplayBuffer(10)
+    # 4 transições contíguas, sem terminais: r = 1, 2, 3, 4; estados s0..s4.
+    states = [np.full((2, 2), float(i)) for i in range(5)]
+    for i in range(4):
+        buf.add(states[i], i, float(i + 1), states[i + 1], False, False)
+    s, a, r_n, ns, term = buf.sample(4, n=3, gamma=0.99)
+    # A amostra do estado s0 percorre a janela completa de 3 passos.
+    j0 = next(j for j, st in enumerate(s) if np.array_equal(st, states[0]))
+    assert a[j0] == 0
+    assert r_n[j0] == pytest.approx(1 + 0.99 * 2 + 0.99**2 * 3)
+    assert np.array_equal(ns[j0], states[3])
+    assert term[j0] == 0.0
+    # Perto do fim do buffer, a janela para no último elemento.
+    j2 = next(j for j, st in enumerate(s) if np.array_equal(st, states[2]))
+    assert r_n[j2] == pytest.approx(3 + 0.99 * 4)
+    assert np.array_equal(ns[j2], states[4])
+
+    # Terminated na transição 1 clampa a janela e zera o bootstrap:
+    # ns/term vêm da transição terminal (reward incluído).
+    buf2 = ReplayBuffer(10)
+    for i in range(4):
+        buf2.add(states[i], i, float(i + 1), states[i + 1], i == 1, False)
+    s2, _, r_n2, ns2, term2 = buf2.sample(4, n=3, gamma=0.99)
+    j0 = next(j for j, st in enumerate(s2) if np.array_equal(st, states[0]))
+    assert r_n2[j0] == pytest.approx(1 + 0.99 * 2)
+    assert np.array_equal(ns2[j0], states[2])
+    assert term2[j0] == 1.0
+    # A transição terminal sorteada não acumula: r_n == r1, ns == s2.
+    j1 = next(j for j, st in enumerate(s2) if np.array_equal(st, states[1]))
+    assert r_n2[j1] == pytest.approx(2.0)
+    assert term2[j1] == 1.0
+
+    # Truncated também clampa, mas mantém o bootstrap (term == 0).
+    buf3 = ReplayBuffer(10)
+    for i in range(4):
+        buf3.add(states[i], i, float(i + 1), states[i + 1], False, i == 1)
+    s3, _, r_n3, ns3, term3 = buf3.sample(4, n=3, gamma=0.99)
+    j0 = next(j for j, st in enumerate(s3) if np.array_equal(st, states[0]))
+    assert r_n3[j0] == pytest.approx(1 + 0.99 * 2)
+    assert np.array_equal(ns3[j0], states[2])
+    assert term3[j0] == 0.0
+
+    # n=1 reproduz o comportamento antigo: r_n == r, ns == next_state, term == terminated.
+    s1_, a1_, r_n1, ns1_, term1_ = buf2.sample(4, n=1)
+    for j, st in enumerate(s1_):
+        i = int(st[0, 0])
+        assert a1_[j] == i
+        assert r_n1[j] == pytest.approx(float(i + 1))
+        assert np.array_equal(ns1_[j], states[i + 1])
+        assert term1_[j] == (1.0 if i == 1 else 0.0)
 
 
 def test_checkpoint_policy_uses_stacked_obs():

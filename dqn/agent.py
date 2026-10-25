@@ -44,7 +44,7 @@ class DQNAgent:
         # (o sample() exige pelo menos isso).
         if len(self.buffer) < max(self.warmup, self.batch_size):
             return None
-        states, actions, rewards, next_states, terminated, truncated = self.buffer.sample(self.batch_size)
+        states, actions, rewards, next_states, terminated = self.buffer.sample(self.batch_size)
         s = torch.as_tensor(states, dtype=torch.float32, device=self.device)
         a = torch.as_tensor(actions, dtype=torch.int64, device=self.device).unsqueeze(1)
         r = torch.as_tensor(rewards, dtype=torch.float32, device=self.device)
