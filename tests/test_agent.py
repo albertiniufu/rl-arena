@@ -302,6 +302,17 @@ def test_envs_validation_rejects_incompatible_flags():
     validate_train_args(parse_args(["--envs", "4", "--opponent", "random"]))
 
 
+def test_envs_gt_1_rejects_n_step_gt_1():
+    """Com workers concorrentes, a janela n-step do buffer atravessaria workers."""
+    with pytest.raises(SystemExit):
+        validate_train_args(parse_args(
+            ["--envs", "2", "--opponent", "random", "--n-step", "3"]))
+    # n-step 1 no vetor e n-step > 1 no loop histórico continuam aceitos.
+    validate_train_args(parse_args(
+        ["--envs", "2", "--opponent", "random", "--n-step", "1"]))
+    validate_train_args(parse_args(["--envs", "1", "--n-step", "3"]))
+
+
 def test_make_vector_env_validates_args():
     """make_vector_env rejeita n_envs inválido e adversário que não seja nome."""
     with pytest.raises(ValueError):

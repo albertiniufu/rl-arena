@@ -183,7 +183,8 @@ def parse_args(argv=None):
                     help="replay priorizado rank-based")
     ap.add_argument("--envs", type=int, default=1,
                     help="ambientes vetorizados na coleta (Fase 5; incompatível "
-                         "com --opponent auto, --render, --stats e --tensorboard)")
+                         "com --opponent auto, --render, --stats, --tensorboard "
+                         "e --n-step > 1)")
     return ap.parse_args(argv)
 
 
@@ -207,6 +208,8 @@ def validate_train_args(args):
          "a telemetria por episódio não mapeia em workers concorrentes"),
         ("--tensorboard", args.tensorboard,
          "a telemetria por episódio não mapeia em workers concorrentes"),
+        (f"--n-step {args.n_step}", args.n_step > 1,
+         "a janela n-step do replay anda por posições do deque e atravessaria workers"),
     ]
     for flag, used, reason in incompat:
         if used:
@@ -254,9 +257,16 @@ def _train_vectorized(args, cfg, agent, ckpt_dir, start_ep, last_ep, best, budge
     Cada passo do vetor coleta uma transição de cada worker e `learn()` roda a
     cada 4 passos do vetor. Os RNGs (`random`/`numpy`/`torch`) já foram
     semeados no `main`; o `reset(seed)` do VectorEnv semeia o worker `i` com
-    `seed + i`. Episódios são contados por `terminated | truncated` de cada
-    worker; como os workers correm em paralelo, o total pode passar de
-    `last_ep` em até `--envs - 1` episódios.
+    `seed + i`, e os autoresets seguintes continuam esses RNGs. Episódios são
+    contados por `terminated | truncated` de cada worker; como os workers
+    correm em paralelo, o total pode passar de `last_ep` em até
+    `--envs - 1` episódios.
+
+    Escalas com N workers: o `learn()` a cada 4 passos do vetor consome ~4N
+    transições por update (contra 1 no loop histórico de 1 env), e epsilon e
+    sincronização da target avançam por update — portanto, por transição,
+    ambos andam ~4N vezes mais devagar que no treino de 1 env. Isso é a
+    decisão da Fase 5 (K=4 mantido), não um schedule equivalente.
     """
     n_envs = args.envs
     log_path = Path("logs/training.csv")
