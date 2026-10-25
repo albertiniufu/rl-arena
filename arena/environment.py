@@ -87,6 +87,10 @@ class ArenaEnv(gym.Env):
             rng=self.np_random,
             self_character=self.engine.characters[index],
             player_character=self.engine.characters[0],
+            # Pilha do início do step: `_frames` só ganha o frame novo no fim
+            # de `step()`, então aqui é exatamente o que o DQN do adversário
+            # viu em treino (frames dos steps anteriores).
+            stacked_obs=self._stacked(),
         )
         return int(self.opponent_policy.act(ctx))
 

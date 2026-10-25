@@ -77,4 +77,7 @@ class CheckpointPolicy:
         self.agent = agent
 
     def act(self, ctx):
-        return int(self.agent.act(ctx.obs, greedy=True))
+        # Com frame stack, o DQN espera a pilha `(5 * frame_stack, H, W)`;
+        # sem stack, cai no frame único `ctx.obs` (comportamento histórico).
+        state = ctx.stacked_obs if ctx.stacked_obs is not None else ctx.obs
+        return int(self.agent.act(state, greedy=True))

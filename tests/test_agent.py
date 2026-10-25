@@ -38,3 +38,18 @@ def test_obs_to_image_uses_last_frames():
     obs[-5:, 1, 1] = 1.0  # frame atual com jogador
     img = obs_to_image(obs)
     assert np.array_equal(img, obs_to_image(obs[-5:]))
+
+
+def test_checkpoint_policy_uses_stacked_obs():
+    """Com frame stack, o adversário checkpoint age sobre a obs empilhada:
+    reset + step completam sem erro de shape na CNN."""
+    from arena.config import ArenaConfig
+    from arena.environment import ArenaEnv
+    from dqn.agent import CheckpointPolicy
+
+    agent = DQNAgent((20, 20, 32), 12)
+    env = ArenaEnv(ArenaConfig(frame_stack=4), opponent_policy=CheckpointPolicy(agent))
+    obs, _ = env.reset(seed=1)
+    assert obs.shape == (20, 20, 32)
+    next_obs, *_ = env.step(1)  # não pode estourar por shape no conv
+    assert next_obs.shape == (20, 20, 32)

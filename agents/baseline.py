@@ -13,7 +13,9 @@ import numpy as np
 class PolicyContext:
     """O que uma política pode observar em um passo.
 
-    `obs` é a grade semântica (5, H, W); `self_character`/`player_character`
+    `obs` é a grade semântica de um frame único (5, H, W); `stacked_obs` é a
+    pilha de frames `(5 * frame_stack, H, W)` que o DQN treinado vê (None
+    quando o ambiente não usa frame stack). `self_character`/`player_character`
     dão o estado exato em pixels (personagem controlado e jogador).
     `rng` é o gerador do ambiente — use-o para toda aleatoriedade da política,
     assim o treino continua reproduzível com seeds.
@@ -22,6 +24,7 @@ class PolicyContext:
     rng: np.random.Generator
     self_character: object = None
     player_character: object = None
+    stacked_obs: np.ndarray = None
 
 
 class RandomPolicy:
