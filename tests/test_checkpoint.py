@@ -14,3 +14,19 @@ def test_checkpoint_lightweight(tmp_path):
     agent2 = DQNAgent((5, 32, 20), 12)
     load_checkpoint(path, agent2, resume=True)  # sem env
     assert agent2.steps == agent.steps
+
+
+def test_evaluate_opponent_flag():
+    from evaluate import parse_args
+
+    assert parse_args([]).opponent == "rule"
+    for name in ("rule", "random", "coins"):
+        assert parse_args(["--opponent", name]).opponent == name
+
+
+def test_budget_snapshots():
+    from train import budget_snapshots
+
+    assert budget_snapshots(300) == {50, 100, 150, 300}
+    assert budget_snapshots(100) == {50, 100}
+    assert budget_snapshots(49) == set()

@@ -18,6 +18,15 @@ def resolve_resume_path(resume, checkpoint_dir):
     return path
 
 
+def budget_snapshots(total_episodes):
+    """Episódios (absolutos) em que vale salvar um snapshot de orçamento.
+
+    Os orçamentos são pontos fixos de episódios treinados (50/100/150/300),
+    usados no protocolo de A/B para comparar fases no mesmo orçamento.
+    """
+    return {b for b in (50, 100, 150, 300) if b <= total_episodes}
+
+
 def obs_to_image(obs):
     """Grade semântica (5, H, W) -> imagem RGB (H, W, 3) para o TensorBoard.
 
@@ -145,6 +154,9 @@ def main():
         if auto is not None:
             auto.init_from_disk()
     last_ep = start_ep + args.episodes - 1
+    # Orçamentos contam episódios absolutos (retomada continua a numeração),
+    # então o snapshot compara fases com o mesmo total de treino.
+    budgets = budget_snapshots(last_ep)
     Path("logs").mkdir(exist_ok=True)
     ckpt_dir.mkdir(exist_ok=True)
     log_path = Path("logs/training.csv")
@@ -248,6 +260,11 @@ def main():
                 save_checkpoint(ckpt_dir / "latest.pt", agent, cfg,
                                 {"episode": ep, "reward": total, "episodes_done": ep, "best_reward": best},
                                 episodes=ep)
+            if ep in budgets:
+                # Snapshot de orçamento só com pesos: fica fora do glob
+                # não-recursivo do `auto` e serve ao protocolo de A/B.
+                save_checkpoint(ckpt_dir / "budget" / f"ep{ep:03d}.pt", agent, cfg,
+                                {"episode": ep}, episodes=ep)
             print(f"episode={ep} reward={total:.2f} coins={row['coins']} deaths={row['deaths']} epsilon={agent.epsilon:.3f}")
     if stats_f is not None:
         stats_f.close()

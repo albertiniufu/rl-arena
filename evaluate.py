@@ -7,17 +7,25 @@ from arena.skins import list_skins
 from dqn.agent import DQNAgent
 from dqn.checkpoint import load_checkpoint
 
-def main():
+def parse_args(argv=None):
+    """Argumentos da CLI; separado de `main` para poder ser testado."""
     ap = argparse.ArgumentParser()
     ap.add_argument("--checkpoint", default="checkpoints/best.pt")
     ap.add_argument("--episodes", type=int, default=20)
     ap.add_argument("--render", action="store_true")
     ap.add_argument("--seed", type=int, default=1000)
+    ap.add_argument("--opponent", choices=["rule", "random", "coins"], default="rule",
+                    help="política do adversário na avaliação (padrão: rule)")
     ap.add_argument("--skin", choices=list_skins(), default=None,
                     help="visual do renderer (arena/renderer_<skin>.py; padrão: clássico)")
-    args = ap.parse_args()
+    return ap.parse_args(argv)
+
+
+def main():
+    args = parse_args()
     cfg = ArenaConfig()
-    env = ArenaEnv(cfg, render_mode="human" if args.render else None, skin=args.skin)
+    env = ArenaEnv(cfg, render_mode="human" if args.render else None,
+                   opponent_policy=args.opponent, skin=args.skin)
     obs, _ = env.reset(seed=args.seed)
     agent = DQNAgent(env.observation_space.shape, env.action_space.n)
     load_checkpoint(args.checkpoint, agent, resume=False)
