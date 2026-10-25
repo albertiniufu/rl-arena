@@ -1,0 +1,6 @@
+# Dependências para treinar/avaliar no Colab.
+# O PyTorch com CUDA já vem na imagem do Colab; não reinstale aqui.
+numpy>=1.26
+gymnasium>=1.0
+tensorboard>=2.14
+pytest>=8.0

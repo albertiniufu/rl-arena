@@ -9,6 +9,9 @@ __pycache__/
 *.pyc
 .pytest_cache/
 
+# Pacote para o Colab (gerado por colab/build_zip.sh)
+dist/
+
 # Gravações de vídeo
 *.mp4
 # ... exceto o exemplo exibido no README
