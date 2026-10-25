@@ -36,6 +36,16 @@ def test_train_frame_stack_and_skip_flags():
     assert args.frame_skip == 3
 
 
+def test_train_cli_double_and_n_step():
+    from train import parse_args
+
+    defaults = parse_args([])
+    assert defaults.n_step == 1
+    assert defaults.double is True  # Double DQN ligado por padrão
+    assert parse_args(["--n-step", "3"]).n_step == 3
+    assert parse_args(["--no-double"]).double is False
+
+
 def test_budget_snapshots():
     from train import budget_snapshots
 

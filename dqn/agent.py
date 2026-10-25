@@ -5,16 +5,35 @@ from torch import nn
 from .model import DQN
 from .replay_buffer import ReplayBuffer
 
+def _td_targets(online, target, r_n, ns, term, gamma, double=True):
+    """Alvo de TD para um batch amostrado do buffer (retornos n-step).
+
+    `r_n` já é o retorno n-step descontado, então gamma não incide de novo
+    sobre ele. Com Double DQN (`double=True`), a ação é escolhida pela rede
+    online e o valor vem da target; sem double, usa o máximo da target (DQN
+    clássico). `term == 1` só para `terminated` verdadeiro: truncamento
+    encerra a coleta mas não é estado terminal, então o bootstrap é mantido.
+    """
+    with torch.no_grad():
+        if double:
+            actions = online(ns).argmax(dim=1, keepdim=True)
+            next_q = target(ns).gather(1, actions).squeeze(1)
+        else:
+            next_q = target(ns).max(dim=1).values
+        return r_n + gamma * (1.0 - term) * next_q
+
+
 class DQNAgent:
     def __init__(self, obs_shape, n_actions=12, lr=1e-3, gamma=.99,
                  epsilon=1.0, epsilon_min=.1,
                  batch_size=64, target_update=500, buffer_size=50000, device=None,
-                 warmup=1000):
+                 warmup=1000, double=True, n_step=1):
         self.device = torch.device(device or ("cuda" if torch.cuda.is_available() else "cpu"))
         self.n_actions, self.gamma = n_actions, gamma
         self.epsilon, self.epsilon_min = epsilon, epsilon_min
         self.batch_size, self.target_update = batch_size, target_update
         self.warmup = warmup
+        self.double, self.n_step = double, n_step
         self.online = DQN(obs_shape, n_actions).to(self.device)
         self.target = DQN(obs_shape, n_actions).to(self.device)
         self.target.load_state_dict(self.online.state_dict())
@@ -44,17 +63,16 @@ class DQNAgent:
         # (o sample() exige pelo menos isso).
         if len(self.buffer) < max(self.warmup, self.batch_size):
             return None
-        states, actions, rewards, next_states, terminated = self.buffer.sample(self.batch_size)
+        states, actions, r_n, next_states, term_np = self.buffer.sample(
+            self.batch_size, n=self.n_step, gamma=self.gamma)
         s = torch.as_tensor(states, dtype=torch.float32, device=self.device)
         a = torch.as_tensor(actions, dtype=torch.int64, device=self.device).unsqueeze(1)
-        r = torch.as_tensor(rewards, dtype=torch.float32, device=self.device)
+        r = torch.as_tensor(r_n, dtype=torch.float32, device=self.device)
         ns = torch.as_tensor(next_states, dtype=torch.float32, device=self.device)
-        term = torch.as_tensor(terminated, dtype=torch.float32, device=self.device)
-        # Truncation ends collection but is not a true terminal state, so bootstrap is retained.
+        term = torch.as_tensor(term_np, dtype=torch.float32, device=self.device)
         q = self.online(s).gather(1, a).squeeze(1)
-        with torch.no_grad():
-            next_q = self.target(ns).max(dim=1).values
-            target = r + self.gamma * (1.0 - term) * next_q
+        target = _td_targets(self.online, self.target, r, ns, term,
+                             self.gamma, self.double)
         loss = self.loss_fn(q, target)
         self.optimizer.zero_grad(set_to_none=True)
         loss.backward()

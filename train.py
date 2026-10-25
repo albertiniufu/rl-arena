@@ -164,6 +164,10 @@ def parse_args(argv=None):
                     help="frames empilhados na observação (arena/environment.py)")
     ap.add_argument("--frame-skip", type=int, default=1,
                     help="repetições da ação por step do agente")
+    ap.add_argument("--n-step", type=int, default=1,
+                    help="retornos n-step no replay buffer")
+    ap.add_argument("--no-double", action="store_false", dest="double", default=True,
+                    help="desliga o Double DQN (ligado por padrão)")
     return ap.parse_args(argv)
 
 
@@ -182,7 +186,8 @@ def main():
     env = ArenaEnv(cfg, render_mode="human" if args.render else None,
                    opponent_policy="random" if args.opponent == "auto" else args.opponent,
                    skin=args.skin)
-    agent = DQNAgent(env.observation_space.shape, env.action_space.n)
+    agent = DQNAgent(env.observation_space.shape, env.action_space.n,
+                     double=args.double, n_step=args.n_step)
     # O `auto` é criado antes do load para que a retomada já possa chamar
     # `init_from_disk` nele (carregar o melhor checkpoint como adversário).
     auto = AutoOpponent(env, checkpoint_dir=ckpt_dir) if args.opponent == "auto" else None

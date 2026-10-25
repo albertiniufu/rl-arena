@@ -95,6 +95,42 @@ def test_sample_n_step():
         assert term1_[j] == (1.0 if i == 1 else 0.0)
 
 
+def test_td_targets_double():
+    """Alvo de TD: com double, a ação vem da online e o valor da target.
+
+    Redes minúsculas e fixas: a online prefere a ação 2 em `ns`, enquanto o
+    máximo da target está na ação 3 — assim as duas variantes se distinguem.
+    A segunda amostra é terminal (term == 1) e não pode bootstrapar.
+    """
+    import torch
+    from torch import nn
+    from dqn.agent import _td_targets
+
+    class FixedQ(nn.Module):
+        """Devolve Q-valores fixos (uma linha) para qualquer entrada."""
+        def __init__(self, values):
+            super().__init__()
+            self.register_buffer("values", torch.tensor(values, dtype=torch.float32))
+
+        def forward(self, x):
+            return self.values.expand(x.shape[0], -1)
+
+    online = FixedQ([0.0, 1.0, 5.0, 2.0])  # argmax = ação 2
+    target = FixedQ([0.0, 0.5, 3.0, 4.0])  # max = ação 3 (4.0)
+    ns = torch.zeros(2, 3)
+    r_n = torch.tensor([1.0, 2.0])  # já descontado pelo buffer: não descontar de novo
+    term = torch.tensor([0.0, 1.0])
+    gamma = 0.9
+
+    double = _td_targets(online, target, r_n, ns, term, gamma, double=True)
+    # Ação 2 escolhida pela online: 1.0 + 0.9 * target[2] = 3.7.
+    assert torch.allclose(double, torch.tensor([1.0 + 0.9 * 3.0, 2.0]))
+
+    vanilla = _td_targets(online, target, r_n, ns, term, gamma, double=False)
+    # Sem double: 1.0 + 0.9 * max(target) = 4.6.
+    assert torch.allclose(vanilla, torch.tensor([1.0 + 0.9 * 4.0, 2.0]))
+
+
 def test_checkpoint_policy_uses_stacked_obs():
     """Com frame stack, o adversário checkpoint age sobre a obs empilhada:
     reset + step completam sem erro de shape na CNN."""
