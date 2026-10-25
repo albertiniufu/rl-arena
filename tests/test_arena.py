@@ -13,6 +13,7 @@ os.environ.setdefault("SDL_AUDIODRIVER", "dummy")
 from agents.baseline import CoinRulePolicy, PolicyContext, PushRulePolicy, RandomPolicy, make_policy
 from arena.environment import ArenaEnv
 from arena.config import ArenaConfig
+from arena.vector import make_vector_env
 from dqn.agent import DQNAgent
 from dqn.checkpoint import save_checkpoint, load_checkpoint
 
@@ -25,6 +26,42 @@ def test_reset_step_observation():
     assert env.observation_space.contains(obs)
     assert isinstance(reward, float)
     env.close()
+
+def test_vector_env_same_seed_reproducible_across_autoreset():
+    """Mesmo seed => corridas idênticas mesmo atravessando autoresets.
+
+    O reset inicial do VectorEnv semeia o worker `i` com `seed + i`, mas o
+    autoreset (NEXT_STEP) chama `reset()` sem seed. O engine precisa continuar
+    o RNG existente nesse caso; se ele fosse re-semeado com entropia, o
+    segundo episódio de cada worker divergiria entre duas corridas iguais.
+    """
+    cfg = ArenaConfig(episode_seconds=0.2)  # ~7 steps por episódio (fps=30)
+
+    def run():
+        venv = make_vector_env(2, cfg, "random", asynchronous=False)
+        try:
+            obs, _ = venv.reset(seed=7)
+            # A cópia é necessária: o passo seguinte pode sobrescrever o array.
+            obs_trace, rew_trace = [obs.copy()], []
+            truncations = np.zeros(2, dtype=int)  # uma por worker
+            # Dois episódios por worker: cada worker passa por 2 autoresets.
+            for _ in range(200):
+                if truncations.sum() >= 4:
+                    break
+                obs, rew, term, trunc, _ = venv.step(np.zeros(2, dtype=np.int64))
+                obs_trace.append(obs.copy())
+                rew_trace.append(rew.copy())
+                truncations += trunc.astype(int)
+            assert truncations.sum() >= 4, "os workers não truncaram o esperado"
+            return np.stack(obs_trace), np.stack(rew_trace)
+        finally:
+            venv.close()
+
+    obs_a, rew_a = run()
+    obs_b, rew_b = run()
+    assert np.array_equal(obs_a, obs_b)
+    assert np.array_equal(rew_a, rew_b)
+
 
 def test_frame_stack_observation():
     env = ArenaEnv(ArenaConfig(frame_stack=4))

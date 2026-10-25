@@ -38,7 +38,13 @@ class ArenaEngine:
         self.sim_time = 0.0
 
     def reset(self, seed=None):
-        self.rng = np.random.default_rng(seed)
+        # Sem seed, continua o RNG existente em vez de criar outro com entropia:
+        # o autoreset do VectorEnv chama reset() sem seed, e re-semear ali
+        # quebraria a reprodutibilidade a partir do 2º episódio de cada worker.
+        # (No __init__ o RNG já nasce aleatório, então um reset sem seed num
+        # engine recém-criado continua aleatório como antes.)
+        if seed is not None:
+            self.rng = np.random.default_rng(seed)
         self.sim_time = 0.0
         self.characters = [
             Character(90, 320),
