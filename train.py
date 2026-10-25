@@ -141,7 +141,8 @@ class AutoOpponent:
             return make_policy(pick)
         return CheckpointPolicy(self.checkpoint_agent)
 
-def main():
+def parse_args(argv=None):
+    """Argumentos da CLI; separado de `main` para poder ser testado."""
     ap = argparse.ArgumentParser()
     ap.add_argument("--episodes", type=int, default=300)
     ap.add_argument("--render", action="store_true")
@@ -159,13 +160,22 @@ def main():
                          "logs/runs/seed<N> (abra com: tensorboard --logdir logs/runs)")
     ap.add_argument("--skin", choices=list_skins(), default=None,
                     help="visual do renderer (arena/renderer_<skin>.py; padrão: clássico)")
-    args = ap.parse_args()
+    ap.add_argument("--frame-stack", type=int, default=1,
+                    help="frames empilhados na observação (arena/environment.py)")
+    ap.add_argument("--frame-skip", type=int, default=1,
+                    help="repetições da ação por step do agente")
+    return ap.parse_args(argv)
+
+
+def main():
+    args = parse_args()
     # Os RNGs globais precisam ser semeados para o treino ser reproduzível:
     # a exploração usa o módulo `random` e o buffer amostra com `random.sample`.
     random.seed(args.seed)
     np.random.seed(args.seed)
     torch.manual_seed(args.seed)
     cfg = ArenaConfig()
+    cfg.frame_stack, cfg.frame_skip = args.frame_stack, args.frame_skip
     ckpt_dir = Path(args.checkpoint_dir)
     resume_path = resolve_resume_path(args.resume, ckpt_dir) if args.resume else None
     # `auto` é um currículo gerenciado pelo AutoOpponent; o env inicia com random.

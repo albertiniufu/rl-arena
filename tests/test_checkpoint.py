@@ -25,6 +25,17 @@ def test_evaluate_opponent_flag():
         assert parse_args(["--opponent", name]).opponent == name
 
 
+def test_train_frame_stack_and_skip_flags():
+    from train import parse_args
+
+    defaults = parse_args([])
+    assert defaults.frame_stack == 1
+    assert defaults.frame_skip == 1
+    args = parse_args(["--frame-stack", "4", "--frame-skip", "3"])
+    assert args.frame_stack == 4
+    assert args.frame_skip == 3
+
+
 def test_budget_snapshots():
     from train import budget_snapshots
 
