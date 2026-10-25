@@ -55,8 +55,10 @@ def _try_load_checkpoint(path, agent, frame_stack=None):
     Um `.pt` de outra arquitetura (ou corrompido) no diretório de checkpoints
     não pode quebrar o treino do adversário `auto`: o arquivo é pulado.
     Com `frame_stack` informado, checkpoints gravados com outro valor são
-    pulados antes do load: a arquitetura é a mesma (o `load_state_dict`
-    passaria), e o erro de shape só apareceria no forward.
+    pulados antes do load. O motivo não é só a mensagem de erro: como a
+    primeira conv recebe `5 * frame_stack` canais, o `load_state_dict`
+    estoura no meio e deixa os tensores anteriores já sobrescritos — pular
+    antes evita esse carregamento parcial de pesos incompatíveis.
     """
     try:
         if frame_stack is not None:

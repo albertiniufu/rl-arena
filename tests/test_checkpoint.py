@@ -40,8 +40,9 @@ def test_try_load_checkpoint_skips_frame_stack_mismatch(tmp_path):
     path = tmp_path / "stacked.pt"
     save_checkpoint(path, agent, ArenaConfig(frame_stack=4))
     fresh = DQNAgent((5, 32, 20), 12)
-    # O state_dict carregaria (mesma arquitetura); o skip evita o erro de
-    # shape só no forward, quando a obs empilhada não casar.
+    # Com stack diferente, a primeira conv tem outro número de canais: o
+    # load estouraria no meio e deixaria pesos parcialmente sobrescritos.
+    # O skip acontece antes, com aviso, sem tocar no agente.
     with pytest.warns(UserWarning):
         assert _try_load_checkpoint(path, fresh, frame_stack=1) is False
     assert _try_load_checkpoint(path, fresh, frame_stack=4) is True
