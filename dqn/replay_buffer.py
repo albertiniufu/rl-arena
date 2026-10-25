@@ -9,24 +9,30 @@ class ReplayBuffer:
         self.data.append((np.array(state, copy=True), int(action), float(reward),
                          np.array(next_state, copy=True), bool(terminated), bool(truncated)))
     def sample(self, batch_size, n=1, gamma=0.99):
-        """Sorteia transições e devolve retornos n-step `(s, a, r_n, ns, term)`.
+        """Sorteia transições e devolve retornos n-step
+        `(s, a, r_n, ns, term, window)`.
 
         Para cada índice sorteado, acumula `r_n = Σ_{k=0..n-1} γ^k·r_{t+k}`
         caminhando até `n` posições à frente no deque; a janela para na
         fronteira de episódio (`terminated` ou `truncated`) e `ns`/`term` vêm
-        da transição onde parou. Com `n=1`, o comportamento é o histórico:
-        `r_n == r`, `ns == next_state` e `term == terminated`.
+        da transição onde parou. `window` é o número de transições realmente
+        acumuladas (1..n, menor que `n` quando a janela para em terminal,
+        truncamento ou no fim do buffer), usado para descontar o bootstrap
+        por `γ**window`. Com `n=1`, o comportamento é o histórico:
+        `r_n == r`, `ns == next_state`, `term == terminated` e `window == 1`.
         """
         idxs = random.sample(range(len(self.data)), batch_size)
-        s, a, r_n, ns, term = [], [], [], [], []
+        s, a, r_n, ns, term, window = [], [], [], [], [], []
         for i in idxs:
             state, action = self.data[i][0], self.data[i][1]
             reward = 0.0
+            length = 0
             for k in range(n):
                 if i + k >= len(self.data):
                     break  # fim do buffer: fica com a última transição visitada
                 _, _, r, next_state, terminated, truncated = self.data[i + k]
                 reward += (gamma ** k) * r
+                length += 1
                 if terminated or truncated:
                     break  # não atravessa fronteira de episódio
             s.append(state)
@@ -34,8 +40,10 @@ class ReplayBuffer:
             r_n.append(reward)
             ns.append(next_state)
             term.append(terminated)
+            window.append(length)
         return (np.stack(s), np.asarray(a), np.asarray(r_n, dtype=np.float32),
-                np.stack(ns), np.asarray(term, dtype=np.float32))
+                np.stack(ns), np.asarray(term, dtype=np.float32),
+                np.asarray(window, dtype=np.int64))
     def __len__(self):
         return len(self.data)
 

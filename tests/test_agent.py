@@ -48,51 +48,59 @@ def test_sample_n_step():
     states = [np.full((2, 2), float(i)) for i in range(5)]
     for i in range(4):
         buf.add(states[i], i, float(i + 1), states[i + 1], False, False)
-    s, a, r_n, ns, term = buf.sample(4, n=3, gamma=0.99)
+    s, a, r_n, ns, term, window = buf.sample(4, n=3, gamma=0.99)
+    assert window.dtype == np.int64
     # A amostra do estado s0 percorre a janela completa de 3 passos.
     j0 = next(j for j, st in enumerate(s) if np.array_equal(st, states[0]))
     assert a[j0] == 0
     assert r_n[j0] == pytest.approx(1 + 0.99 * 2 + 0.99**2 * 3)
     assert np.array_equal(ns[j0], states[3])
     assert term[j0] == 0.0
+    assert window[j0] == 3
     # Perto do fim do buffer, a janela para no último elemento.
     j2 = next(j for j, st in enumerate(s) if np.array_equal(st, states[2]))
     assert r_n[j2] == pytest.approx(3 + 0.99 * 4)
     assert np.array_equal(ns[j2], states[4])
+    assert window[j2] == 2  # existem só as transições 2 e 3 à frente
 
     # Terminated na transição 1 clampa a janela e zera o bootstrap:
     # ns/term vêm da transição terminal (reward incluído).
     buf2 = ReplayBuffer(10)
     for i in range(4):
         buf2.add(states[i], i, float(i + 1), states[i + 1], i == 1, False)
-    s2, _, r_n2, ns2, term2 = buf2.sample(4, n=3, gamma=0.99)
+    s2, _, r_n2, ns2, term2, window2 = buf2.sample(4, n=3, gamma=0.99)
     j0 = next(j for j, st in enumerate(s2) if np.array_equal(st, states[0]))
     assert r_n2[j0] == pytest.approx(1 + 0.99 * 2)
     assert np.array_equal(ns2[j0], states[2])
     assert term2[j0] == 1.0
+    assert window2[j0] == 2  # a janela inclui a transição terminal
     # A transição terminal sorteada não acumula: r_n == r1, ns == s2.
     j1 = next(j for j, st in enumerate(s2) if np.array_equal(st, states[1]))
     assert r_n2[j1] == pytest.approx(2.0)
     assert term2[j1] == 1.0
+    assert window2[j1] == 1
 
     # Truncated também clampa, mas mantém o bootstrap (term == 0).
     buf3 = ReplayBuffer(10)
     for i in range(4):
         buf3.add(states[i], i, float(i + 1), states[i + 1], False, i == 1)
-    s3, _, r_n3, ns3, term3 = buf3.sample(4, n=3, gamma=0.99)
+    s3, _, r_n3, ns3, term3, window3 = buf3.sample(4, n=3, gamma=0.99)
     j0 = next(j for j, st in enumerate(s3) if np.array_equal(st, states[0]))
     assert r_n3[j0] == pytest.approx(1 + 0.99 * 2)
     assert np.array_equal(ns3[j0], states[2])
     assert term3[j0] == 0.0
+    assert window3[j0] == 2
 
-    # n=1 reproduz o comportamento antigo: r_n == r, ns == next_state, term == terminated.
-    s1_, a1_, r_n1, ns1_, term1_ = buf2.sample(4, n=1)
+    # n=1 reproduz o comportamento antigo: r_n == r, ns == next_state,
+    # term == terminated e a janela tem sempre 1 transição.
+    s1_, a1_, r_n1, ns1_, term1_, window1_ = buf2.sample(4, n=1)
     for j, st in enumerate(s1_):
         i = int(st[0, 0])
         assert a1_[j] == i
         assert r_n1[j] == pytest.approx(float(i + 1))
         assert np.array_equal(ns1_[j], states[i + 1])
         assert term1_[j] == (1.0 if i == 1 else 0.0)
+        assert window1_[j] == 1
 
 
 def test_td_targets_double():
@@ -100,7 +108,8 @@ def test_td_targets_double():
 
     Redes minúsculas e fixas: a online prefere a ação 2 em `ns`, enquanto o
     máximo da target está na ação 3 — assim as duas variantes se distinguem.
-    A segunda amostra é terminal (term == 1) e não pode bootstrapar.
+    O bootstrap desconta por `gamma ** window` (janela real da amostra) e a
+    segunda amostra é terminal (term == 1), então não pode bootstrapar.
     """
     import torch
     from torch import nn
@@ -117,18 +126,23 @@ def test_td_targets_double():
 
     online = FixedQ([0.0, 1.0, 5.0, 2.0])  # argmax = ação 2
     target = FixedQ([0.0, 0.5, 3.0, 4.0])  # max = ação 3 (4.0)
-    ns = torch.zeros(2, 3)
-    r_n = torch.tensor([1.0, 2.0])  # já descontado pelo buffer: não descontar de novo
-    term = torch.tensor([0.0, 1.0])
+    ns = torch.zeros(3, 3)
+    r_n = torch.tensor([1.0, 2.0, 3.0])  # já descontado pelo buffer: não descontar de novo
+    term = torch.tensor([0.0, 1.0, 0.0])
+    window = torch.tensor([3, 2, 1], dtype=torch.int64)  # comprimento real da janela
     gamma = 0.9
 
-    double = _td_targets(online, target, r_n, ns, term, gamma, double=True)
-    # Ação 2 escolhida pela online: 1.0 + 0.9 * target[2] = 3.7.
-    assert torch.allclose(double, torch.tensor([1.0 + 0.9 * 3.0, 2.0]))
+    double = _td_targets(online, target, r_n, ns, term, gamma, window=window, double=True)
+    # Janela completa (k=3): 1.0 + 0.9**3 * target[2].
+    # Amostra terminal (term=1): bootstrap zerado, sobra r_n.
+    # Janela curta (k=1): 3.0 + 0.9**1 * target[2].
+    assert torch.allclose(double, torch.tensor([
+        1.0 + 0.9**3 * 3.0, 2.0, 3.0 + 0.9 * 3.0]))
 
-    vanilla = _td_targets(online, target, r_n, ns, term, gamma, double=False)
-    # Sem double: 1.0 + 0.9 * max(target) = 4.6.
-    assert torch.allclose(vanilla, torch.tensor([1.0 + 0.9 * 4.0, 2.0]))
+    vanilla = _td_targets(online, target, r_n, ns, term, gamma, window=window, double=False)
+    # Sem double: o valor vem do máximo da target (4.0).
+    assert torch.allclose(vanilla, torch.tensor([
+        1.0 + 0.9**3 * 4.0, 2.0, 3.0 + 0.9 * 4.0]))
 
 
 def test_checkpoint_policy_uses_stacked_obs():
