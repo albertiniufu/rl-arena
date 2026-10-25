@@ -61,6 +61,24 @@ class DQNAgent:
         return int(self.online(x).argmax(dim=1).item())
 
     @torch.no_grad()
+    def act_batch(self, states, greedy=False):
+        """Ações para um lote de estados, uma por linha (int64, shape `(n,)`).
+
+        Mesma semântica de `act`: com `greedy=True`, argmax por linha; sem
+        greedy, cada linha troca a ação pela aleatória com probabilidade
+        `epsilon`, usando o módulo `random` global (como em `act`, o RNG é
+        semeado pelo `train.py`).
+        """
+        x = torch.as_tensor(np.asarray(states), dtype=torch.float32,
+                            device=self.device)
+        actions = self.online(x).argmax(dim=1).cpu().numpy().astype(np.int64)
+        if not greedy:
+            for i in range(actions.shape[0]):
+                if random.random() < self.epsilon:
+                    actions[i] = random.randrange(self.n_actions)
+        return actions
+
+    @torch.no_grad()
     def q_stats(self, state):
         """(média, máximo) dos Q-valores da rede online para um estado."""
         x = torch.as_tensor(np.asarray(state), dtype=torch.float32, device=self.device).unsqueeze(0)

@@ -8,6 +8,10 @@ class ReplayBuffer:
     def add(self, state, action, reward, next_state, terminated, truncated):
         self.data.append((np.array(state, copy=True), int(action), float(reward),
                          np.array(next_state, copy=True), bool(terminated), bool(truncated)))
+    def add_batch(self, transitions):
+        """Adiciona transições em ordem; cada item é uma 6-tupla aceita por `add`."""
+        for transition in transitions:
+            self.add(*transition)
     def sample(self, batch_size, n=1, gamma=0.99):
         """Sorteia transições e devolve retornos n-step
         `(s, a, r_n, ns, term, window)`.
@@ -101,6 +105,15 @@ class PrioritizedReplayBuffer:
         if priority is None:
             priority = max(self.priorities) if self.priorities else 1.0
         self.priorities.append(float(priority))
+
+    def add_batch(self, transitions):
+        """Adiciona transições em ordem; cada item é uma 6-tupla aceita por `add`.
+
+        Sem prioridade explícita, cada transição herda a maior prioridade
+        atual (o default de `add`).
+        """
+        for transition in transitions:
+            self.add(*transition)
 
     def sample(self, batch_size, n=1, gamma=0.99):
         """Sorteia por rank e devolve retornos n-step e os índices amostrados

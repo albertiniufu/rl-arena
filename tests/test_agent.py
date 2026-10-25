@@ -1,9 +1,11 @@
 import numpy as np
 import pytest
 
+from arena.config import ArenaConfig
+from arena.vector import make_vector_env
 from dqn.agent import DQNAgent
 from dqn.replay_buffer import PrioritizedReplayBuffer, ReplayBuffer
-from train import obs_to_image
+from train import obs_to_image, parse_args, validate_train_args
 
 
 def test_obs_to_image_uses_last_frames():
@@ -228,6 +230,84 @@ def test_agent_per_learn_updates_priorities():
     assert len(agent._last_indices) == 2
     # As prioridades deixaram de ser 1.0: foram trocadas por |erro| + 1e-6.
     assert all(p != pytest.approx(1.0) for p in agent.buffer.priorities)
+
+
+def test_vector_env_and_act_batch():
+    """VectorEnv síncrono (sem subprocessos) e ações em lote com shapes reais."""
+    venv = make_vector_env(2, ArenaConfig(), "random", asynchronous=False)
+    try:
+        obs, _ = venv.reset(seed=7)
+        assert obs.shape == (2, 5, 20, 32)
+        agent = DQNAgent((5, 20, 32), 12)
+        acts = agent.act_batch(obs, greedy=True)
+        assert acts.shape == (2,)
+        assert np.issubdtype(acts.dtype, np.integer)
+        obs2, rew, term, trunc, info = venv.step(acts)
+        assert obs2.shape == (2, 5, 20, 32)
+        assert rew.shape == (2,)
+    finally:
+        venv.close()
+
+
+def test_add_batch_both_buffers():
+    """add_batch adiciona em ordem nos dois buffers; PER usa a prioridade padrão."""
+    obs = np.zeros((5, 20, 32), dtype=np.float32)
+    transitions = [(obs, i, float(i), obs, False, False) for i in range(3)]
+    for cls in (ReplayBuffer, PrioritizedReplayBuffer):
+        buf = cls(10)
+        buf.add_batch(transitions)
+        assert len(buf) == 3
+    per = PrioritizedReplayBuffer(10)
+    per.add_batch(transitions)
+    # Sem prioridade explícita, cada transição herda a maior prioridade atual (1.0).
+    assert list(per.priorities) == [1.0, 1.0, 1.0]
+    sample = per.sample(3, n=1)
+    assert len(sample) == 7  # s, a, r_n, ns, term, window, indices
+    indices = sample[-1]
+    assert indices.dtype == np.int64
+    assert ((indices >= 0) & (indices < 3)).all()
+
+
+def test_act_batch_greedy_matches_act():
+    """greedy ignora o epsilon (1.0) e escolhe a mesma ação que act()."""
+    agent = DQNAgent((5, 20, 32), 12, epsilon=1.0)
+    state = np.zeros((5, 20, 32), dtype=np.float32)
+    assert agent.act(state, greedy=True) == agent.act_batch(
+        np.stack([state]), greedy=True)[0]
+    # Sem greedy e com epsilon=1.0, cada linha é sorteada (sem consultar a rede).
+    acts = agent.act_batch(np.stack([state, state]), greedy=False)
+    assert acts.shape == (2,)
+    assert np.issubdtype(acts.dtype, np.integer)
+
+
+def test_parse_args_envs_flag():
+    """--envs é opcional (default 1) e aceita N > 1."""
+    assert parse_args([]).envs == 1
+    assert parse_args(["--envs", "4"]).envs == 4
+
+
+def test_envs_validation_rejects_incompatible_flags():
+    """--envs > 1 exige adversário fixo e desliga render/telemetria."""
+    cases = [
+        ["--envs", "4"],  # opponent auto é o default
+        ["--envs", "4", "--opponent", "random", "--render"],
+        ["--envs", "4", "--opponent", "random", "--stats"],
+        ["--envs", "4", "--opponent", "random", "--tensorboard"],
+        ["--envs", "0", "--opponent", "random"],
+    ]
+    for argv in cases:
+        with pytest.raises(SystemExit):
+            validate_train_args(parse_args(argv))
+    # Caminho válido da Fase 5: adversário fixo e telemetria desligada.
+    validate_train_args(parse_args(["--envs", "4", "--opponent", "random"]))
+
+
+def test_make_vector_env_validates_args():
+    """make_vector_env rejeita n_envs inválido e adversário que não seja nome."""
+    with pytest.raises(ValueError):
+        make_vector_env(0, ArenaConfig(), "random", asynchronous=False)
+    with pytest.raises(ValueError):
+        make_vector_env(1, ArenaConfig(), object(), asynchronous=False)
 
 
 def test_checkpoint_policy_uses_stacked_obs():

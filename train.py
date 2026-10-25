@@ -6,6 +6,7 @@ from agents.baseline import make_policy
 from arena.environment import ArenaEnv
 from arena.config import ArenaConfig
 from arena.skins import list_skins
+from arena.vector import make_vector_env
 from dqn.agent import DQNAgent, CheckpointPolicy
 from dqn.checkpoint import save_checkpoint, load_checkpoint, checkpoint_meta
 
@@ -180,11 +181,197 @@ def parse_args(argv=None):
                     help="desliga o Double DQN (ligado por padrão)")
     ap.add_argument("--per", action="store_true",
                     help="replay priorizado rank-based")
+    ap.add_argument("--envs", type=int, default=1,
+                    help="ambientes vetorizados na coleta (Fase 5; incompatível "
+                         "com --opponent auto, --render, --stats e --tensorboard)")
     return ap.parse_args(argv)
+
+
+def validate_train_args(args):
+    """Restrições do treino vetorizado (`--envs N`).
+
+    A Fase 5 roda com adversário fixo: o currículo por episódio do `auto`, o
+    render e a telemetria (`--stats`/`--tensorboard`) são por processo e não
+    mapeiam em workers concorrentes. Na CLI, o erro vira `SystemExit`.
+    """
+    if args.envs < 1:
+        raise SystemExit(f"--envs deve ser >= 1 (recebido {args.envs})")
+    if args.envs == 1:
+        return
+    incompat = [
+        ("--opponent auto", args.opponent == "auto",
+         "o currículo escolhe a política por episódio; no vetor ela é fixa"),
+        ("--render", args.render,
+         "o render é por processo e não há uma janela única para os workers"),
+        ("--stats", args.stats,
+         "a telemetria por episódio não mapeia em workers concorrentes"),
+        ("--tensorboard", args.tensorboard,
+         "a telemetria por episódio não mapeia em workers concorrentes"),
+    ]
+    for flag, used, reason in incompat:
+        if used:
+            raise SystemExit(
+                f"--envs {args.envs} é incompatível com {flag}: {reason}")
+
+
+def _final_observation(infos, index):
+    """Observação terminal do worker `index`, se o VectorEnv a expôs.
+
+    O gymnasium >= 1.0 usa a chave `final_obs`; versões/forks antigos usam
+    `final_observation`. Devolve `None` quando não há (autoreset NEXT_STEP,
+    em que o próprio `next_obs` do passo terminal já é o estado final).
+    """
+    for key in ("final_observation", "final_obs"):
+        array = infos.get(key)
+        if array is not None and array[index] is not None:
+            return array[index]
+    return None
+
+
+def _worker_final_info(infos, index):
+    """Info final do worker `index`, cobrindo os formatos do gymnasium.
+
+    Com autoreset NEXT_STEP (padrão do gymnasium >= 1.0), o `info` do passo
+    terminal já é o info final do episódio. Com SAME_STEP (ou versões
+    antigas), o info original vem em `final_info`, como dict de arrays por
+    worker ou array de objetos. As chaves internas de máscara (`_key`) e o
+    próprio `final_info` não fazem parte do info do episódio.
+    """
+    final = infos.get("final_info")
+    if isinstance(final, dict):
+        return {key: value[index] for key, value in final.items()
+                if not str(key).startswith("_")}
+    if final is not None and isinstance(final[index], dict):
+        return final[index]
+    return {key: value[index] for key, value in infos.items()
+            if not str(key).startswith("_") and key != "final_info"
+            and hasattr(value, "__getitem__")}
+
+
+def _train_vectorized(args, cfg, agent, ckpt_dir, start_ep, last_ep, best, budgets):
+    """Loop de treino com coleta vetorizada (`--envs > 1`, Fase 5).
+
+    Cada passo do vetor coleta uma transição de cada worker e `learn()` roda a
+    cada 4 passos do vetor. Os RNGs (`random`/`numpy`/`torch`) já foram
+    semeados no `main`; o `reset(seed)` do VectorEnv semeia o worker `i` com
+    `seed + i`. Episódios são contados por `terminated | truncated` de cada
+    worker; como os workers correm em paralelo, o total pode passar de
+    `last_ep` em até `--envs - 1` episódios.
+    """
+    n_envs = args.envs
+    log_path = Path("logs/training.csv")
+    new_file = not log_path.exists() or not args.resume
+    total_episodes = start_ep - 1
+    last_total = 0.0
+    # Orçamentos já cruzados antes desta execução (retomada) não são regravados:
+    # o snapshot representa o total de episódios do próprio rótulo.
+    fired_budgets = {b for b in budgets if b <= start_ep - 1}
+    losses_since_row = []
+    vector_steps = 0
+    venv = make_vector_env(n_envs, cfg, args.opponent, asynchronous=True)
+    try:
+        obs, _ = venv.reset(seed=args.seed)
+        worker_rewards = np.zeros(n_envs, dtype=np.float64)
+        worker_steps = np.zeros(n_envs, dtype=np.int64)
+        # Com autoreset NEXT_STEP, o passo seguinte ao fim de um episódio só
+        # devolve a observação resetada; ele não vira transição de treino.
+        pending_reset = np.zeros(n_envs, dtype=bool)
+        with log_path.open("w" if new_file else "a", newline="") as f:
+            writer = csv.DictWriter(f, fieldnames=[
+                "episode", "steps", "reward", "coins", "deaths", "eliminations",
+                "mean_loss", "epsilon"])
+            if new_file:
+                writer.writeheader()
+            while total_episodes < last_ep:
+                actions = agent.act_batch(obs)
+                next_obs, rewards, terminations, truncations, infos = venv.step(actions)
+                vector_steps += 1
+                transitions, completed = [], []
+                for i in range(n_envs):
+                    if pending_reset[i]:
+                        pending_reset[i] = False
+                        continue
+                    done = bool(terminations[i]) or bool(truncations[i])
+                    final_obs = _final_observation(infos, i) if done else None
+                    # O VectorEnv auto-reseta: sem a observação terminal, a
+                    # transição perderia o estado final do episódio.
+                    next_state = final_obs if final_obs is not None else next_obs[i]
+                    transitions.append((
+                        obs[i], int(actions[i]), float(rewards[i]), next_state,
+                        bool(terminations[i]), bool(truncations[i])))
+                    worker_rewards[i] += float(rewards[i])
+                    worker_steps[i] += 1
+                    if done:
+                        completed.append(i)
+                        if final_obs is None:
+                            pending_reset[i] = True
+                agent.buffer.add_batch(transitions)
+                # Um learn por passo do vetor é caro demais; a cada 4 passos
+                # mantém a atualização frequente sem dominar o wall-clock.
+                if vector_steps % 4 == 0:
+                    loss = agent.learn()
+                    if loss is not None:
+                        losses_since_row.append(loss)
+                # Episódios que terminam no mesmo passo compartilham a janela
+                # de perdas desde a última linha.
+                mean_loss = float(np.mean(losses_since_row)) if losses_since_row else ""
+                if completed:
+                    losses_since_row = []
+                for i in completed:
+                    total_episodes += 1
+                    info = _worker_final_info(infos, i)
+                    reward = float(worker_rewards[i])
+                    row = {
+                        "episode": total_episodes,
+                        "steps": int(worker_steps[i]),
+                        "reward": reward,
+                        "coins": info.get("coins", 0),
+                        "deaths": info.get("deaths", 0),
+                        "eliminations": info.get("eliminations", 0),
+                        "mean_loss": mean_loss,
+                        "epsilon": agent.epsilon,
+                    }
+                    writer.writerow(row)
+                    f.flush()
+                    last_total = reward
+                    if reward > best:
+                        best = reward
+                        save_checkpoint(ckpt_dir / "best.pt", agent, cfg,
+                                        {"episode": total_episodes, "reward": reward,
+                                         "episodes_done": total_episodes,
+                                         "best_reward": best},
+                                        episodes=total_episodes)
+                    if total_episodes % args.save_every == 0:
+                        save_checkpoint(ckpt_dir / "latest.pt", agent, cfg,
+                                        {"episode": total_episodes, "reward": reward,
+                                         "episodes_done": total_episodes,
+                                         "best_reward": best},
+                                        episodes=total_episodes)
+                    # Snapshot ao CRUZAR o orçamento: o total pode pular o
+                    # valor exato, então não dá para comparar por igualdade.
+                    for budget in sorted(budgets - fired_budgets):
+                        if total_episodes >= budget:
+                            save_checkpoint(ckpt_dir / "budget" / f"ep{budget:03d}.pt",
+                                            agent, cfg, {"episode": budget},
+                                            episodes=budget)
+                            fired_budgets.add(budget)
+                    print(f"episode={total_episodes} reward={reward:.2f} "
+                          f"coins={row['coins']} deaths={row['deaths']} "
+                          f"epsilon={agent.epsilon:.3f}")
+                    worker_rewards[i] = 0.0
+                    worker_steps[i] = 0
+                obs = next_obs
+    finally:
+        venv.close()
+    save_checkpoint(ckpt_dir / "latest.pt", agent, cfg,
+                    {"episode": total_episodes, "reward": last_total,
+                     "episodes_done": total_episodes, "best_reward": best},
+                    episodes=total_episodes)
 
 
 def main():
     args = parse_args()
+    validate_train_args(args)
     # Os RNGs globais precisam ser semeados para o treino ser reproduzível:
     # a exploração usa o módulo `random`; o buffer padrão amostra com
     # `random.sample` e o priorizado (--per) sorteia com `np.random.choice`.
@@ -227,6 +414,13 @@ def main():
     ckpt_dir.mkdir(parents=True, exist_ok=True)
     log_path = Path("logs/training.csv")
     new_file = not log_path.exists() or not args.resume
+    if args.envs > 1:
+        # O env de episódio único serviu só para montar espaços/agente: o loop
+        # vetorizado cria os próprios workers. Caminho histórico fica intacto
+        # com --envs 1 (default).
+        env.close()
+        _train_vectorized(args, cfg, agent, ckpt_dir, start_ep, last_ep, best, budgets)
+        return
     # Estatísticas adicionais, opcionais: não consomem RNG, então não alteram o treino.
     stats_f = None
     stats_writer = None
