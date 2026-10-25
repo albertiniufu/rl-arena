@@ -29,14 +29,13 @@ def _td_targets(online, target, r_n, ns, term, gamma, window, double=True):
 
 class DQNAgent:
     def __init__(self, obs_shape, n_actions=12, lr=1e-3, gamma=.99,
-                 epsilon=1.0, epsilon_min=.1,
+                 epsilon=1.0, epsilon_min=.05, epsilon_decay=.9995,
                  batch_size=64, target_update=500, buffer_size=50000, device=None,
-                 warmup=1000, double=True, n_step=1):
+                 double=True, n_step=1):
         self.device = torch.device(device or ("cuda" if torch.cuda.is_available() else "cpu"))
         self.n_actions, self.gamma = n_actions, gamma
-        self.epsilon, self.epsilon_min = epsilon, epsilon_min
+        self.epsilon, self.epsilon_min, self.epsilon_decay = epsilon, epsilon_min, epsilon_decay
         self.batch_size, self.target_update = batch_size, target_update
-        self.warmup = warmup
         self.double, self.n_step = double, n_step
         self.online = DQN(obs_shape, n_actions).to(self.device)
         self.target = DQN(obs_shape, n_actions).to(self.device)
@@ -62,10 +61,8 @@ class DQNAgent:
         return float(q.mean()), float(q.max())
 
     def learn(self):
-        # Warmup: enche o buffer antes de aprender, para as primeiras amostras
-        # não serem quase todas do começo do episódio. O batch_size é um piso
-        # (o sample() exige pelo menos isso).
-        if len(self.buffer) < max(self.warmup, self.batch_size):
+        # O batch_size é um piso: o sample() exige pelo menos isso.
+        if len(self.buffer) < self.batch_size:
             return None
         states, actions, r_n, next_states, term_np, window_np = self.buffer.sample(
             self.batch_size, n=self.n_step, gamma=self.gamma)
@@ -85,6 +82,9 @@ class DQNAgent:
         self.last_grad_norm = float(torch.nn.utils.clip_grad_norm_(self.online.parameters(), 10.0))
         self.optimizer.step()
         self.steps += 1
+        # Decaimento por passo (configuração da Fase 0): a rampa por episódio
+        # da Fase 1 foi reprovada no A/B e revertida.
+        self.epsilon = max(self.epsilon_min, self.epsilon * self.epsilon_decay)
         if self.steps % self.target_update == 0:
             self.target.load_state_dict(self.online.state_dict())
         return float(loss.item())

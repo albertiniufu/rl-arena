@@ -282,8 +282,7 @@ def test_checkpoint_policy_acts_greedily():
 def test_agent_q_stats_and_grad_norm():
     env = ArenaEnv()
     obs, _ = env.reset(seed=1)
-    agent = DQNAgent(env.observation_space.shape, env.action_space.n, batch_size=2,
-                     warmup=0)  # sem warmup: o teste exercita learn() com 2 transições
+    agent = DQNAgent(env.observation_space.shape, env.action_space.n, batch_size=2)
     mean_q, max_q = agent.q_stats(obs)
     assert isinstance(mean_q, float) and isinstance(max_q, float)
     assert max_q >= mean_q
@@ -358,8 +357,7 @@ def _run_episodes(cfg, seed, n_episodes, save_at=None, path=None, resume_from=No
     np.random.seed(seed)
     torch.manual_seed(seed)
     env = ArenaEnv(cfg, opponent_policy="rule")
-    agent = DQNAgent(env.observation_space.shape, env.action_space.n, batch_size=8,
-                     warmup=0)  # episódios curtos: sem warmup, só o piso do batch
+    agent = DQNAgent(env.observation_space.shape, env.action_space.n, batch_size=8)
     start, best = 1, -float("inf")
     if resume_from is not None:
         payload = load_checkpoint(resume_from, agent, resume=True)
