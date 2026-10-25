@@ -7,7 +7,7 @@ from arena.environment import ArenaEnv
 from arena.config import ArenaConfig
 from arena.skins import list_skins
 from dqn.agent import DQNAgent, CheckpointPolicy
-from dqn.checkpoint import save_checkpoint, load_checkpoint
+from dqn.checkpoint import save_checkpoint, load_checkpoint, checkpoint_meta
 
 
 def resolve_resume_path(resume, checkpoint_dir):
@@ -49,13 +49,23 @@ def obs_to_image(obs):
     return img
 
 
-def _try_load_checkpoint(path, agent):
+def _try_load_checkpoint(path, agent, frame_stack=None):
     """Carrega `path` em `agent`; devolve False (com aviso) se não der.
 
     Um `.pt` de outra arquitetura (ou corrompido) no diretório de checkpoints
     não pode quebrar o treino do adversário `auto`: o arquivo é pulado.
+    Com `frame_stack` informado, checkpoints gravados com outro valor são
+    pulados antes do load: a arquitetura é a mesma (o `load_state_dict`
+    passaria), e o erro de shape só apareceria no forward.
     """
     try:
+        if frame_stack is not None:
+            saved = int(checkpoint_meta(path)["config"].get("frame_stack", 1))
+            if saved != frame_stack:
+                warnings.warn(
+                    f"Checkpoint ignorado ({path}): frame_stack={saved} difere do "
+                    f"treino atual ({frame_stack})", UserWarning)
+                return False
         load_checkpoint(path, agent, resume=False)
     except Exception as exc:  # arquitetura antiga, arquivo corrompido, etc.
         warnings.warn(f"Checkpoint ignorado ({path}): {exc}", UserWarning)
@@ -96,7 +106,8 @@ class AutoOpponent:
         """
         best = self.checkpoint_dir / "best.pt"
         if best.exists():
-            _try_load_checkpoint(best, self.checkpoint_agent)
+            _try_load_checkpoint(best, self.checkpoint_agent,
+                                 frame_stack=self.env.cfg.frame_stack)
         return self
 
     def update_best(self, agent):
@@ -126,7 +137,8 @@ class AutoOpponent:
                 # Tenta os arquivos em ordem sorteada; incompatíveis são
                 # pulados com aviso. Se nenhum carregar, cai para random.
                 for path in random.sample(checkpoints, len(checkpoints)):
-                    if _try_load_checkpoint(path, self.alt_agent):
+                    if _try_load_checkpoint(path, self.alt_agent,
+                                            frame_stack=self.env.cfg.frame_stack):
                         return CheckpointPolicy(self.alt_agent)
                 return make_policy("random")
             return make_policy(pick)

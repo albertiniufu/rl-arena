@@ -5,6 +5,60 @@ from dqn.agent import DQNAgent
 from dqn.checkpoint import save_checkpoint, load_checkpoint
 
 
+def test_checkpoint_meta_reads_config_and_dueling(tmp_path):
+    from arena.config import ArenaConfig
+    from dqn.checkpoint import checkpoint_meta
+
+    agent = DQNAgent((5, 32, 20), 12)
+    path = tmp_path / "c.pt"
+    save_checkpoint(path, agent, ArenaConfig(frame_stack=4, frame_skip=3))
+    meta = checkpoint_meta(path)
+    assert meta["config"]["frame_stack"] == 4
+    assert meta["config"]["frame_skip"] == 3
+    assert meta["dueling"] is False
+
+
+def test_apply_env_config():
+    from arena.config import ArenaConfig
+    from dqn.checkpoint import apply_env_config
+
+    cfg = ArenaConfig()
+    assert cfg.frame_stack == 1 and cfg.frame_skip == 1
+    apply_env_config(cfg, {"config": {"frame_stack": 4, "frame_skip": 3}})
+    assert cfg.frame_stack == 4 and cfg.frame_skip == 3
+    # Checkpoint v2 sem as chaves: mantém os defaults 1/1 de um cfg novo.
+    cfg = ArenaConfig()
+    apply_env_config(cfg, {"config": {}})
+    assert cfg.frame_stack == 1 and cfg.frame_skip == 1
+
+
+def test_try_load_checkpoint_skips_frame_stack_mismatch(tmp_path):
+    from arena.config import ArenaConfig
+    from train import _try_load_checkpoint
+
+    agent = DQNAgent((5, 32, 20), 12)
+    path = tmp_path / "stacked.pt"
+    save_checkpoint(path, agent, ArenaConfig(frame_stack=4))
+    fresh = DQNAgent((5, 32, 20), 12)
+    # O state_dict carregaria (mesma arquitetura); o skip evita o erro de
+    # shape só no forward, quando a obs empilhada não casar.
+    with pytest.warns(UserWarning):
+        assert _try_load_checkpoint(path, fresh, frame_stack=1) is False
+    assert _try_load_checkpoint(path, fresh, frame_stack=4) is True
+
+
+def test_play_parse_args():
+    from play import parse_args
+
+    defaults = parse_args([])
+    assert defaults.player is None
+    assert defaults.opponent == "rule"
+    assert defaults.record is None
+    args = parse_args(["--player", "coins", "--record", "x.mp4"])
+    assert args.player == "coins"
+    assert args.record == "x.mp4"
+
+
 def test_checkpoint_lightweight(tmp_path):
     agent = DQNAgent((5, 32, 20), 12)
     path = tmp_path / "c.pt"

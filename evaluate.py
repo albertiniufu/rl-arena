@@ -5,7 +5,7 @@ from arena.environment import ArenaEnv
 from arena.config import ArenaConfig
 from arena.skins import list_skins
 from dqn.agent import DQNAgent
-from dqn.checkpoint import load_checkpoint
+from dqn.checkpoint import apply_env_config, checkpoint_meta, load_checkpoint
 
 def parse_args(argv=None):
     """Argumentos da CLI; separado de `main` para poder ser testado."""
@@ -23,7 +23,11 @@ def parse_args(argv=None):
 
 def main():
     args = parse_args()
+    # A config gravada no checkpoint (frame_stack/frame_skip) define o formato
+    # da observação; sem isso a avaliação usaria 1/1 e não casaria com fases
+    # treinadas com obs empilhada.
     cfg = ArenaConfig()
+    apply_env_config(cfg, checkpoint_meta(args.checkpoint))
     env = ArenaEnv(cfg, render_mode="human" if args.render else None,
                    opponent_policy=args.opponent, skin=args.skin)
     obs, _ = env.reset(seed=args.seed)

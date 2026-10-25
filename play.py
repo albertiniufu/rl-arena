@@ -8,7 +8,7 @@ from arena.environment import ArenaEnv
 from arena.config import ArenaConfig
 from arena.skins import list_skins
 from dqn.agent import DQNAgent
-from dqn.checkpoint import load_checkpoint
+from dqn.checkpoint import apply_env_config, checkpoint_meta, load_checkpoint
 
 
 def record_frame(writer):
@@ -18,7 +18,8 @@ def record_frame(writer):
     frame = np.transpose(pygame.surfarray.array3d(pygame.display.get_surface()), (1, 0, 2))
     writer.append_data(frame)
 
-def main():
+def parse_args(argv=None):
+    """Argumentos da CLI; separado de `main` para poder ser testado."""
     ap = argparse.ArgumentParser()
     ap.add_argument("--checkpoint", default="checkpoints/best.pt")
     ap.add_argument("--episodes", type=int, default=3)
@@ -33,10 +34,20 @@ def main():
     ap.add_argument("--record", default=None, metavar="ARQUIVO.mp4",
                     help="grava a sessão em vídeo (ativa o render; com "
                          "SDL_VIDEODRIVER=dummy grava sem janela)")
-    args = ap.parse_args()
+    return ap.parse_args(argv)
+
+
+def main():
+    args = parse_args()
     # Humano e gravação só fazem sentido com janela; ativam o render.
     render_mode = "human" if (args.render or args.player == "human" or args.record) else None
-    env = ArenaEnv(ArenaConfig(), render_mode=render_mode, opponent_policy=args.opponent, skin=args.skin)
+    cfg = ArenaConfig()
+    if args.player is None:
+        # Jogador DQN: a config gravada no checkpoint define o formato da
+        # observação (frame stack/skip). Com política baseline/humana não há
+        # checkpoint e a config fica nos defaults.
+        apply_env_config(cfg, checkpoint_meta(args.checkpoint))
+    env = ArenaEnv(cfg, render_mode=render_mode, opponent_policy=args.opponent, skin=args.skin)
     obs, _ = env.reset(seed=1)
     video_writer = None
     if args.record:

@@ -27,6 +27,34 @@ def save_checkpoint(path, agent, config=None, extra=None, episodes=None):
     torch.save(payload, path)
 
 
+def checkpoint_meta(path, map_location="cpu"):
+    """Lê metadados do checkpoint sem carregar pesos no agente.
+
+    Devolve {"config": dict da ArenaConfig gravada, "dueling": bool}.
+    O payload guarda `config` via `vars(config)` no save_checkpoint; a
+    presença de "v_head.weight" no state_dict online indica cabeça dueling
+    (a opção `dueling` só existe no agente a partir da Task 11 — aqui a
+    detecção é só leitura do payload).
+    """
+    payload = torch.load(path, map_location=map_location, weights_only=False)
+    # Checkpoints antigos podem não ter `config` (ou tê-la como None).
+    config = payload.get("config") or {}
+    online = payload.get("online") or {}
+    return {"config": dict(config), "dueling": "v_head.weight" in online}
+
+
+def apply_env_config(cfg, meta):
+    """Aplica frame_stack/frame_skip do checkpoint ao cfg (defaults se ausentes).
+
+    Quando a chave não existe no payload, mantém o valor atual do cfg — o que
+    preserva 1/1 para checkpoints v2 gravados antes do frame stack.
+    """
+    config = (meta or {}).get("config") or {}
+    cfg.frame_stack = int(config.get("frame_stack", cfg.frame_stack))
+    cfg.frame_skip = int(config.get("frame_skip", cfg.frame_skip))
+    return cfg
+
+
 def load_checkpoint(path, agent, resume=False, map_location=None):
     payload = torch.load(path, map_location=map_location or agent.device, weights_only=False)
     if payload.get("n_actions") != agent.n_actions:
