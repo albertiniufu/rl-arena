@@ -186,7 +186,8 @@ def parse_args(argv=None):
 def main():
     args = parse_args()
     # Os RNGs globais precisam ser semeados para o treino ser reproduzível:
-    # a exploração usa o módulo `random` e o buffer amostra com `random.sample`.
+    # a exploração usa o módulo `random`; o buffer padrão amostra com
+    # `random.sample` e o priorizado (--per) sorteia com `np.random.choice`.
     random.seed(args.seed)
     np.random.seed(args.seed)
     torch.manual_seed(args.seed)
