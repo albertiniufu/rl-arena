@@ -1,4 +1,4 @@
-import argparse, csv, random
+import argparse, csv, random, warnings
 from pathlib import Path
 import numpy as np
 import torch
@@ -46,6 +46,20 @@ def obs_to_image(obs):
     return img
 
 
+def _try_load_checkpoint(path, agent):
+    """Carrega `path` em `agent`; devolve False (com aviso) se não der.
+
+    Um `.pt` de outra arquitetura (ou corrompido) no diretório de checkpoints
+    não pode quebrar o treino do adversário `auto`: o arquivo é pulado.
+    """
+    try:
+        load_checkpoint(path, agent, resume=False)
+    except Exception as exc:  # arquitetura antiga, arquivo corrompido, etc.
+        warnings.warn(f"Checkpoint ignorado ({path}): {exc}", UserWarning)
+        return False
+    return True
+
+
 class AutoOpponent:
     """Currículo de adversários do `--opponent auto` (padrão).
 
@@ -72,10 +86,14 @@ class AutoOpponent:
         self.alt_agent = DQNAgent(shape, n_actions)
 
     def init_from_disk(self):
-        """Na retomada, carrega o melhor checkpoint existente como oponente."""
+        """Na retomada, carrega o melhor checkpoint existente como oponente.
+
+        Checkpoint incompatível é ignorado com aviso; o agente fica com os
+        pesos iniciais até o primeiro `update_best`.
+        """
         best = self.checkpoint_dir / "best.pt"
         if best.exists():
-            load_checkpoint(best, self.checkpoint_agent, resume=False)
+            _try_load_checkpoint(best, self.checkpoint_agent)
         return self
 
     def update_best(self, agent):
@@ -102,8 +120,12 @@ class AutoOpponent:
                 options.append("checkpoint")
             pick = random.choice(options)
             if pick == "checkpoint":
-                load_checkpoint(random.choice(checkpoints), self.alt_agent, resume=False)
-                return CheckpointPolicy(self.alt_agent)
+                # Tenta os arquivos em ordem sorteada; incompatíveis são
+                # pulados com aviso. Se nenhum carregar, cai para random.
+                for path in random.sample(checkpoints, len(checkpoints)):
+                    if _try_load_checkpoint(path, self.alt_agent):
+                        return CheckpointPolicy(self.alt_agent)
+                return make_policy("random")
             return make_policy(pick)
         return CheckpointPolicy(self.checkpoint_agent)
 
