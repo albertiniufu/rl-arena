@@ -198,7 +198,9 @@ def main():
     # então o snapshot compara fases com o mesmo total de treino.
     budgets = budget_snapshots(last_ep)
     Path("logs").mkdir(exist_ok=True)
-    ckpt_dir.mkdir(exist_ok=True)
+    # parents=True: o protocolo de A/B usa caminhos aninhados
+    # (ex.: checkpoints/ab/fase0-branch/seed7-100).
+    ckpt_dir.mkdir(parents=True, exist_ok=True)
     log_path = Path("logs/training.csv")
     new_file = not log_path.exists() or not args.resume
     # Estatísticas adicionais, opcionais: não consomem RNG, então não alteram o treino.
