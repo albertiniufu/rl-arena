@@ -235,7 +235,7 @@ def test_checkpoint_stores_episodes(tmp_path):
     env.reset(seed=1)
     agent = DQNAgent(env.observation_space.shape, env.action_space.n)
     p = tmp_path / "ep.pt"
-    save_checkpoint(p, agent, env=env, episodes=42)
+    save_checkpoint(p, agent, episodes=42)
     payload = torch.load(p, map_location="cpu", weights_only=False)
     assert payload["episodes"] == 42
     # Sem informar, o campo existe mas fica None (compatível com checkpoints antigos).
@@ -308,7 +308,7 @@ def test_auto_opponent_alternates_in_checkpoint_phase(tmp_path):
     from dqn.agent import CheckpointPolicy
     env, agent, auto = _make_auto_opponent(tmp_path)
     auto.alt_prob = 1.0
-    save_checkpoint(tmp_path / "outro.pt", agent, env=env)
+    save_checkpoint(tmp_path / "outro.pt", agent)
     auto.update_best(agent)
     random.seed(0)
     seen = {type(auto.choose(6)) for _ in range(40)}
@@ -321,7 +321,7 @@ def test_auto_opponent_init_from_disk(tmp_path):
     env = ArenaEnv()
     env.reset(seed=1)
     agent = DQNAgent(env.observation_space.shape, env.action_space.n)
-    save_checkpoint(tmp_path / "best.pt", agent, env=env)
+    save_checkpoint(tmp_path / "best.pt", agent)
     auto = AutoOpponent(env, checkpoint_dir=str(tmp_path))
     auto.init_from_disk()
     for p_c, p_a in zip(auto.checkpoint_agent.online.parameters(), agent.online.parameters()):
@@ -330,7 +330,7 @@ def test_auto_opponent_init_from_disk(tmp_path):
 
 
 def _run_episodes(cfg, seed, n_episodes, save_at=None, path=None, resume_from=None):
-    """Mini-loop espelhando train.py, para testar retomada bit a bit."""
+    """Mini-loop espelhando train.py, para testar retomada com checkpoint pesos-only."""
     random.seed(seed)
     np.random.seed(seed)
     torch.manual_seed(seed)
@@ -338,7 +338,7 @@ def _run_episodes(cfg, seed, n_episodes, save_at=None, path=None, resume_from=No
     agent = DQNAgent(env.observation_space.shape, env.action_space.n, batch_size=8)
     start, best = 1, -float("inf")
     if resume_from is not None:
-        payload = load_checkpoint(resume_from, agent, resume=True, env=env)
+        payload = load_checkpoint(resume_from, agent, resume=True)
         episodes_done = payload.get("episodes")
         if episodes_done is None:
             episodes_done = payload.get("extra", {}).get("episodes_done", 0)
@@ -364,32 +364,31 @@ def _run_episodes(cfg, seed, n_episodes, save_at=None, path=None, resume_from=No
         if ep == save_at:
             save_checkpoint(path, agent, cfg,
                             {"episode": ep, "reward": total, "episodes_done": ep, "best_reward": best},
-                            env=env, episodes=ep)
+                            episodes=ep)
             break
     return trace, agent, env
 
 
-def test_resume_is_bit_identical(tmp_path):
+def test_resume_loads_weights_and_continues_episode_numbering(tmp_path):
     cfg = ArenaConfig(episode_seconds=0.5)
     seed = 123
     ckpt = tmp_path / "mid.pt"
     half, agent_half, env_half = _run_episodes(cfg, seed, 2, save_at=2, path=ckpt)
     payload = torch.load(ckpt, map_location="cpu", weights_only=False)
     assert payload["episodes"] == 2
+    # O checkpoint pesos-only não persiste buffer, RNGs nem estado do ambiente.
+    assert "buffer" not in payload and "env_state" not in payload and "rng_state" not in payload
+    # Um agente novo carregado com resume=True recebe pesos, otimizador e contadores.
+    agent_check = DQNAgent(env_half.observation_space.shape, env_half.action_space.n)
+    load_checkpoint(ckpt, agent_check, resume=True)
+    for p_c, p_h in zip(agent_check.online.parameters(), agent_half.online.parameters()):
+        assert torch.equal(p_c, p_h)
+    assert agent_check.steps == agent_half.steps
+    assert agent_check.epsilon == agent_half.epsilon
+    # A retomada continua a numeração de episódios (3 e 4) e o treino anda.
     resumed, agent_resumed, env_resumed = _run_episodes(cfg, seed, 4, resume_from=ckpt)
-    full, agent_full, env_full = _run_episodes(cfg, seed, 4)
-    # A retomada continua a numeração e reproduz exatamente os episódios 3 e 4.
     assert [row[0] for row in resumed] == [3, 4]
-    assert resumed == full[2:]
-    for p_r, p_f in zip(agent_resumed.online.parameters(), agent_full.online.parameters()):
-        assert torch.equal(p_r, p_f)
-    for p_r, p_f in zip(agent_resumed.target.parameters(), agent_full.target.parameters()):
-        assert torch.equal(p_r, p_f)
-    assert len(agent_resumed.buffer) == len(agent_full.buffer)
-    sd_r, sd_f = agent_resumed.buffer.state_dict(), agent_full.buffer.state_dict()
-    assert list(sd_r) == list(sd_f)
-    for k in sd_r:
-        assert np.array_equal(sd_r[k], sd_f[k])
+    assert all(row[2] > 0 for row in resumed)
+    assert agent_resumed.steps > agent_check.steps
     env_half.close()
     env_resumed.close()
-    env_full.close()

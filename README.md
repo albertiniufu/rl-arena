@@ -98,7 +98,7 @@ Para colocar o seu no lugar:
 python -m pytest -q
 ```
 
-São 24 testes (~10 s). Rode depois de instalar e depois de cada mudança sua para confirmar que nada quebrou.
+São 25 testes (~7 s). Rode depois de instalar e depois de cada mudança sua para confirmar que nada quebrou.
 
 ## Referência
 
@@ -129,7 +129,7 @@ python train.py --episodes 300 --resume checkpoints/latest.pt
 python train.py --episodes 300 --checkpoint-dir /caminho/para/run1 --resume latest.pt
 ```
 
-`--episodes` indica episódios **adicionais** ao retomar. A retomada é reproduzível bit a bit: o checkpoint persiste pesos, rede-alvo, otimizador, replay buffer, todos os RNGs e o estado do ambiente — com os mesmos argumentos, retomar produz exatamente o mesmo treino contínuo.
+`--episodes` indica episódios **adicionais** ao retomar. O checkpoint é pesos-only: guarda as redes (online e alvo), o otimizador, os passos de treino, o epsilon e o número de episódios consumidos — retomar continua a numeração de episódios e o treino de onde parou. Replay buffer e RNGs **não** são persistidos, então a retomada não é mais reproduzível bit a bit. Checkpoints da arquitetura antiga (`cnn-dqn-v1`) não são mais aceitos.
 
 ### Estatísticas e TensorBoard
 

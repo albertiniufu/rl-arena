@@ -130,16 +130,15 @@ def main():
                    opponent_policy="random" if args.opponent == "auto" else args.opponent,
                    skin=args.skin)
     agent = DQNAgent(env.observation_space.shape, env.action_space.n)
-    # Criar o AutoOpponent antes do load é parte da reprodutibilidade: os
-    # inits das redes consomem torch RNG na mesma ordem da run contínua,
-    # então o estado restaurado pelo checkpoint cobre esses draws.
+    # O `auto` é criado antes do load para que a retomada já possa chamar
+    # `init_from_disk` nele (carregar o melhor checkpoint como adversário).
     auto = AutoOpponent(env, checkpoint_dir=ckpt_dir) if args.opponent == "auto" else None
     start_ep, best = 1, -float("inf")
     if resume_path:
-        payload = load_checkpoint(resume_path, agent, resume=True, env=env)
+        payload = load_checkpoint(resume_path, agent, resume=True)
         episodes_done = payload.get("episodes")
         if episodes_done is None:
-            # Checkpoints antigos não têm o campo; cai para o extra histórico.
+            # Checkpoints sem o campo (ex.: salvos sem `episodes`) caem para o extra histórico.
             episodes_done = payload.get("extra", {}).get("episodes_done", 0)
         start_ep = int(episodes_done) + 1
         best = float(payload.get("extra", {}).get("best_reward", -float("inf")))
@@ -150,8 +149,7 @@ def main():
     ckpt_dir.mkdir(exist_ok=True)
     log_path = Path("logs/training.csv")
     new_file = not log_path.exists() or not args.resume
-    # Estatísticas adicionais, opcionais: não consomem RNG, então o treino
-    # continua bit a bit reproduzível com ou sem a flag.
+    # Estatísticas adicionais, opcionais: não consomem RNG, então não alteram o treino.
     stats_f = None
     stats_writer = None
     if args.stats:
@@ -243,13 +241,13 @@ def main():
                 best = total
                 save_checkpoint(ckpt_dir / "best.pt", agent, cfg,
                                 {"episode": ep, "reward": total, "episodes_done": ep, "best_reward": best},
-                                env=env, episodes=ep)
+                                episodes=ep)
                 if auto is not None:
                     auto.update_best(agent)
             if ep % args.save_every == 0:
                 save_checkpoint(ckpt_dir / "latest.pt", agent, cfg,
                                 {"episode": ep, "reward": total, "episodes_done": ep, "best_reward": best},
-                                env=env, episodes=ep)
+                                episodes=ep)
             print(f"episode={ep} reward={total:.2f} coins={row['coins']} deaths={row['deaths']} epsilon={agent.epsilon:.3f}")
     if stats_f is not None:
         stats_f.close()
@@ -257,7 +255,7 @@ def main():
         tb_writer.close()
     save_checkpoint(ckpt_dir / "latest.pt", agent, cfg,
                     {"episode": last_ep, "reward": last_total, "episodes_done": last_ep, "best_reward": best},
-                    env=env, episodes=last_ep)
+                    episodes=last_ep)
     env.close()
 
 if __name__ == "__main__":
