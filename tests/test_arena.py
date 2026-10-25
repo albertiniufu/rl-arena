@@ -26,6 +26,15 @@ def test_reset_step_observation():
     assert isinstance(reward, float)
     env.close()
 
+def test_frame_stack_observation():
+    env = ArenaEnv(ArenaConfig(frame_stack=4))
+    obs, _ = env.reset(seed=1)
+    assert obs.shape == (20, 20, 32)  # (5 * frame_stack, H, W): mapa 20 linhas x 32 colunas
+    assert np.array_equal(obs[:5], obs[5:10]) and np.array_equal(obs[15:], obs[:5])  # pilha cheia de cópias
+    obs2, *_ = env.step(1)
+    assert np.array_equal(obs2[:5], obs[-5:])  # frame antigo virou o mais antigo
+    env.close()
+
 def test_invalid_action():
     env = ArenaEnv()
     env.reset(seed=1)

@@ -23,4 +23,5 @@ class ArenaConfig:
     death_penalty: float = -2.0
     opponent_count: int = 2 # adicionar mais bots?
     coin_count: int = 10
+    frame_stack: int = 1 # quantos frames compõem a observação
     map_version: str = "arena-v1"

@@ -1,3 +1,4 @@
+from collections import deque
 from dataclasses import asdict
 
 import numpy as np
@@ -14,6 +15,9 @@ ACTIONS = 12
 class ArenaEnv(gym.Env):
     """Gymnasium environment. Observation is a channels-first semantic grid.
 
+    A observação é a pilha dos últimos `frame_stack` frames (o mais antigo
+    primeiro), o que dá ao agente acesso a velocidade na grade.
+
     O adversário é controlado por uma política de `agents.baseline`,
     resolvida por nome ou recebida pronta em `opponent_policy`.
     """
@@ -29,7 +33,13 @@ class ArenaEnv(gym.Env):
         self.action_space = spaces.Discrete(ACTIONS)
         self.grid_h = self.cfg.height // self.cfg.cell
         self.grid_w = self.cfg.width // self.cfg.cell
-        self.observation_space = spaces.Box(0.0, 1.0, shape=(5, self.grid_h, self.grid_w), dtype=np.float32)
+        self.observation_space = spaces.Box(
+            0.0, 1.0,
+            shape=(5 * self.cfg.frame_stack, self.grid_h, self.grid_w),
+            dtype=np.float32,
+        )
+        # Pilha de frames: cada elemento é um frame único (5, H, W).
+        self._frames = deque(maxlen=self.cfg.frame_stack)
         self.elapsed = 0.0
         self._renderer = None
         self._last_info = {}
@@ -40,7 +50,8 @@ class ArenaEnv(gym.Env):
         grid[channel, row, col] = 1.0
 
     def _observation(self):
-        g = np.zeros(self.observation_space.shape, dtype=np.float32)
+        """Frame único atual: grade semântica (5, H, W)."""
+        g = np.zeros((5, self.grid_h, self.grid_w), dtype=np.float32)
         for x, y, w, h in self.engine.platforms:
             c0, c1 = max(0, int(x // self.cfg.cell)), min(self.grid_w, int((x+w) // self.cfg.cell))
             r0, r1 = max(0, int(y // self.cfg.cell)), min(self.grid_h, max(int((y+h) // self.cfg.cell), int(y // self.cfg.cell)+1))
@@ -54,12 +65,21 @@ class ArenaEnv(gym.Env):
             self._draw_cell(g, 3, coin.x, coin.y)
         return g
 
+    def _stacked(self):
+        """Observação do agente: pilha de frames (5 * frame_stack, H, W), do mais antigo ao mais novo."""
+        return np.concatenate(self._frames, axis=0)
+
     def reset(self, seed=None, options=None):
         super().reset(seed=seed)
         self.engine.reset(seed=seed)
         self.elapsed = 0.0
         self._last_info = {}
-        return self._observation(), {"sim_time": 0.0}
+        # A pilha começa cheia com cópias do primeiro frame: sem histórico
+        # inventado, mas com o shape esperado desde o primeiro passo.
+        frame = self._observation()
+        self._frames.clear()
+        self._frames.extend([frame] * self.cfg.frame_stack)
+        return self._stacked(), {"sim_time": 0.0}
 
     def _opponent_action(self, index, obs):
         ctx = PolicyContext(
@@ -98,10 +118,10 @@ class ArenaEnv(gym.Env):
             "deaths_this_step": event["deaths_delta"][0],
         }
         self._last_info = info
-        obs = self._observation()
+        self._frames.append(self._observation())
         if self.render_mode == "human":
             self.render()
-        return obs, float(reward), terminated, truncated, info
+        return self._stacked(), float(reward), terminated, truncated, info
 
     def get_state(self):
         """Snapshot serializável do ambiente, para retomada reproduzível."""
