@@ -31,8 +31,8 @@
 - verifica CUDA/GPU;
 - extrai o pacote em `/content/rl-arena`;
 - instala `colab/requirements-colab.txt`;
-- treina com `train.py` (frame stack 4, frame skip 3, n-step 3, Double DQN
-  por padrão; tudo ajustável na célula de configuração);
+- treina com `train.py` (`--alg dqn` ou `--alg doubledqn_per_dueling`,
+  frame stack 4, frame skip 3; tudo ajustável na célula de configuração);
 - mostra o TensorBoard (`logs/runs`);
 - avalia `best.pt` e os snapshots de orçamento (`budget/ep*.pt`) contra o
   adversário `rule`, no protocolo do A/B (20 episódios, seed 1000);
@@ -42,21 +42,20 @@
 ## Restrições do modo vetorizado
 
 Com `--envs` > 1, o `train.py` recusa `--opponent auto`, `--render`,
-`--stats`, `--tensorboard` e `--n-step` > 1 (o currículo por episódio, a
-telemetria por processo e a janela n-step do replay não mapeiam em workers
-concorrentes). Para medir velocidade:
+`--stats` e `--tensorboard` (o currículo por episódio e a telemetria por
+processo não mapeiam em workers concorrentes). Para medir velocidade:
 
 ```python
 ENVS = 8
-N_STEP = 1
 TENSORBOARD = False
 OPPONENT = "random"
 ```
 
 ## Observações
 
-- O checkpoint guarda `frame_stack`/`frame_skip`; `evaluate.py` e `play.py`
-  aplicam a config gravada automaticamente.
+- O checkpoint guarda o algoritmo e `frame_stack`/`frame_skip`;
+  `evaluate.py` e `play.py` aplicam a config gravada automaticamente e
+  carregam o pacote `alg_*` certo. Retomar exige o mesmo `--alg`.
 - A rede é pequena: a GPU pode não acelerar muito o treino, porque o gargalo
   é a simulação em CPU. O modo vetorizado com vários workers costuma ser o
   ganho real.

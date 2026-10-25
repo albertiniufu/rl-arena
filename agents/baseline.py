@@ -8,6 +8,8 @@ from dataclasses import dataclass
 
 import numpy as np
 
+from arena.actions import JUMP, LEFT, NON_PUSH_ACTIONS, PUSH_LEFT, PUSH_RIGHT, RIGHT, STOP
+
 
 @dataclass
 class PolicyContext:
@@ -28,8 +30,8 @@ class PolicyContext:
 
 
 class RandomPolicy:
-    """Sorteia uniformemente entre as primeiras `n_actions` ações."""
-    def __init__(self, n_actions=12):
+    """Sorteia uniformemente entre as `n_actions` primeiras ações."""
+    def __init__(self, n_actions=len(NON_PUSH_ACTIONS)):
         self.n_actions = n_actions
 
     def act(self, ctx):
@@ -38,19 +40,19 @@ class RandomPolicy:
 
 class PushRulePolicy:
     """Comportamento histórico do adversário `rule`: aproxima do jogador e,
-    quando perto, às vezes tenta empurrar."""
+    quando perto, às vezes tenta empurrar (uma das duas direções)."""
     def act(self, ctx):
         c = ctx.self_character
         player = ctx.player_character
         if c is None or player is None or not c.alive:
-            return 0
+            return STOP
         if abs(player.x - c.x) < 35 and ctx.rng.random() < 0.35:
-            return int(ctx.rng.choice([6, 7, 8, 9, 10, 11]))
+            return int(ctx.rng.choice([PUSH_LEFT, PUSH_RIGHT]))
         if player.x < c.x:
-            return 1
+            return LEFT
         if player.x > c.x:
-            return 2
-        return 0
+            return RIGHT
+        return STOP
 
 
 class CoinRulePolicy:
@@ -61,16 +63,16 @@ class CoinRulePolicy:
         if len(xs) and len(px):
             dx = xs[np.argmin(np.abs(ys - py[0]))] - px[0]
             if abs(dx) <= 1:
-                return 3 if ctx.rng.random() < 0.5 else 0
-            return 1 if dx < 0 else 2
-        return int(ctx.rng.choice([0, 1, 2, 3]))
+                return JUMP if ctx.rng.random() < 0.5 else STOP
+            return LEFT if dx < 0 else RIGHT
+        return int(ctx.rng.choice(NON_PUSH_ACTIONS))
 
 
-# O adversário "random" histórico do ambiente sorteava 0..5 (sem empurrões);
-# preservamos esse comportamento registrando RandomPolicy com 6 ações.
+# O adversário "random" histórico do ambiente não empurrava; o espaço novo
+# tem empurrões nas ações 4 e 5, então restringimos o sorteio às 4 primeiras.
 POLICIES = {
     "rule": PushRulePolicy,
-    "random": lambda: RandomPolicy(n_actions=6),
+    "random": lambda: RandomPolicy(n_actions=len(NON_PUSH_ACTIONS)),
     "coins": CoinRulePolicy,
 }
 

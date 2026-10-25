@@ -1,6 +1,6 @@
 # RL Arena — plataforma 2D mínima para DQN
 
-Projeto didático para estudar Reinforcement Learning na prática: um agente DQN (PyTorch + Gymnasium + NumPy + Pygame) treina num mapa 2D fixo para coletar moedas e empurrar um adversário de política simples. Este guia leva você do zero até plugar o seu próprio modelo e o seu próprio algoritmo de RL no lugar do DQN.
+Projeto didático para estudar Reinforcement Learning na prática: um agente DQN (PyTorch + Gymnasium + NumPy + Pygame) treina num mapa 2D fixo para coletar moedas e empurrar um adversário de política simples. Há duas implementações prontas — um DQN enxuto e um Double DQN com replay priorizado e rede dueling — e este guia leva você do zero até plugar o seu próprio modelo e o seu próprio algoritmo de RL.
 
 ## Demonstração
 
@@ -23,10 +23,11 @@ pip install -r requirements.txt
 ### 2. Treinar do zero
 
 ```bash
-python train.py --episodes 300
+python train.py --episodes 300                       # alg_dqn (padrão)
+python train.py --episodes 300 --alg doubledqn_per_dueling
 ```
 
-Treina sem abrir janela (padrão). Ao final, os pesos ficam em `checkpoints/latest.pt` e `checkpoints/best.pt`; as métricas por episódio, em `logs/training.csv`.
+Treina sem abrir janela (padrão). `--alg` escolhe o pacote `alg_<nome>` na raiz do projeto. Ao final, os pesos ficam em `checkpoints/latest.pt` e `checkpoints/best.pt`; as métricas por episódio, em `logs/training.csv`.
 
 Dica: se o terminal for inundado por avisos do NNPACK, rode com `TORCH_CPP_LOG_LEVEL=ERROR python train.py ...`.
 
@@ -75,21 +76,33 @@ python play.py --player human --opponent coins
 
 ### 6. Experimentar
 
+- Algoritmo: `--alg dqn` (padrão) ou `--alg doubledqn_per_dueling` — veja [Algoritmos](#algoritmos).
 - Adversário: `--opponent random`, `coins` ou `rule` (o padrão `auto` é um currículo — veja [Adversários](#adversários)).
 - Semente: `--seed N` (treinos com a mesma semente são idênticos).
 - Mundo: física, recompensas, duração do episódio e contagens ficam em `arena/config.py`.
 
 ### 7. Seu próprio modelo e seu próprio algoritmo de RL
 
-O DQN está em duas peças separadas:
+Cada algoritmo é um diretório `alg_<nome>` autocontido, com o modelo, o replay e o loop de aprendizado:
 
-- `dqn/model.py` — `DQN(nn.Module)`: a CNN que recebe a observação `(5, H, W)` e devolve 12 Q-valores.
-- `dqn/agent.py` — `DQNAgent`: o algoritmo — replay buffer, rede-alvo, epsilon-greedy, Adam + SmoothL1Loss, clip de gradiente — com o contrato usado por `train.py`.
+```text
+alg_dqn/                          # --alg dqn (padrão)
+├── model.py                      # QNetwork: CNN -> 6 Q-valores diretos
+├── replay_buffer.py              # amostragem uniforme
+└── agent.py                      # DQNAgent + Agent = DQNAgent + td_target
+
+alg_doubledqn_per_dueling/        # --alg doubledqn_per_dueling
+├── model.py                      # DuelingQNetwork: Q = V + A - média(A)
+├── replay_buffer.py              # PER rank-based (prioridade = |erro de TD|)
+└── agent.py                      # DoubleDQNPerDuelingAgent + double_td_target
+```
+
+O contrato mínimo de um pacote é um `agent.py` expondo `Agent` (a classe usada por `train.py`, `evaluate.py` e `play.py`) e uma instância com `algorithm` (nome gravado no checkpoint), `arch_version`, `obs_shape`, `n_actions`, `online`, `target`, `optimizer`, `buffer`, `steps`, `epsilon`, além dos métodos `act`, `act_batch`, `learn`, `q_stats` e `head_weights`. O `alg_registry.py` descobre os diretórios, importa o pacote e centraliza o checkpoint pesos-only e o adaptador `CheckpointPolicy`.
 
 Para colocar o seu no lugar:
 
-- **Só a rede**: copie/edite `dqn/model.py` mantendo entrada `(5, H, W)` e saída 12. O agente, o treino, os checkpoints e a retomada continuam funcionando.
-- **O algoritmo inteiro**: escreva sua classe com o mesmo contrato do `DQNAgent` que `train.py` usa (coletar transições, aprender a cada passo, salvar/carregar via `dqn/checkpoint.py`). Ambiente, recompensas, adversário e retomada não mudam.
+- **Só a rede**: copie/edite o `model.py` de um algoritmo mantendo a entrada da CNN e a saída com `n_actions` valores. O agente, o treino, os checkpoints e a retomada continuam funcionando.
+- **O algoritmo inteiro**: crie `alg_meu/agent.py` com a classe `Agent` no contrato acima. `--alg meu` passa a funcionar automaticamente, sem tocar em `train.py`; `evaluate.py` e `play.py` reconhecem o algoritmo pelo checkpoint.
 - **Uma política nova (ex.: para o adversário)**: implemente `act(ctx: PolicyContext)` e registre o nome em `make_policy()`, em `agents/baseline.py`.
 
 ### 8. Verificar
@@ -98,26 +111,47 @@ Para colocar o seu no lugar:
 python -m pytest -q
 ```
 
-São 25 testes (~7 s). Rode depois de instalar e depois de cada mudança sua para confirmar que nada quebrou.
+São 76 testes (~7 s). Rode depois de instalar e depois de cada mudança sua para confirmar que nada quebrou.
 
 ## Referência
 
 ### Ações
 
+Seis ações, com uma única intensidade de pulo e uma única de empurrão por direção (a maior da versão anterior):
+
 | Índice | Ação |
 |---:|---|
 | 0 | Não fazer nada |
-| 1–2 | Esquerda / direita |
-| 3 | Pular verticalmente |
-| 4–5 | Pular diagonal esquerda / direita |
-| 6–8 | Empurrar adversário para esquerda com força crescente |
-| 9–11 | Empurrar adversário para direita com força crescente |
+| 1 | Andar para a esquerda |
+| 2 | Andar para a direita |
+| 3 | Pular verticalmente (força máxima) |
+| 4 | Empurrar adversário para a esquerda (força máxima) |
+| 5 | Empurrar adversário para a direita (força máxima) |
+
+Os códigos ficam em `arena/actions.py` (`N_ACTIONS = 6`), usados pelo engine, ambiente, políticas e pela rede. Uma ação de empurrão não move o personagem no mesmo passo.
+
+### Algoritmos
+
+Os dois algoritmos usam a mesma observação, o mesmo alvo fixo `C = 10` (sincroniza a rede-alvo a cada 10 `learn()` bem-sucedidos) e o mesmo contrato, para que a comparação isole as técnicas:
+
+- **`dqn`** (padrão): o DQN enxuto do artigo — Q direto por ação, replay uniforme (toda transição com a mesma chance) e alvo `r + γ·max Q(s', ·)`.
+- **`doubledqn_per_dueling`**: três mudanças sobre o `dqn`:
+  - **Double DQN**: a rede online escolhe a ação do próximo estado e a target avalia o valor, reduzindo a superestimação;
+  - **PER**: a amostragem do replay favorece transições com erro de TD alto (prioridade `|erro| + 1e-6`, rank-based);
+  - **Dueling**: a rede separa `V(s)` de `A(s, a)` e devolve `Q = V + A − média(A)`.
+
+```bash
+python train.py --episodes 300 --alg dqn
+python train.py --episodes 300 --alg doubledqn_per_dueling
+```
+
+`evaluate.py` e `play.py` não precisam de `--alg`: o checkpoint grava o algoritmo e esses scripts carregam o pacote certo.
 
 ### Adversários
 
 - `auto` (padrão): currículo — 50 episódios contra `random`, depois alterna `coins`/`rule` e, por fim, joga contra o melhor checkpoint, com 10% dos episódios contra outra política. As fases usam contagens absolutas, então retomar continua o currículo de onde parou.
-- `random`: sorteia entre as 6 primeiras ações.
-- `rule`: aproxima do jogador e às vezes empurra.
+- `random`: sorteia entre as 4 primeiras ações (não empurra, preservando o comportamento histórico).
+- `rule`: aproxima do jogador e às vezes empurra (ações 4/5).
 - `coins`: persegue a moeda visível.
 
 As políticas ficam em `agents/baseline.py`.
@@ -129,7 +163,9 @@ python train.py --episodes 300 --resume checkpoints/latest.pt
 python train.py --episodes 300 --checkpoint-dir /caminho/para/run1 --resume latest.pt
 ```
 
-`--episodes` indica episódios **adicionais** ao retomar. O checkpoint é pesos-only: guarda as redes (online e alvo), o otimizador, os passos de treino, o epsilon e o número de episódios consumidos — retomar continua a numeração de episódios e o treino de onde parou. Replay buffer e RNGs **não** são persistidos, então a retomada não é mais reproduzível bit a bit. Checkpoints da arquitetura antiga (`cnn-dqn-v1`) não são mais aceitos.
+`--episodes` indica episódios **adicionais** ao retomar. O checkpoint é pesos-only: guarda as redes (online e alvo), o otimizador, os passos de treino, o epsilon, o número de episódios consumidos, a config do ambiente e os metadados `algorithm`/`arch_version`/`n_actions`/`obs_shape` — retomar continua a numeração de episódios e o treino de onde parou. Replay buffer e RNGs **não** são persistidos, então a retomada não é mais reproduzível bit a bit.
+
+O algoritmo, a versão de arquitetura, o número de ações e o formato da observação são validados **antes** de copiar qualquer peso: retomar com `--alg` diferente, com `frame_stack` diferente ou com um checkpoint antigo (formato `cnn-dqn-*`, 12 ações) falha com mensagem clara, sem deixar o agente com pesos parcialmente sobrescritos.
 
 ### Estatísticas e TensorBoard
 
@@ -169,13 +205,26 @@ python play.py --player coins --opponent coins --record demonstracao.mp4
 - A observação é uma grade semântica `(5, H, W)`; velocidades e temporizadores não estão codificados, então a observação não é totalmente Markoviana — simplificação deliberada para a primeira experiência com CNN.
 - O crédito por eliminações é simplificado.
 
+### Ideias para simplificar ainda mais o treino
+
+Mudanças de ambiente que costumam acelerar o aprendizado (nenhuma está aplicada por padrão):
+
+- **Terminar o episódio na morte**, em vez de só truncar aos 45 s: encurta o retorno e dá um sinal de fim mais claro (a morte hoje só custa 5 s e 10 moedas).
+- **Episódios mais curtos** (15–20 s): mais episódios por hora e menos passos em estados fáceis; combine com o término na morte.
+- **Adversário fixo** (`--opponent coins` ou `rule`) durante a comparação de algoritmos: menos não-estacionariedade que o currículo `auto`; use o `auto` depois.
+- **Estado compacto** (posições e velocidades dos personagens, moedas e plataformas) com um MLP no lugar da CNN: resolve a não-Markovianidade e treina muito mais rápido; mantenha `alg_dqn` como variante com imagem.
+- **Rede menor** (menos filtros, cabeça 128 → 64) e `--frame-stack 4 --frame-skip 3`: menos parâmetros e mais passos de simulação por segundo.
+- **Recompensa mais densa** (ex.: pequeno bônus por se aproximar da moeda): acelera o aprendizado inicial, mas pode enviesar a política — meça com e sem.
+
 ### Estrutura
 
 ```text
 rl-arena/
-├── arena/       # configuração, motor, ambiente Gymnasium e renderizador
-├── agents/      # políticas baseline usadas como adversário pelo environment
-├── dqn/         # CNN, replay buffer, agente e checkpoints
+├── arena/                    # configuração, motor, ambiente, ações e renderizadores
+├── agents/                   # políticas baseline usadas como adversário
+├── alg_dqn/                  # DQN enxuto: QNetwork, replay uniforme, DQNAgent
+├── alg_doubledqn_per_dueling/  # Double DQN + PER + dueling
+├── alg_registry.py           # descoberta dos alg_*, checkpoint e CheckpointPolicy
 ├── tests/
 ├── train.py
 ├── evaluate.py

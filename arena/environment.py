@@ -6,11 +6,10 @@ import gymnasium as gym
 from gymnasium import spaces
 
 from agents.baseline import PolicyContext, make_policy
+from .actions import N_ACTIONS
 from .config import ArenaConfig
 from .engine import ArenaEngine, Character, Coin
 from .skins import load_renderer_class
-
-ACTIONS = 12
 
 class ArenaEnv(gym.Env):
     """Gymnasium environment. Observation is a channels-first semantic grid.
@@ -30,7 +29,7 @@ class ArenaEnv(gym.Env):
         self.engine = ArenaEngine(self.cfg)
         self.opponent_policy = make_policy(opponent_policy)
         self.skin = skin
-        self.action_space = spaces.Discrete(ACTIONS)
+        self.action_space = spaces.Discrete(N_ACTIONS)
         self.grid_h = self.cfg.height // self.cfg.cell
         self.grid_w = self.cfg.width // self.cfg.cell
         self.observation_space = spaces.Box(

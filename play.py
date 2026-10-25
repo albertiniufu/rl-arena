@@ -7,8 +7,7 @@ from agents.baseline import PolicyContext, make_policy
 from arena.environment import ArenaEnv
 from arena.config import ArenaConfig
 from arena.skins import list_skins
-from dqn.agent import DQNAgent
-from dqn.checkpoint import apply_env_config, checkpoint_meta, load_checkpoint
+from alg_registry import algorithm_from_checkpoint, apply_env_config, load_checkpoint
 
 
 def record_frame(writer):
@@ -42,13 +41,16 @@ def main():
     # Humano e gravação só fazem sentido com janela; ativam o render.
     render_mode = "human" if (args.render or args.player == "human" or args.record) else None
     cfg = ArenaConfig()
-    meta = None
+    alg = meta = None
     if args.player is None:
-        # Jogador DQN: a config gravada no checkpoint define o formato da
-        # observação (frame stack/skip) e se a rede usa a cabeça dueling.
+        # Jogador DQN: o checkpoint identifica o algoritmo (pacote alg_*) e a
+        # config gravada define o formato da observação (frame stack/skip).
         # Com política baseline/humana não há checkpoint e a config fica nos
         # defaults.
-        meta = checkpoint_meta(args.checkpoint)
+        try:
+            alg, meta = algorithm_from_checkpoint(args.checkpoint)
+        except (ValueError, OSError) as exc:
+            raise SystemExit(f"Checkpoint inválido: {exc}") from exc
         apply_env_config(cfg, meta)
     env = ArenaEnv(cfg, render_mode=render_mode, opponent_policy=args.opponent, skin=args.skin)
     obs, _ = env.reset(seed=1)
@@ -74,8 +76,7 @@ def main():
         player_policy = make_policy(args.player)
     agent = None
     if player_policy is None:
-        agent = DQNAgent(env.observation_space.shape, env.action_space.n,
-                         dueling=meta["dueling"])
+        agent = alg.Agent(env.observation_space.shape, env.action_space.n)
         load_checkpoint(args.checkpoint, agent, resume=False)
         agent.epsilon = 0.0
     try:
@@ -86,7 +87,12 @@ def main():
                 record_frame(video_writer)
             while True:
                 if player_policy is not None:
-                    ctx = PolicyContext(obs=obs, rng=env.np_random)
+                    # `self_character` permite ao humano continuar andando no
+                    # ar em vez de repetir o pulo; as baselines ignoram os campos.
+                    ctx = PolicyContext(
+                        obs=obs, rng=env.np_random,
+                        self_character=env.engine.characters[0],
+                        player_character=env.engine.characters[0])
                     action = player_policy.act(ctx)
                 else:
                     action = agent.act(obs, greedy=True)

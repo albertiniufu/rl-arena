@@ -11,11 +11,27 @@ os.environ.setdefault("SDL_VIDEODRIVER", "dummy")
 os.environ.setdefault("SDL_AUDIODRIVER", "dummy")
 
 from agents.baseline import CoinRulePolicy, PolicyContext, PushRulePolicy, RandomPolicy, make_policy
+from alg_dqn.agent import DQNAgent
+from alg_registry import (
+    CheckpointPolicy,
+    load_algorithm,
+    load_checkpoint,
+    save_checkpoint,
+)
+from arena.actions import (
+    JUMP,
+    LEFT,
+    N_ACTIONS,
+    NON_PUSH_ACTIONS,
+    PUSH_INTENSITY,
+    PUSH_LEFT,
+    PUSH_RIGHT,
+    RIGHT,
+    STOP,
+)
 from arena.environment import ArenaEnv
 from arena.config import ArenaConfig
 from arena.vector import make_vector_env
-from dqn.agent import DQNAgent
-from dqn.checkpoint import save_checkpoint, load_checkpoint
 
 def test_reset_step_observation():
     env = ArenaEnv(ArenaConfig())
@@ -25,6 +41,34 @@ def test_reset_step_observation():
     obs, reward, term, trunc, info = env.step(0)
     assert env.observation_space.contains(obs)
     assert isinstance(reward, float)
+    env.close()
+
+def test_action_space_has_six_actions():
+    """Uma única intensidade de pulo e de empurrão por direção."""
+    env = ArenaEnv()
+    assert env.action_space.n == N_ACTIONS == 6
+    assert (STOP, LEFT, RIGHT, JUMP, PUSH_LEFT, PUSH_RIGHT) == (0, 1, 2, 3, 4, 5)
+    env.close()
+
+def test_push_actions_use_max_intensity():
+    """PUSH_LEFT/PUSH_RIGHT chamam o engine com a intensidade máxima."""
+    env = ArenaEnv(ArenaConfig(opponent_count=0, frame_skip=1))
+    env.reset(seed=1)
+    calls = []
+    env.engine.push = lambda actor, direction, intensity: calls.append(
+        (actor, direction, intensity)) or True
+    env.step(PUSH_RIGHT)
+    env.step(PUSH_LEFT)
+    assert calls == [(0, 1, PUSH_INTENSITY), (0, -1, PUSH_INTENSITY)]
+    env.close()
+
+def test_single_jump_action_leaves_ground():
+    env = ArenaEnv(ArenaConfig(opponent_count=0))
+    env.reset(seed=1)
+    p = env.engine.characters[0]
+    p.x, p.y, p.vx, p.vy, p.on_ground = 100.0, 360.0, 0.0, 0.0, True
+    env.step(JUMP)
+    assert p.vy < 0 and not p.on_ground
     env.close()
 
 def test_vector_env_same_seed_reproducible_across_autoreset():
@@ -88,14 +132,14 @@ def test_frame_skip_repeats_action():
 def test_invalid_action():
     env = ArenaEnv()
     env.reset(seed=1)
-    with pytest.raises(ValueError): env.step(12)
+    with pytest.raises(ValueError): env.step(N_ACTIONS)
     env.close()
 
 def test_cnn_and_checkpoint(tmp_path):
     env = ArenaEnv()
     obs, _ = env.reset(seed=1)
     agent = DQNAgent(env.observation_space.shape, env.action_space.n, batch_size=2)
-    assert agent.online(__import__("torch").as_tensor(obs).unsqueeze(0)).shape == (1, 12)
+    assert agent.online(torch.as_tensor(obs).unsqueeze(0)).shape == (1, N_ACTIONS)
     p = tmp_path / "test.pt"
     save_checkpoint(p, agent)
     agent2 = DQNAgent(env.observation_space.shape, env.action_space.n)
@@ -106,7 +150,7 @@ def test_one_episode_without_render():
     env = ArenaEnv(ArenaConfig(episode_seconds=.1))
     obs, _ = env.reset(seed=2)
     while True:
-        obs, _, term, trunc, info = env.step(0)
+        obs, _, term, trunc, info = env.step(STOP)
         if term or trunc: break
     assert trunc
     env.close()
@@ -120,13 +164,13 @@ def test_death_penalty_and_random_platform_respawn():
     player.coins = 6
     player.y = cfg.height + 50
     # One step advances physics and triggers the fatal-region logic.
-    env.step(0)
+    env.step(STOP)
     assert player.coins == 0
     assert player.deaths == 1
     assert not player.alive
     # Advance beyond the respawn timer; the character should return to a platform.
     for _ in range(10):
-        env.step(0)
+        env.step(STOP)
     assert player.alive
     assert any(abs(player.y - py) < 1e-5 for _, py, _, _ in env.engine.platforms)
     env.close()
@@ -139,9 +183,9 @@ def test_jump_reaches_first_platform_tier():
     env.reset(seed=1)
     p = env.engine.characters[0]
     p.x, p.y, p.vx, p.vy, p.on_ground = 100.0, 360.0, 0.0, 0.0, True
-    env.step(3)
+    env.step(JUMP)
     for _ in range(90):
-        env.step(3)
+        env.step(JUMP)
         if p.on_ground and p.y < 360:
             break
     assert p.y == 285.0
@@ -153,7 +197,7 @@ def test_human_policy_returns_valid_action_headless():
     policy = HumanPolicy()
     ctx = PolicyContext(obs=np.zeros((5, 2, 2), dtype=np.float32), rng=np.random.default_rng(0))
     # Sem janela/teclas pressionadas, deve devolver uma ação válida (parado).
-    assert 0 <= policy.act(ctx) <= 11
+    assert 0 <= policy.act(ctx) < N_ACTIONS
 
 
 def test_dino_renderer_does_not_touch_global_random():
@@ -210,12 +254,32 @@ def test_make_policy_registry():
 
 
 def test_random_opponent_keeps_historic_range():
-    # O adversário "random" histórico sorteava 0..5 (sem empurrões); preserva.
+    # O adversário "random" histórico não empurrava; o espaço novo tem os
+    # empurrões nas ações 4 e 5, então o sorteio fica nas 4 primeiras.
     env = ArenaEnv(opponent_policy="random")
     env.reset(seed=1)
     ctx = PolicyContext(obs=np.zeros(env.observation_space.shape, dtype=np.float32), rng=env.np_random)
     for _ in range(100):
-        assert 0 <= env.opponent_policy.act(ctx) < 6
+        assert 0 <= env.opponent_policy.act(ctx) < len(NON_PUSH_ACTIONS)
+    env.close()
+
+
+def test_all_policies_return_valid_actions():
+    """Nenhuma política devolve ação fora do espaço de 6 ações."""
+    env = ArenaEnv(ArenaConfig(opponent_count=1))
+    env.reset(seed=3)
+    env.step(STOP)
+    ctx = PolicyContext(
+        obs=env.observation_space.sample() if hasattr(env.observation_space, "sample") else np.zeros(env.observation_space.shape, dtype=np.float32),
+        rng=env.np_random,
+        self_character=env.engine.characters[1],
+        player_character=env.engine.characters[0],
+        stacked_obs=None,
+    )
+    for name in ("rule", "random", "coins"):
+        policy = make_policy(name)
+        for _ in range(50):
+            assert 0 <= policy.act(ctx) < N_ACTIONS
     env.close()
 
 
@@ -223,7 +287,7 @@ def test_coins_opponent_runs_full_episode():
     env = ArenaEnv(ArenaConfig(episode_seconds=0.1), opponent_policy="coins")
     env.reset(seed=2)
     while True:
-        _, _, term, trunc, _ = env.step(0)
+        _, _, term, trunc, _ = env.step(STOP)
         if term or trunc:
             break
     assert trunc
@@ -276,7 +340,7 @@ def test_play_recording_produces_video(tmp_path):
     out = tmp_path / "video.mp4"
     writer = imageio.get_writer(str(out), fps=env.cfg.fps)
     for _ in range(3):
-        env.step(0)
+        env.step(STOP)
         record_frame(writer)
     writer.close()
     env.close()
@@ -306,7 +370,6 @@ def test_checkpoint_stores_episodes(tmp_path):
 
 
 def test_checkpoint_policy_acts_greedily():
-    from dqn.agent import CheckpointPolicy
     env = ArenaEnv()
     obs, _ = env.reset(seed=1)
     agent = DQNAgent(env.observation_space.shape, env.action_space.n)
@@ -328,7 +391,7 @@ def test_agent_q_stats_and_grad_norm():
     for _ in range(2):
         action = agent.act(obs)
         next_obs, reward, term, trunc, _ = env.step(action)
-        agent.buffer.add(obs, action, reward, next_obs, term, trunc)
+        agent.buffer.add(obs, action, reward, next_obs, term)
         obs = next_obs
     loss = agent.learn()
     assert loss is not None
@@ -341,13 +404,12 @@ def _make_auto_opponent(tmp_path):
     env = ArenaEnv(ArenaConfig(), opponent_policy="random")
     env.reset(seed=1)
     agent = DQNAgent(env.observation_space.shape, env.action_space.n)
-    auto = AutoOpponent(env, checkpoint_dir=str(tmp_path),
+    auto = AutoOpponent(env, load_algorithm("dqn"), checkpoint_dir=str(tmp_path),
                         random_episodes=2, baseline_episodes=3, alt_prob=0.0)
     return env, agent, auto
 
 
 def test_auto_opponent_phases(tmp_path):
-    from dqn.agent import CheckpointPolicy
     env, agent, auto = _make_auto_opponent(tmp_path)
     # Fase 1 (n <= 2): random.
     assert isinstance(auto.choose(1), RandomPolicy)
@@ -364,7 +426,6 @@ def test_auto_opponent_phases(tmp_path):
 
 
 def test_auto_opponent_alternates_in_checkpoint_phase(tmp_path):
-    from dqn.agent import CheckpointPolicy
     env, agent, auto = _make_auto_opponent(tmp_path)
     auto.alt_prob = 1.0
     save_checkpoint(tmp_path / "outro.pt", agent)
@@ -381,7 +442,7 @@ def test_auto_opponent_init_from_disk(tmp_path):
     env.reset(seed=1)
     agent = DQNAgent(env.observation_space.shape, env.action_space.n)
     save_checkpoint(tmp_path / "best.pt", agent)
-    auto = AutoOpponent(env, checkpoint_dir=str(tmp_path))
+    auto = AutoOpponent(env, load_algorithm("dqn"), checkpoint_dir=str(tmp_path))
     auto.init_from_disk()
     for p_c, p_a in zip(auto.checkpoint_agent.online.parameters(), agent.online.parameters()):
         assert torch.equal(p_c, p_a)
@@ -410,7 +471,7 @@ def _run_episodes(cfg, seed, n_episodes, save_at=None, path=None, resume_from=No
         while True:
             action = agent.act(obs)
             next_obs, reward, terminated, truncated, _ = env.step(action)
-            agent.buffer.add(obs, action, reward, next_obs, terminated, truncated)
+            agent.buffer.add(obs, action, reward, next_obs, terminated)
             agent.learn()
             obs = next_obs
             total += reward

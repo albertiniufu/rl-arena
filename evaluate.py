@@ -4,8 +4,7 @@ import numpy as np
 from arena.environment import ArenaEnv
 from arena.config import ArenaConfig
 from arena.skins import list_skins
-from dqn.agent import DQNAgent
-from dqn.checkpoint import apply_env_config, checkpoint_meta, load_checkpoint
+from alg_registry import algorithm_from_checkpoint, apply_env_config, load_checkpoint
 
 def parse_args(argv=None):
     """Argumentos da CLI; separado de `main` para poder ser testado."""
@@ -23,17 +22,18 @@ def parse_args(argv=None):
 
 def main():
     args = parse_args()
-    # A config gravada no checkpoint (frame_stack/frame_skip) define o formato
-    # da observação; sem isso a avaliação usaria 1/1 e não casaria com fases
-    # treinadas com obs empilhada. A mesma leitura revela se a rede é dueling.
-    meta = checkpoint_meta(args.checkpoint)
+    # O checkpoint identifica o algoritmo: a config gravada (frame_stack/
+    # frame_skip) define a observação e o pacote alg_* define a rede.
+    try:
+        alg, meta = algorithm_from_checkpoint(args.checkpoint)
+    except (ValueError, OSError) as exc:
+        raise SystemExit(f"Checkpoint inválido: {exc}") from exc
     cfg = ArenaConfig()
     apply_env_config(cfg, meta)
     env = ArenaEnv(cfg, render_mode="human" if args.render else None,
                    opponent_policy=args.opponent, skin=args.skin)
     obs, _ = env.reset(seed=args.seed)
-    agent = DQNAgent(env.observation_space.shape, env.action_space.n,
-                     dueling=meta["dueling"])
+    agent = alg.Agent(env.observation_space.shape, env.action_space.n)
     load_checkpoint(args.checkpoint, agent, resume=False)
     rows = []
     for ep in range(args.episodes):

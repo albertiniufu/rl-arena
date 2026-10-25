@@ -7,8 +7,14 @@ from arena.environment import ArenaEnv
 from arena.config import ArenaConfig
 from arena.skins import list_skins
 from arena.vector import make_vector_env
-from dqn.agent import DQNAgent, CheckpointPolicy
-from dqn.checkpoint import save_checkpoint, load_checkpoint, checkpoint_meta
+from alg_registry import (
+    CheckpointPolicy,
+    available_algorithms,
+    checkpoint_meta,
+    load_algorithm,
+    load_checkpoint,
+    save_checkpoint,
+)
 
 
 def resolve_resume_path(resume, checkpoint_dir):
@@ -90,19 +96,20 @@ class AutoOpponent:
     em qualquer segmentação da execução. A aleatoriedade vem do módulo
     `random` (seedado pelo --seed).
     """
-    def __init__(self, env, checkpoint_dir="checkpoints",
-                 random_episodes=50, baseline_episodes=100, alt_prob=0.1,
-                 dueling=False):
+    def __init__(self, env, alg, checkpoint_dir="checkpoints",
+                 random_episodes=50, baseline_episodes=100, alt_prob=0.1):
         self.env = env
+        self.alg = alg
         self.checkpoint_dir = Path(checkpoint_dir)
         self.random_episodes = random_episodes
         self.baseline_episodes = baseline_episodes
         self.alt_prob = alt_prob
         shape, n_actions = env.observation_space.shape, env.action_space.n
-        # A cabeça acompanha o treino: o state_dict do melhor checkpoint é
-        # copiado para cá em `update_best`, e as chaves precisam casar.
-        self.checkpoint_agent = DQNAgent(shape, n_actions, dueling=dueling)
-        self.alt_agent = DQNAgent(shape, n_actions, dueling=dueling)
+        # Os agentes oponentes usam o MESMO algoritmo do treino: o state_dict
+        # do melhor checkpoint é copiado para cá em `update_best`, e as chaves
+        # precisam casar.
+        self.checkpoint_agent = alg.Agent(shape, n_actions)
+        self.alt_agent = alg.Agent(shape, n_actions)
 
     def init_from_disk(self):
         """Na retomada, carrega o melhor checkpoint existente como oponente.
@@ -173,31 +180,18 @@ def parse_args(argv=None):
                     help="frames empilhados na observação (arena/environment.py)")
     ap.add_argument("--frame-skip", type=int, default=1,
                     help="repetições da ação por step do agente")
-    ap.add_argument("--n-step", type=int, default=1,
-                    help="retornos n-step no replay buffer")
-    ap.add_argument("--dueling", action="store_true",
-                    help="usa a cabeça dueling (V + vantagens centralizadas) nas redes")
-    ap.add_argument("--no-double", action="store_false", dest="double", default=True,
-                    help="desliga o Double DQN (ligado por padrão)")
-    ap.add_argument("--per", action="store_true",
-                    help="replay priorizado rank-based")
+    ap.add_argument("--alg", choices=available_algorithms(), default="dqn",
+                    help="algoritmo de RL: pacote alg_<nome> na raiz do projeto "
+                         "(dqn = DQN padrão; doubledqn_per_dueling = Double DQN "
+                         "+ PER + dueling)")
     ap.add_argument("--lr", type=float, default=1e-3,
                     help="taxa de aprendizado do Adam (na retomada, o otimizador "
                          "restaurado do checkpoint sobrepõe este valor)")
     ap.add_argument("--batch-size", type=int, default=64,
                     help="tamanho do batch amostrado do replay buffer por learn()")
-    ap.add_argument("--target-update", type=int, default=500,
-                    help="a cada quantos learn() a rede target recebe a cópia dura "
-                         "da online (ignorado com --tau > 0)")
-    ap.add_argument("--tau", type=float, default=0.0,
-                    help="fração do soft update da target por learn(): target = "
-                         "(1 - tau) * target + tau * online; com tau > 0, o soft "
-                         "update liga e a sincronização dura por --target-update "
-                         "desliga")
     ap.add_argument("--envs", type=int, default=1,
                     help="ambientes vetorizados na coleta (Fase 5; incompatível "
-                         "com --opponent auto, --render, --stats, --tensorboard "
-                         "e --n-step > 1)")
+                         "com --opponent auto, --render, --stats e --tensorboard)")
     return ap.parse_args(argv)
 
 
@@ -221,8 +215,6 @@ def validate_train_args(args):
          "a telemetria por episódio não mapeia em workers concorrentes"),
         ("--tensorboard", args.tensorboard,
          "a telemetria por episódio não mapeia em workers concorrentes"),
-        (f"--n-step {args.n_step}", args.n_step > 1,
-         "a janela n-step do replay anda por posições do deque e atravessaria workers"),
     ]
     for flag, used, reason in incompat:
         if used:
@@ -319,9 +311,11 @@ def _train_vectorized(args, cfg, agent, ckpt_dir, start_ep, last_ep, best, budge
                     # O VectorEnv auto-reseta: sem a observação terminal, a
                     # transição perderia o estado final do episódio.
                     next_state = final_obs if final_obs is not None else next_obs[i]
+                    # `truncated` não entra no buffer: o alvo bootstrapa no
+                    # fim por tempo (só terminais verdadeiros zeram o futuro).
                     transitions.append((
                         obs[i], int(actions[i]), float(rewards[i]), next_state,
-                        bool(terminations[i]), bool(truncations[i])))
+                        bool(terminations[i])))
                     worker_rewards[i] += float(rewards[i])
                     worker_steps[i] += 1
                     if done:
@@ -395,9 +389,10 @@ def _train_vectorized(args, cfg, agent, ckpt_dir, start_ep, last_ep, best, budge
 def main():
     args = parse_args()
     validate_train_args(args)
+    alg = load_algorithm(args.alg)
     # Os RNGs globais precisam ser semeados para o treino ser reproduzível:
-    # a exploração usa o módulo `random`; o buffer padrão amostra com
-    # `random.sample` e o priorizado (--per) sorteia com `np.random.choice`.
+    # a exploração usa o módulo `random`; o replay uniforme amostra com
+    # `random.sample` e o priorizado sorteia com `np.random.choice`.
     random.seed(args.seed)
     np.random.seed(args.seed)
     torch.manual_seed(args.seed)
@@ -409,17 +404,18 @@ def main():
     env = ArenaEnv(cfg, render_mode="human" if args.render else None,
                    opponent_policy="random" if args.opponent == "auto" else args.opponent,
                    skin=args.skin)
-    agent = DQNAgent(env.observation_space.shape, env.action_space.n,
-                     double=args.double, n_step=args.n_step, dueling=args.dueling,
-                     per=args.per, lr=args.lr, batch_size=args.batch_size,
-                     target_update=args.target_update, tau=args.tau)
+    agent = alg.Agent(env.observation_space.shape, env.action_space.n,
+                      lr=args.lr, batch_size=args.batch_size)
     # O `auto` é criado antes do load para que a retomada já possa chamar
     # `init_from_disk` nele (carregar o melhor checkpoint como adversário).
-    auto = (AutoOpponent(env, checkpoint_dir=ckpt_dir, dueling=args.dueling)
+    auto = (AutoOpponent(env, alg, checkpoint_dir=ckpt_dir)
             if args.opponent == "auto" else None)
     start_ep, best = 1, -float("inf")
     if resume_path:
-        payload = load_checkpoint(resume_path, agent, resume=True)
+        try:
+            payload = load_checkpoint(resume_path, agent, resume=True)
+        except ValueError as exc:
+            raise SystemExit(f"Não foi possível retomar: {exc}") from exc
         episodes_done = payload.get("episodes")
         if episodes_done is None:
             # Checkpoints sem o campo (ex.: salvos sem `episodes`) caem para o extra histórico.
@@ -479,7 +475,9 @@ def main():
             while True:
                 action = agent.act(obs)
                 next_obs, reward, terminated, truncated, info = env.step(action)
-                agent.buffer.add(obs, action, reward, next_obs, terminated, truncated)
+                # `truncated` não entra no buffer: o alvo bootstrapa no fim
+                # por tempo; só `terminated` zera o futuro.
+                agent.buffer.add(obs, action, reward, next_obs, terminated)
                 if args.stats or args.tensorboard:
                     qm, qx = agent.q_stats(obs)
                     q_means.append(qm)
@@ -520,10 +518,9 @@ def main():
                 tb_writer.add_scalar("train/buffer_size", len(agent.buffer), ep)
                 tb_writer.add_image("env/observation", obs_to_image(obs), ep, dataformats="HWC")
                 tb_writer.add_histogram("weights/conv1", agent.online.features[0].weight, ep)
-                # Nos dois modos a última camada é a linear de saída da cabeça:
-                # no dueling, o ramo de valor (escalar) faz o papel do head.
-                head = agent.online.v_head if agent.dueling else agent.online.head
-                tb_writer.add_histogram("weights/head", head[-1].weight, ep)
+                # Cada algoritmo expõe a última camada que faz o papel de
+                # cabeça (no dueling, o ramo de valor escalar).
+                tb_writer.add_histogram("weights/head", agent.head_weights(), ep)
                 tb_writer.flush()
             if stats_writer is not None:
                 stats_row = {
