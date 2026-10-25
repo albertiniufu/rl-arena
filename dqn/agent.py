@@ -31,13 +31,14 @@ class DQNAgent:
     def __init__(self, obs_shape, n_actions=12, lr=1e-3, gamma=.99,
                  epsilon=1.0, epsilon_min=.05, epsilon_decay=.9995,
                  batch_size=64, target_update=500, buffer_size=50000, device=None,
-                 double=True, n_step=1, dueling=False, per=False):
+                 double=True, n_step=1, dueling=False, per=False, tau=0.0):
         self.device = torch.device(device or ("cuda" if torch.cuda.is_available() else "cpu"))
         self.n_actions, self.gamma = n_actions, gamma
         self.epsilon, self.epsilon_min, self.epsilon_decay = epsilon, epsilon_min, epsilon_decay
         self.batch_size, self.target_update = batch_size, target_update
         self.double, self.n_step = double, n_step
         self.dueling, self.per = dueling, per
+        self.tau = tau
         # Online e target precisam da mesma cabeça para o load_state_dict da
         # sincronização periódica casar as chaves.
         self.online = DQN(obs_shape, n_actions, dueling=dueling).to(self.device)
@@ -121,7 +122,19 @@ class DQNAgent:
         # Decaimento por passo (configuração da Fase 0): a rampa por episódio
         # da Fase 1 foi reprovada no A/B e revertida.
         self.epsilon = max(self.epsilon_min, self.epsilon * self.epsilon_decay)
-        if self.steps % self.target_update == 0:
+        if self.tau > 0.0:
+            # Soft update (Polyak): a target avança uma fração `tau` na
+            # direção da online a cada passo de aprendizado, no lugar da
+            # sincronização dura por `target_update` (mecanismos mutuamente
+            # exclusivos). Vale para pesos e buffers, como o load_state_dict.
+            with torch.no_grad():
+                for param_t, param_o in zip(self.target.parameters(),
+                                            self.online.parameters()):
+                    param_t.data.mul_(1.0 - self.tau).add_(param_o.data, alpha=self.tau)
+                for buf_t, buf_o in zip(self.target.buffers(),
+                                        self.online.buffers()):
+                    buf_t.data.mul_(1.0 - self.tau).add_(buf_o.data, alpha=self.tau)
+        elif self.steps % self.target_update == 0:
             self.target.load_state_dict(self.online.state_dict())
         return float(loss.item())
 

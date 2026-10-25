@@ -146,6 +146,67 @@ def test_dueling_learn_smoke():
     assert loss is not None
 
 
+def _fill_params(module, value):
+    """Preenche pesos e buffers de `module` com `value` (envenena a rede)."""
+    import torch
+    with torch.no_grad():
+        for p in module.parameters():
+            p.data.fill_(value)
+        for b in module.buffers():
+            b.data.fill_(value)
+
+
+def test_soft_update_moves_target_toward_online():
+    """Com tau=0.5, a target vira exatamente 0.5 * online a cada learn()."""
+    import torch
+    agent = DQNAgent((5, 20, 32), 12, tau=0.5, batch_size=2)
+    _fill_params(agent.online, 1.0)
+    _fill_params(agent.target, 0.0)
+    obs = np.zeros((5, 20, 32), dtype=np.float32)
+    for action in (0, 1):
+        agent.buffer.add(obs, action, 1.0, obs, False, False)
+    loss = agent.learn()
+    assert loss is not None
+    # target = (1 - tau) * 0.0 + tau * online = 0.5 * online (pós-passo).
+    for param_t, param_o in zip(agent.target.parameters(), agent.online.parameters()):
+        assert torch.allclose(param_t.data, 0.5 * param_o.data, atol=1e-6)
+    for buf_t, buf_o in zip(agent.target.buffers(), agent.online.buffers()):
+        assert torch.allclose(buf_t.data, 0.5 * buf_o.data, atol=1e-6)
+
+
+def test_soft_update_disables_hard_sync():
+    """tau > 0 desliga a sincronização dura: com target_update=1, o resultado
+    do soft update difere da cópia dura (load_state_dict)."""
+    import torch
+    agent = DQNAgent((5, 20, 32), 12, tau=0.5, target_update=1, batch_size=2)
+    _fill_params(agent.online, 1.0)
+    _fill_params(agent.target, 0.0)
+    obs = np.zeros((5, 20, 32), dtype=np.float32)
+    for action in (0, 1):
+        agent.buffer.add(obs, action, 1.0, obs, False, False)
+    loss = agent.learn()
+    assert loss is not None
+    # Cópia dura deixaria target == online; o soft update deixa 0.5 * online.
+    for param_t, param_o in zip(agent.target.parameters(), agent.online.parameters()):
+        assert not torch.equal(param_t.data, param_o.data)
+        assert torch.allclose(param_t.data, 0.5 * param_o.data, atol=1e-6)
+
+
+def test_tau_zero_keeps_hard_sync():
+    """tau=0.0 e target_update=1: a sincronização dura copia a online a cada learn."""
+    import torch
+    agent = DQNAgent((5, 20, 32), 12, tau=0.0, target_update=1, batch_size=2)
+    obs = np.zeros((5, 20, 32), dtype=np.float32)
+    for action in (0, 1):
+        agent.buffer.add(obs, action, 1.0, obs, False, False)
+    loss = agent.learn()
+    assert loss is not None
+    for param_t, param_o in zip(agent.target.parameters(), agent.online.parameters()):
+        assert torch.equal(param_t.data, param_o.data)
+    for buf_t, buf_o in zip(agent.target.buffers(), agent.online.buffers()):
+        assert torch.equal(buf_t.data, buf_o.data)
+
+
 def test_per_sample_favors_high_priority():
     """Rank-based: prioridade alta vira rank 1 e domina a amostragem."""
     buf = PrioritizedReplayBuffer(100)
@@ -284,6 +345,28 @@ def test_parse_args_envs_flag():
     """--envs é opcional (default 1) e aceita N > 1."""
     assert parse_args([]).envs == 1
     assert parse_args(["--envs", "4"]).envs == 4
+
+
+def test_train_help_lists_grid_flags(capsys):
+    """--help documenta as quatro flags do grid de hiperparâmetros da Fase 4."""
+    with pytest.raises(SystemExit):
+        parse_args(["--help"])
+    out = capsys.readouterr().out
+    for flag in ("--lr", "--batch-size", "--target-update", "--tau"):
+        assert flag in out
+
+
+def test_grid_hyperparameter_flags_parse():
+    """As flags do grid parseiam os valores; defaults preservam o histórico."""
+    args = parse_args(["--lr", "2.5e-4", "--batch-size", "128",
+                       "--target-update", "1000", "--tau", "0.005"])
+    assert args.lr == 2.5e-4
+    assert args.batch_size == 128
+    assert args.target_update == 1000
+    assert args.tau == 0.005
+    defaults = parse_args([])
+    assert (defaults.lr, defaults.batch_size,
+            defaults.target_update, defaults.tau) == (1e-3, 64, 500, 0.0)
 
 
 def test_envs_validation_rejects_incompatible_flags():

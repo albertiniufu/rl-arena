@@ -181,6 +181,19 @@ def parse_args(argv=None):
                     help="desliga o Double DQN (ligado por padrão)")
     ap.add_argument("--per", action="store_true",
                     help="replay priorizado rank-based")
+    ap.add_argument("--lr", type=float, default=1e-3,
+                    help="taxa de aprendizado do Adam (na retomada, o otimizador "
+                         "restaurado do checkpoint sobrepõe este valor)")
+    ap.add_argument("--batch-size", type=int, default=64,
+                    help="tamanho do batch amostrado do replay buffer por learn()")
+    ap.add_argument("--target-update", type=int, default=500,
+                    help="a cada quantos learn() a rede target recebe a cópia dura "
+                         "da online (ignorado com --tau > 0)")
+    ap.add_argument("--tau", type=float, default=0.0,
+                    help="fração do soft update da target por learn(): target = "
+                         "(1 - tau) * target + tau * online; com tau > 0, o soft "
+                         "update liga e a sincronização dura por --target-update "
+                         "desliga")
     ap.add_argument("--envs", type=int, default=1,
                     help="ambientes vetorizados na coleta (Fase 5; incompatível "
                          "com --opponent auto, --render, --stats, --tensorboard "
@@ -398,7 +411,8 @@ def main():
                    skin=args.skin)
     agent = DQNAgent(env.observation_space.shape, env.action_space.n,
                      double=args.double, n_step=args.n_step, dueling=args.dueling,
-                     per=args.per)
+                     per=args.per, lr=args.lr, batch_size=args.batch_size,
+                     target_update=args.target_update, tau=args.tau)
     # O `auto` é criado antes do load para que a retomada já possa chamar
     # `init_from_disk` nele (carregar o melhor checkpoint como adversário).
     auto = (AutoOpponent(env, checkpoint_dir=ckpt_dir, dueling=args.dueling)
