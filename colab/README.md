@@ -42,11 +42,13 @@
 ## Restrições do modo vetorizado
 
 Com `--envs` > 1, o `train.py` recusa `--opponent auto`, `--render`,
-`--stats` e `--tensorboard` (o currículo por episódio e a telemetria por
-processo não mapeiam em workers concorrentes). Para medir velocidade:
+`--stats`, `--tensorboard` e `--n-step` > 1 (o currículo por episódio, a
+telemetria por processo e a janela n-step do replay não mapeiam em workers
+concorrentes). Para medir velocidade:
 
 ```python
 ENVS = 8
+N_STEP = 1
 TENSORBOARD = False
 OPPONENT = "random"
 ```
