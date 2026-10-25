@@ -15,7 +15,7 @@ Use o venv existente em `venv/` (Python 3.10; o README menciona `.venv`, mas o d
 ```bash
 source venv/bin/activate          # ou venv/bin/python diretamente
 pip install -r requirements.txt   # só se faltar dependência
-pytest -q                         # 76 testes, ~6s
+pytest -q                         # 77 testes, ~6s
 pytest tests/test_arena.py::test_reset_step_observation -q   # um único teste
 ```
 

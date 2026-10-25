@@ -89,11 +89,32 @@ def save_checkpoint(path, agent, config=None, extra=None, episodes=None):
     torch.save(payload, path)
 
 
+def _validate_state_dict(state_dict, model, label):
+    """Confere chaves e formatos antes de copiar pesos para o modelo."""
+    expected = model.state_dict()
+    if not isinstance(state_dict, dict):
+        raise ValueError(f"Pesos '{label}' inválidos no checkpoint.")
+    missing = sorted(set(expected) - set(state_dict))
+    unexpected = sorted(set(state_dict) - set(expected))
+    mismatched = sorted(
+        key for key in expected
+        if key in state_dict
+        and getattr(state_dict[key], "shape", None) != expected[key].shape
+    )
+    if missing or unexpected or mismatched:
+        raise ValueError(
+            f"Pesos '{label}' incompatíveis com a arquitetura do agente "
+            f"(faltando={missing[:3]}, inesperadas={unexpected[:3]}, "
+            f"formatos={mismatched[:3]}).")
+
+
 def load_checkpoint(path, agent, resume=False, map_location=None):
     """Carrega o checkpoint em `agent`, validando tudo antes de tocar nos pesos.
 
     A validação antecipada evita o `load_state_dict` parcial: se a arquitetura,
-    o algoritmo ou o formato da observação não casarem, o agente fica intacto.
+    o algoritmo, o formato da observação ou os próprios tensores não casarem,
+    o agente fica intacto. Os dois state_dicts são conferidos antes de
+    qualquer cópia, então um alvo corrompido não sobrescreve a online.
     """
     payload = torch.load(
         path, map_location=map_location or agent.device, weights_only=False)
@@ -115,8 +136,14 @@ def load_checkpoint(path, agent, resume=False, map_location=None):
         raise ValueError(
             f"Formato da observação incompatível ({saved_shape} != "
             f"{tuple(agent.obs_shape)}); confira frame_stack/frame_skip.")
-    agent.online.load_state_dict(payload["online"])
-    agent.target.load_state_dict(payload["target"])
+    online_state = payload.get("online")
+    target_state = payload.get("target")
+    # Confere os dois antes de copiar: se o target estiver corrompido, a
+    # online não pode ficar parcialmente sobrescrita.
+    _validate_state_dict(online_state, agent.online, "online")
+    _validate_state_dict(target_state, agent.target, "target")
+    agent.online.load_state_dict(online_state)
+    agent.target.load_state_dict(target_state)
     if resume:
         # A retomada restaura otimizador e contadores. Buffer e RNGs não são
         # persistidos, então o treino continua, mas não bit a bit idêntico.

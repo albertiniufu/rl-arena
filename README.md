@@ -111,7 +111,7 @@ Para colocar o seu no lugar:
 python -m pytest -q
 ```
 
-São 76 testes (~7 s). Rode depois de instalar e depois de cada mudança sua para confirmar que nada quebrou.
+São 77 testes (~7 s). Rode depois de instalar e depois de cada mudança sua para confirmar que nada quebrou.
 
 ## Referência
 

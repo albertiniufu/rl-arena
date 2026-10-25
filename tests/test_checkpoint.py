@@ -102,6 +102,22 @@ def test_load_checkpoint_rejects_obs_shape_mismatch(tmp_path):
     assert all(torch.all(p == 1.0) for p in other.online.parameters())
 
 
+def test_load_checkpoint_rejects_corrupt_target_without_touching_online(tmp_path):
+    """Um target corrompido não pode deixar a online parcialmente carregada."""
+    path = tmp_path / "corrompido.pt"
+    save_checkpoint(path, DQNAgent((5, 32, 20), 6))
+    payload = torch.load(path, weights_only=False)
+    payload["target"].pop(next(iter(payload["target"])))
+    torch.save(payload, path)
+    fresh = DQNAgent((5, 32, 20), 6)
+    with torch.no_grad():
+        for p in fresh.online.parameters():
+            p.fill_(1.0)
+    with pytest.raises(ValueError, match="target"):
+        load_checkpoint(path, fresh)
+    assert all(torch.all(p == 1.0) for p in fresh.online.parameters())
+
+
 def test_apply_env_config():
     cfg = ArenaConfig()
     assert cfg.frame_stack == 1 and cfg.frame_skip == 1
