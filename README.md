@@ -2,6 +2,12 @@
 
 Projeto didático para estudar Reinforcement Learning na prática: um agente DQN (PyTorch + Gymnasium + NumPy + Pygame) treina num mapa 2D fixo para coletar moedas e empurrar um adversário de política simples. Este guia leva você do zero até plugar o seu próprio modelo e o seu próprio algoritmo de RL no lugar do DQN.
 
+## Demonstração
+
+[![Dois personagens coletando moedas no mapa fixo (10 s do demo.mp4)](demo.gif)](demo.mp4)
+
+O gif mostra os primeiros 10 segundos; o vídeo completo está em [`demo.mp4`](demo.mp4) (clique para abrir o player).
+
 ## Guia de uso
 
 Ambiente: Linux. Pré-requisitos: Python 3.10 ou mais novo e familiaridade básica com terminal.

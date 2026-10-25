@@ -11,3 +11,5 @@ __pycache__/
 
 # Gravações de vídeo
 *.mp4
+# ... exceto o exemplo exibido no README
+!demo.mp4
