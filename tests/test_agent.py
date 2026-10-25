@@ -119,6 +119,31 @@ def test_td_targets_double():
         1.0 + 0.9**3 * 4.0, 2.0, 3.0 + 0.9 * 4.0]))
 
 
+def test_dueling_equals_v_plus_advantage():
+    """Com dueling, o forward é V + (A - média(A)) sobre os dois ramos."""
+    import torch
+    from dqn.model import DQN
+
+    net = DQN((5, 20, 32), 12, dueling=True)
+    x = torch.randn(1, 5, 20, 32)
+    feats = net.features(x)
+    v = net.v_head(feats)
+    a = net.a_head(feats)
+    expected = v + a - a.mean(dim=1, keepdim=True)
+    assert torch.allclose(net(x), expected)
+    assert net.head is None
+
+
+def test_dueling_learn_smoke():
+    """Um passo de aprendizado exercita target dueling, gather e backward."""
+    agent = DQNAgent((5, 20, 32), 12, dueling=True, batch_size=2)
+    obs = np.zeros((5, 20, 32), dtype=np.float32)
+    for action in (0, 1):
+        agent.buffer.add(obs, action, 1.0, obs, False, False)
+    loss = agent.learn()
+    assert loss is not None
+
+
 def test_checkpoint_policy_uses_stacked_obs():
     """Com frame stack, o adversário checkpoint age sobre a obs empilhada:
     reset + step completam sem erro de shape na CNN."""

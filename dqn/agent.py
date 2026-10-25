@@ -31,14 +31,17 @@ class DQNAgent:
     def __init__(self, obs_shape, n_actions=12, lr=1e-3, gamma=.99,
                  epsilon=1.0, epsilon_min=.05, epsilon_decay=.9995,
                  batch_size=64, target_update=500, buffer_size=50000, device=None,
-                 double=True, n_step=1):
+                 double=True, n_step=1, dueling=False):
         self.device = torch.device(device or ("cuda" if torch.cuda.is_available() else "cpu"))
         self.n_actions, self.gamma = n_actions, gamma
         self.epsilon, self.epsilon_min, self.epsilon_decay = epsilon, epsilon_min, epsilon_decay
         self.batch_size, self.target_update = batch_size, target_update
         self.double, self.n_step = double, n_step
-        self.online = DQN(obs_shape, n_actions).to(self.device)
-        self.target = DQN(obs_shape, n_actions).to(self.device)
+        self.dueling = dueling
+        # Online e target precisam da mesma cabeça para o load_state_dict da
+        # sincronização periódica casar as chaves.
+        self.online = DQN(obs_shape, n_actions, dueling=dueling).to(self.device)
+        self.target = DQN(obs_shape, n_actions, dueling=dueling).to(self.device)
         self.target.load_state_dict(self.online.state_dict())
         self.optimizer = torch.optim.Adam(self.online.parameters(), lr=lr)
         self.loss_fn = nn.SmoothL1Loss()

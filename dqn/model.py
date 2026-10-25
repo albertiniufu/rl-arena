@@ -2,8 +2,15 @@ import torch
 from torch import nn
 
 class DQN(nn.Module):
-    """Classic CNN DQN: (batch, channels, height, width) -> 12 action values."""
-    def __init__(self, input_shape, n_actions=12):
+    """Classic CNN DQN: (batch, channels, height, width) -> action values.
+
+    Com `dueling=True`, a cabeça separa o valor do estado (`v_head`, saída 1)
+    da vantagem de cada ação (`a_head`, saída `n_actions`) e devolve
+    `V + (A - média(A))`, centralizando as vantagens para remover a
+    ambiguidade entre os dois ramos. Sem dueling, a cabeça única histórica
+    (`head`) é mantida idêntica.
+    """
+    def __init__(self, input_shape, n_actions=12, dueling=False):
         super().__init__()
         c, h, w = input_shape
         self.features = nn.Sequential(
@@ -17,7 +24,20 @@ class DQN(nn.Module):
         )
         with torch.no_grad():
             n = self.features(torch.zeros(1, c, h, w)).shape[1]
-        self.head = nn.Sequential(nn.Linear(n, 128), nn.ReLU(), nn.Linear(128, n_actions))
+        self.dueling = dueling
+        if dueling:
+            self.head = None
+            self.v_head = nn.Sequential(nn.Linear(n, 128), nn.ReLU(), nn.Linear(128, 1))
+            self.a_head = nn.Sequential(nn.Linear(n, 128), nn.ReLU(), nn.Linear(128, n_actions))
+        else:
+            self.head = nn.Sequential(nn.Linear(n, 128), nn.ReLU(), nn.Linear(128, n_actions))
+            self.v_head = None
+            self.a_head = None
 
     def forward(self, x):
-        return self.head(self.features(x))
+        feats = self.features(x)
+        if self.dueling:
+            v = self.v_head(feats)
+            a = self.a_head(feats)
+            return v + a - a.mean(dim=1, keepdim=True)
+        return self.head(feats)
