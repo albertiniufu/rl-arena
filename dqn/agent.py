@@ -8,11 +8,13 @@ from .replay_buffer import ReplayBuffer
 class DQNAgent:
     def __init__(self, obs_shape, n_actions=12, lr=1e-3, gamma=.99,
                  epsilon=1.0, epsilon_min=.1,
-                 batch_size=64, target_update=500, buffer_size=50000, device=None):
+                 batch_size=64, target_update=500, buffer_size=50000, device=None,
+                 warmup=1000):
         self.device = torch.device(device or ("cuda" if torch.cuda.is_available() else "cpu"))
         self.n_actions, self.gamma = n_actions, gamma
         self.epsilon, self.epsilon_min = epsilon, epsilon_min
         self.batch_size, self.target_update = batch_size, target_update
+        self.warmup = warmup
         self.online = DQN(obs_shape, n_actions).to(self.device)
         self.target = DQN(obs_shape, n_actions).to(self.device)
         self.target.load_state_dict(self.online.state_dict())
@@ -37,7 +39,10 @@ class DQNAgent:
         return float(q.mean()), float(q.max())
 
     def learn(self):
-        if len(self.buffer) < self.batch_size:
+        # Warmup: enche o buffer antes de aprender, para as primeiras amostras
+        # não serem quase todas do começo do episódio. O batch_size é um piso
+        # (o sample() exige pelo menos isso).
+        if len(self.buffer) < max(self.warmup, self.batch_size):
             return None
         states, actions, rewards, next_states, terminated, truncated = self.buffer.sample(self.batch_size)
         s = torch.as_tensor(states, dtype=torch.float32, device=self.device)
