@@ -149,6 +149,34 @@ def test_non_stop_action_has_no_stop_penalty():
     env.close()
 
 
+def test_push_without_opponent_penalized_once_per_agent_step():
+    """Empurrar sem oponente em contato custa -0.1, uma vez por step."""
+    env = ArenaEnv(ArenaConfig(opponent_count=1, frame_skip=3))
+    env.reset(seed=1)
+    env.engine.coins.clear()
+    # Oponente existe, mas está longe: o empurrão não tem alvo.
+    env.engine.characters[1].x = 600.0
+    _, reward, *_ = env.step(PUSH_LEFT)
+    assert reward == pytest.approx(-0.1)
+    env.close()
+
+
+def test_push_near_opponent_has_no_miss_penalty():
+    """Empurrar com oponente em contato não paga a penalidade de erro."""
+    env = ArenaEnv(ArenaConfig(opponent_count=1, frame_skip=1))
+    env.reset(seed=1)
+    env.engine.coins.clear()
+    player, opponent = env.engine.characters
+    player.x, player.y, player.vx, player.vy = 400.0, 360.0, 0.0, 0.0
+    player.on_ground = True
+    opponent.x, opponent.y, opponent.vx, opponent.vy = 424.0, 360.0, 0.0, 0.0
+    opponent.on_ground = True
+    _, reward, *_ = env.step(PUSH_RIGHT)
+    assert opponent.vx > 0  # o empurrão encontrou o alvo
+    assert reward == pytest.approx(0.0)
+    env.close()
+
+
 def test_invalid_action():
     env = ArenaEnv()
     env.reset(seed=1)

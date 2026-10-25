@@ -15,7 +15,7 @@ Use o venv existente em `venv/` (Python 3.10; o README menciona `.venv`, mas o d
 ```bash
 source venv/bin/activate          # ou venv/bin/python diretamente
 pip install -r requirements.txt   # só se faltar dependência
-pytest -q                         # 79 testes, ~8s
+pytest -q                         # 81 testes, ~8s
 pytest tests/test_arena.py::test_reset_step_observation -q   # um único teste
 ```
 
@@ -72,7 +72,7 @@ Três camadas, cada uma importando apenas a camada de baixo:
 ## Semântica que não é óbvia
 
 - **Ações reduzidas**: 6 ações, com uma única intensidade de pulo e uma de empurrão por direção (as máximas). `JUMP` é vertical puro; o deslocamento horizontal no ar continua possível com `LEFT`/`RIGHT` no passo seguinte. `PUSH_LEFT`/`PUSH_RIGHT` usam `PUSH_INTENSITY=3` e não movem o personagem no mesmo passo. O adversário `random` sorteia apenas `NON_PUSH_ACTIONS` (0..3).
-- **Episódios só terminam por truncamento** (45s simulados, `truncated=True`); morte nunca termina episódio. Morrer custa 10 moedas (saldo mínimo 0), 5s inativo e respawn em plataforma aleatória. Eliminação é creditada ao jogador de forma simplificada (oponente morre com jogador vivo/adjacente). Recompensas: +1 moeda, +3 eliminação, −2 morte e −0.1 por step do agente escolhendo `STOP` (uma vez por step, não por substep de `frame_skip`); as demais ações não pagam a penalidade de parado.
+- **Episódios só terminam por truncamento** (45s simulados, `truncated=True`); morte nunca termina episódio. Morrer custa 10 moedas (saldo mínimo 0), 5s inativo e respawn em plataforma aleatória. Eliminação é creditada ao jogador de forma simplificada (oponente morre com jogador vivo/adjacente). Recompensas: +1 moeda, +3 eliminação, −2 morte, −0.1 por step do agente escolhendo `STOP` e −0.1 por step empurrando sem oponente vivo em contato no início do step (`push_miss_penalty`). As duas penalidades são aplicadas uma vez por step, não por substep de `frame_skip`; as demais ações não pagam.
 - **Observação não é Markoviana**: velocidades e timers (respawn, moedas) não estão codificados na grade — simplificação didática deliberada.
 - **Dois algoritmos, mesma base**: ambos usam `C=10` (alvo fixo a cada 10 `learn()`), a mesma observação, recompensa e seed. `alg_dqn` usa Q direto, replay uniforme e `max Q_target`; `alg_doubledqn_per_dueling` usa dueling, PER rank-based e Double DQN (online escolhe, target avalia). O bootstrap usa apenas `terminated`; truncamento por tempo continua bootstrapping.
 - **Retomada não é bit a bit reproduzível** (decisão do autor): o checkpoint guarda apenas pesos, otimizador, contadores e metadados; retomar continua a numeração de episódios e o treino, mas buffer e RNGs recomeçam do zero. Retomar exige o mesmo `--alg` e o mesmo formato de observação; checkpoints antigos (`cnn-dqn-*`, 12 ações, sem campo `algorithm`) não carregam (`ValueError`). Coberto por `test_resume_loads_weights_and_continues_episode_numbering` e pelos testes de `test_checkpoint.py`.

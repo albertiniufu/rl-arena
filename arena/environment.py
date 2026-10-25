@@ -6,7 +6,7 @@ import gymnasium as gym
 from gymnasium import spaces
 
 from agents.baseline import PolicyContext, make_policy
-from .actions import N_ACTIONS, STOP
+from .actions import N_ACTIONS, PUSH_LEFT, PUSH_RIGHT, STOP
 from .config import ArenaConfig
 from .engine import ArenaEngine, Character, Coin
 from .skins import load_renderer_class
@@ -93,6 +93,18 @@ class ArenaEnv(gym.Env):
         )
         return int(self.opponent_policy.act(ctx))
 
+    def _push_target_in_range(self):
+        """Há oponente vivo em contato com o jogador no início do step?
+
+        Usa a mesma regra `touching` do engine: se não há alvo, o empurrão
+        não produz efeito e o step paga `push_miss_penalty`.
+        """
+        actor = self.engine.characters[0]
+        return actor.alive and any(
+            c.alive and self.engine.touching(actor, c)
+            for c in self.engine.characters[1:]
+        )
+
     def step(self, action):
         """Avança `frame_skip` substeps de física com a ação do jogador repetida.
 
@@ -101,10 +113,14 @@ class ArenaEnv(gym.Env):
         (não somas) e os totais do step em `*_this_step`.
 
         A penalidade de STOP (`stop_penalty`) é cobrada uma vez por step do
-        agente, não por substep: assim ela não escala com `frame_skip`.
+        agente, não por substep: assim ela não escala com `frame_skip`. Um
+        empurrão sem oponente em contato no início do step também custa
+        `push_miss_penalty` uma vez por step.
         """
         if not self.action_space.contains(action):
             raise ValueError(f"Invalid action: {action}")
+        action = int(action)
+        push_missed = action in (PUSH_LEFT, PUSH_RIGHT) and not self._push_target_in_range()
         dt = 1.0 / self.cfg.fps
         reward = 0.0
         collected = deaths = 0
@@ -121,8 +137,10 @@ class ArenaEnv(gym.Env):
             )
             collected += event["collected"][0]
             deaths += event["deaths_delta"][0]
-        if int(action) == STOP:
+        if action == STOP:
             reward += self.cfg.stop_penalty
+        elif push_missed:
+            reward += self.cfg.push_miss_penalty
         p = self.engine.characters[0]
         # Episodes end only when the configured simulation-time limit is reached.
         # Death does not end the episode: the character loses coins and respawns later.
