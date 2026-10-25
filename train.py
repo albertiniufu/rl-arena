@@ -39,9 +39,12 @@ def budget_snapshots(total_episodes):
 def obs_to_image(obs):
     """Grade semântica (5, H, W) -> imagem RGB (H, W, 3) para o TensorBoard.
 
+    Com frame stack a observação tem `5 * frame_stack` canais; usa apenas os
+    últimos 5 (o frame atual).
     Canais: 0 plataformas, 1 jogador, 2 oponentes, 3 moedas, 4 mortos/respawn.
     """
-    h, w = obs.shape[1], obs.shape[2]
+    frame = obs[-5:]
+    h, w = frame.shape[1], frame.shape[2]
     img = np.zeros((h, w, 3), dtype=np.uint8)
     colors = {
         0: (120, 130, 140),
@@ -51,7 +54,7 @@ def obs_to_image(obs):
         4: (180, 120, 200),
     }
     for channel, color in colors.items():
-        img[obs[channel] > 0] = color
+        img[frame[channel] > 0] = color
     return img
 
 

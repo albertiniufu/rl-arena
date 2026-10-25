@@ -2,7 +2,7 @@ import numpy as np
 import pytest
 
 from dqn.agent import DQNAgent
-from train import epsilon_for_episode
+from train import epsilon_for_episode, obs_to_image
 
 
 def test_epsilon_for_episode():
@@ -29,3 +29,12 @@ def test_learn_does_not_decay_epsilon():
         agent.buffer.add(zeros, 0, 0.0, zeros, False, False)
     assert agent.learn() is not None  # buffer cheio: o passo de aprendizado roda
     assert agent.epsilon == 0.5
+
+
+def test_obs_to_image_uses_last_frames():
+    # Empilhada (frame_stack=4): (20, 20, 32) = 4 frames de (5, 20, 32).
+    obs = np.zeros((20, 20, 32), dtype=np.float32)
+    obs[:5, 0, 0] = 1.0   # frame antigo com ruído
+    obs[-5:, 1, 1] = 1.0  # frame atual com jogador
+    img = obs_to_image(obs)
+    assert np.array_equal(img, obs_to_image(obs[-5:]))
