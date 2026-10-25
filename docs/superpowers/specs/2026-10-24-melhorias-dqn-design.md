@@ -1,6 +1,6 @@
 # Design: DQN aprendendo mais rápido (branch `melhorias-dqn`)
 
-Data: 2026-10-24 · Status: em revisão (builder check)
+Data: 2026-10-24 · Status: revisado (builder check respondido); aguardando aprovação do autor
 
 ## Intenção
 
@@ -19,7 +19,9 @@ Decisões do autor do projeto (Marcelo):
 
 - **G1**: recompensa de avaliação (política gulosa, `evaluate.py`) em N
   episódios de treino ≥ 2× a do baseline atual para o mesmo N.
-- **G2**: tempo de parede por episódio de treino menor (alvo: ≥ 3× mais rápido).
+- **G2**: tempo de parede por episódio concluído na configuração padrão (sem
+  `--stats`/`--tensorboard`), incluindo escrita de checkpoint (alvo: ≥ 3× mais
+  rápido).
 - **G3**: tudo mensurável por A/B com seeds fixas — nenhuma melhoria entra sem
   ganho medido.
 
@@ -46,8 +48,12 @@ Decisões do autor do projeto (Marcelo):
 - CLI (`train.py`, `evaluate.py`, `play.py`) mantém as mesmas flags
   (`--stats`, `--tensorboard`, `--record`, `--resume`, `--opponent`).
 - Testes atualizados junto (a observação muda de forma).
-- Checkpoint: bump de `arch_version` em `dqn/checkpoint.py`; checkpoints antigos
-  deixam de carregar (documentado no commit).
+- Checkpoint: passa a guardar **só pesos/otimizador/contador de episódios** — a
+  promessa de retomada bit a bit é abandonada (decisão do autor; hoje o buffer
+  no checkpoint pesa ~1,3 GB e com frame stack iria a ~5 GB, dominando o tempo
+  de parede). `arch_version` sobe; checkpoints antigos deixam de carregar. O
+  teste `test_resume_is_bit_identical` é removido/reescrito e o README perde a
+  promessa.
 
 ## Diagnóstico (por que o treino atual aprende devagar)
 
@@ -65,9 +71,12 @@ Decisões do autor do projeto (Marcelo):
 
 ## Proposta (fases; cada uma medida por A/B antes de seguir)
 
-- **Fase 0 — instrumentação**: salvar checkpoint a cada orçamento fixo
-  (50/100/150/300 episódios) para avaliar depois; script de avaliação por
-  orçamento. Sem isso, não há como comparar curvas.
+- **Fase 0 — instrumentação**: snapshots de orçamento (50/100/150/300) **só com
+  pesos**, em `checkpoints/budget/` (fora do glob do adversário `auto`);
+  `evaluate.py` ganha `--opponent`; `AutoOpponent` passa a **pular** `.pt`
+  incompatíveis com aviso (em vez de ValueError). Sem isso, não há como
+  comparar curvas. Linha de base já pronta: run seed 7/`auto`/300 eps concluída
+  (logs/training.csv, checkpoints/).
 - **Fase 1 — exploração e warmup** (só agente): epsilon linear de 1.0 até o
   piso em ~20% dos episódios (em vez de decaimento por passo); piso 0.1;
   warmup de aprendizado (não aprende até o buffer ter ≥ 1000 transições).
@@ -83,7 +92,11 @@ Decisões do autor do projeto (Marcelo):
   (lr 2.5e-4 vs 1e-3, batch 64/128, target update 500/1000 vs soft τ=0.005).
 - **Fase 5 — velocidade de parede**: ambientes vetorizados (8 processos, um
   por núcleo), transições em lote, `learn()` a cada K passos; benchmark de
-  passos/segundo antes/depois. GPU fica de fora: não há.
+  passos/segundo antes/depois. GPU fica de fora: não há. "Episódio" passa a ser
+  a **soma de episódios concluídos entre os workers**; orçamentos contam
+  episódios totais; seed do worker i = seed + i. O gate desta fase usa
+  adversário fixo `random` (o currículo `auto` vetorizado fica documentado
+  como limite conhecido).
 
 Fora do escopo desta rodada (minhas escolhas): reward shaping potencial
 (distância à moeda mais próxima) e aprendizado assíncrono — candidatos a
@@ -93,11 +106,19 @@ fase 6 se 1–5 não bastarem.
 
 - **Métrica**: recompensa média por episódio na política gulosa
   (`evaluate.py --seed 1000 --episodes 20`) nos orçamentos 50, 100, 150 e 300
-  episódios de treino.
+  episódios de treino. Primária = contra `rule` (padrão atual do `evaluate.py`),
+  independente do adversário de treino; secundária = contra o adversário de
+  treino. A curva `auto` é acompanhada com 1 seed como cenário real, sem gate.
 - **A/B**: 3 seeds (7, 42, 123) por configuração; adversário fixo `random`
-  como primário (isola o aprendizado do agente); curva `auto` acompanhada como
-  cenário real. Ganho = média das seeds supera a fase anterior em ≥ 15% no
-  orçamento principal (150 eps).
+  como primário (isola o aprendizado do agente). Execução: triagem com
+  1 seed/100 eps; gate com 3 seeds/150 eps; teto de ~12 h de CPU por fase (o
+  autor decide; o builder executa e reporta). Ganho = média das seeds supera a
+  fase anterior em ≥ 15% no orçamento principal (150 eps).
+- **Meta vs. gate**: os 15% por fase são o critério de avanço; o 2× do G1 é o
+  critério **final** contra o baseline no orçamento de 150 eps — se após a
+  Fase 4 não for atingido, candidatas da Fase 6 entram.
+- **Rampa de epsilon**: ancorada em 20% do `--episodes` de cada corrida (as
+  corridas de A/B são fresh, não retomadas).
 - **Custo**: CPU, ~1 min por episódio hoje → 150 eps ≈ 2,5 h por corrida;
   3 seeds ≈ 7,5 h por configuração. Primeiro filtro com 100 eps; 300 eps só
   para as melhores candidatas. A Fase 5 barateia as corridas seguintes
@@ -106,8 +127,12 @@ fase 6 se 1–5 não bastarem.
 ## Decisões do autor vs. escolhas minhas
 
 - Do autor: aprender rápido é o objetivo; complexidade liberada; ambiente pode
-  mudar; branch `melhorias-dqn`.
+  mudar; branch `melhorias-dqn`; **retomada bit a bit pode ser abandonada**;
+  corridas A/B executadas pelo builder (Claude) com teto de ~12 h por fase.
 - Minhas (podem ser questionadas): ordem das fases; frame stack 4 / skip 3;
   n-step 3; PER rank-based; vetorização in-process; métrica de avaliação
   gulosa em orçamentos fixos; piso de epsilon 0.1; quebra de compatibilidade
-  de checkpoints antigos; A/B com adversário fixo `random` como primário.
+  de checkpoints antigos; A/B com adversário fixo `random` como primário;
+  avaliação primária contra `rule`; snapshots de orçamento só com pesos em
+  subdiretório próprio; "episódio" vetorizado = soma entre workers; G2 medido
+  na configuração padrão.
