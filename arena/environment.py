@@ -6,7 +6,7 @@ import gymnasium as gym
 from gymnasium import spaces
 
 from agents.baseline import PolicyContext, make_policy
-from .actions import N_ACTIONS
+from .actions import N_ACTIONS, STOP
 from .config import ArenaConfig
 from .engine import ArenaEngine, Character, Coin
 from .skins import load_renderer_class
@@ -99,6 +99,9 @@ class ArenaEnv(gym.Env):
         A cada substep o adversário decide de novo, sobre a observação corrente,
         e a recompensa acumula. O `info` traz os valores finais do personagem
         (não somas) e os totais do step em `*_this_step`.
+
+        A penalidade de STOP (`stop_penalty`) é cobrada uma vez por step do
+        agente, não por substep: assim ela não escala com `frame_skip`.
         """
         if not self.action_space.contains(action):
             raise ValueError(f"Invalid action: {action}")
@@ -118,6 +121,8 @@ class ArenaEnv(gym.Env):
             )
             collected += event["collected"][0]
             deaths += event["deaths_delta"][0]
+        if int(action) == STOP:
+            reward += self.cfg.stop_penalty
         p = self.engine.characters[0]
         # Episodes end only when the configured simulation-time limit is reached.
         # Death does not end the episode: the character loses coins and respawns later.

@@ -111,7 +111,7 @@ Para colocar o seu no lugar:
 python -m pytest -q
 ```
 
-São 77 testes (~7 s). Rode depois de instalar e depois de cada mudança sua para confirmar que nada quebrou.
+São 79 testes (~8 s). Rode depois de instalar e depois de cada mudança sua para confirmar que nada quebrou.
 
 ## Referência
 
@@ -129,6 +129,8 @@ Seis ações, com uma única intensidade de pulo e uma única de empurrão por d
 | 5 | Empurrar adversário para a direita (força máxima) |
 
 Os códigos ficam em `arena/actions.py` (`N_ACTIONS = 6`), usados pelo engine, ambiente, políticas e pela rede. Uma ação de empurrão não move o personagem no mesmo passo.
+
+Ficar parado tem um custo pequeno: escolher `STOP` desconta `stop_penalty = -0.1` **uma vez por step do agente** (não por substep de `frame_skip`). As demais ações não pagam essa penalidade. O valor fica em `ArenaConfig`.
 
 ### Algoritmos
 

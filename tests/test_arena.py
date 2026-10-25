@@ -129,6 +129,26 @@ def test_frame_skip_repeats_action():
     assert reward == pytest.approx(env.cfg.coin_reward)
     env.close()
 
+def test_stop_action_penalized_once_per_agent_step():
+    """STOP custa -0.1 por step do agente, sem multiplicar pelo frame_skip."""
+    env = ArenaEnv(ArenaConfig(opponent_count=0, frame_skip=3))
+    env.reset(seed=1)
+    env.engine.coins.clear()
+    _, reward, *_ = env.step(STOP)
+    assert reward == pytest.approx(-0.1)
+    env.close()
+
+
+def test_non_stop_action_has_no_stop_penalty():
+    """Andar (ou qualquer ação ativa) não paga a penalidade de ficar parado."""
+    env = ArenaEnv(ArenaConfig(opponent_count=0, frame_skip=3))
+    env.reset(seed=1)
+    env.engine.coins.clear()
+    _, reward, *_ = env.step(LEFT)
+    assert reward == pytest.approx(0.0)
+    env.close()
+
+
 def test_invalid_action():
     env = ArenaEnv()
     env.reset(seed=1)

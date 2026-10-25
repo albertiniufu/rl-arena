@@ -21,6 +21,7 @@ class ArenaConfig:
     coin_reward: float = 1.0
     elimination_reward: float = 3.0 # exterminador do futuro?
     death_penalty: float = -2.0
+    stop_penalty: float = -0.1 # escolher STOP (ficar parado) a cada step do agente
     opponent_count: int = 2 # adicionar mais bots?
     coin_count: int = 10
     frame_stack: int = 1 # quantos frames compõem a observação
