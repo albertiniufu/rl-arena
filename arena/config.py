@@ -22,7 +22,7 @@ class ArenaConfig:
     death_penalty: float = -2.0
     stop_penalty: float = -0.1 # escolher STOP (ficar parado) a cada step do agente
     push_miss_penalty: float = -0.1 # empurrar sem oponente em contato no início do step
-    opponent_count: int = 2 # adicionar mais bots?
+    opponent_count: int = 1 # adicionar mais bots?
     coin_count: int = 10
     frame_stack: int = 1 # quantos frames compõem a observação
     frame_skip: int = 1 # quantos substeps de física cada step do agente executa
