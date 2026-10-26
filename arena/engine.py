@@ -14,7 +14,6 @@ class Character:
     respawn_timer: float = 0.0
     coins: int = 0
     deaths: int = 0
-    eliminations: int = 0
     on_ground: bool = False
 
 @dataclass
@@ -142,7 +141,6 @@ class ArenaEngine:
     def step(self, actions, dt):
         self.sim_time += dt
         before_deaths = [c.deaths for c in self.characters]
-        before_elims = [c.eliminations for c in self.characters]
         # Empurrões são resolvidos antes do movimento, sempre na intensidade
         # máxima: um código por direção.
         for i, action in enumerate(actions):
@@ -153,7 +151,6 @@ class ArenaEngine:
         for i, (c, action) in enumerate(zip(self.characters, actions)):
             push = action in (PUSH_LEFT, PUSH_RIGHT)
             self._move_character(c, STOP if push else action, dt, i == 0)
-        # A character can be eliminated if a push impulse eventually sends it into the fatal region.
         # Coin pickup.
         collected = [0] * len(self.characters)
         for coin in self.coins:
@@ -168,13 +165,7 @@ class ArenaEngine:
                     c.coins += 1
                     collected[i] += 1
                     self._spawn_coin()
-        # Attribute eliminations approximately to a recent contact/push: if an opponent dies
-        # while player is adjacent, the player gets credit. This is intentionally simple.
-        for i in range(1, len(self.characters)):
-            if self.characters[i].deaths > before_deaths[i] and self.characters[0].alive:
-                self.characters[0].eliminations += 1
         return {
             "collected": collected,
             "deaths_delta": [c.deaths - before_deaths[i] for i, c in enumerate(self.characters)],
-            "eliminations_delta": [c.eliminations - before_elims[i] for i, c in enumerate(self.characters)],
         }

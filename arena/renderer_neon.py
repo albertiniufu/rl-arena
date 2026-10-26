@@ -154,9 +154,8 @@ class ArenaRenderer:
         stats = [
             ("MOEDAS", getattr(p, "coins", 0), self.GOLD),
             ("MORTES", getattr(p, "deaths", 0), self.RED),
-            ("ELIM.", getattr(p, "eliminations", 0), self.CYAN),
         ]
-        col_w = max(48, (panel_w - stats_x + 15) // 3)
+        col_w = max(48, (panel_w - stats_x + 15) // len(stats))
         for i, (label, value, color) in enumerate(stats):
             x = stats_x + i * col_w
             self._text(str(value), self.font, color, (x, 24))

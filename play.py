@@ -100,7 +100,7 @@ def main():
                 if video_writer is not None:
                     record_frame(video_writer)
                 if terminated or truncated: break
-            print(f"episode {ep+1}: coins={info['coins']} deaths={info['deaths']} eliminations={info['eliminations']}")
+            print(f"episode {ep+1}: coins={info['coins']} deaths={info['deaths']}")
             if env.render_mode is None: time.sleep(.1)
     finally:
         # Fechar mesmo se a janela for fechada no meio (SystemExit).

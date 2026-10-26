@@ -19,7 +19,6 @@ class ArenaConfig:
     respawn_seconds: float = 5.0
     coin_lifetime: float = 60.0
     coin_reward: float = 1.0
-    elimination_reward: float = 3.0 # exterminador do futuro?
     death_penalty: float = -2.0
     stop_penalty: float = -0.1 # escolher STOP (ficar parado) a cada step do agente
     push_miss_penalty: float = -0.1 # empurrar sem oponente em contato no início do step

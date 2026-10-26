@@ -4,15 +4,15 @@ Renderer animado para o RL Arena (pygame).
 Mantém a mesma interface do renderer original:
     ArenaRenderer(cfg).render(engine, elapsed, info=None) / .close()
 
-Tudo é inferido do estado do engine (posições, moedas, mortes, eliminações),
+Tudo é inferido do estado do engine (posições, moedas e mortes),
 então NÃO é preciso alterar o engine. Efeitos visuais:
 
   * fundo em gradiente com estrelas piscando, lua, montanhas e névoa
   * personagens com "squash & stretch", olhos que seguem o movimento e rastro
   * partículas: poeira ao correr/pular/pousar, explosão na morte, anel no respawn
   * moedas que giram, flutuam e brilham; explosão + "+1" ao coletar
-  * tremor de tela em mortes e eliminações
-  * kill feed, coroa para o líder, painel de HUD, minigráfico de histórico
+  * tremor de tela em mortes
+  * feed de mortes, coroa para o líder, painel de HUD, minigráfico de histórico
   * painel com o dicionário `info` (recompensa, época, epsilon... o que você passar)
 
 Teclas:  ESPAÇO = pausa | T = rastro | G = brilho | H = ajuda | ESC = sair
@@ -181,7 +181,7 @@ class ArenaRenderer:
     # ---------------------------------------------- observação do estado/engine
     def _new_state(self, c):
         return dict(px=c.x, py=c.y, vx=0.0, vy=0.0, pvy=0.0, alive=c.alive, coins=c.coins,
-                    deaths=c.deaths, elims=c.eliminations, sq=1.0, face=1,
+                    deaths=c.deaths, sq=1.0, face=1,
                     trail=deque(maxlen=12), flash=0.0, timer_max=1.0)
 
     def _observe(self, engine, elapsed):
@@ -240,21 +240,14 @@ class ArenaRenderer:
                 self._ring(st["px"], st["py"] - s / 2, col, r_max=90, life=0.5)
                 self.shake = max(self.shake, 9)
                 st["timer_max"] = 0.01
-                killer = next((j for j, o in enumerate(chars)
-                               if j != i and o.eliminations > self.cs[j]["elims"]), None)
-                if killer is None:
-                    self.feed.append([f"{self._name(i)} morreu", col, 4.0])
+                self.feed.append([f"{self._name(i)} morreu", col, 4.0])
             if not st["alive"] and c.alive:                            # renasceu
                 self._ring(c.x, c.y - s / 2, col, r_max=70, life=0.6)
                 self._burst(c.x, c.y - s / 2, col, n=16, speed=150, life=0.6, size=3, gravity=-80)
-            if c.eliminations > st["elims"]:                           # eliminação
-                self._float(c.x, c.y - s - 12, "ELIMINAÇÃO!", (255, 235, 140))
-                self.feed.append([f"{self._name(i)} eliminou o oponente", col, 4.0])
-                self.shake = max(self.shake, 12)
-            if c.coins != st["coins"] or c.deaths != st["deaths"] or c.eliminations != st["elims"]:
+            if c.coins != st["coins"] or c.deaths != st["deaths"]:
                 st["flash"] = 0.5
 
-            st.update(px=c.x, py=c.y, alive=c.alive, coins=c.coins, deaths=c.deaths, elims=c.eliminations)
+            st.update(px=c.x, py=c.y, alive=c.alive, coins=c.coins, deaths=c.deaths)
 
     # ------------------------------------------------------------ atualização
     def _update(self, dt, engine, info):
@@ -409,13 +402,9 @@ class ArenaRenderer:
         if kind == "coin":
             pygame.draw.circle(self.screen, COIN_COLOR, (x, y), 6)
             pygame.draw.circle(self.screen, shade(COIN_COLOR, 0.6), (x, y), 6, 1)
-        elif kind == "death":
+        else:
             pygame.draw.line(self.screen, (240, 110, 120), (x - 5, y - 5), (x + 5, y + 5), 3)
             pygame.draw.line(self.screen, (240, 110, 120), (x - 5, y + 5), (x + 5, y - 5), 3)
-        else:
-            pts = [(x, y - 7), (x + 2, y - 2), (x + 7, y - 2), (x + 3, y + 2), (x + 5, y + 7),
-                   (x, y + 4), (x - 5, y + 7), (x - 3, y + 2), (x - 7, y - 2), (x - 2, y - 2)]
-            pygame.draw.polygon(self.screen, (255, 235, 140), pts)
 
     def _draw_hud(self, engine, elapsed, info):
         chars = engine.characters
@@ -430,7 +419,7 @@ class ArenaRenderer:
             self.screen.blit(self.font.render(self._name(i), True, (235, 235, 245)), (panel.x + 32, y - 8))
             fl = clamp(st["flash"] / 0.5, 0, 1)
             numcol = mix((235, 235, 245), (255, 230, 90), fl)
-            for k, (kind, val) in enumerate((("coin", c.coins), ("death", c.deaths), ("elim", c.eliminations))):
+            for k, (kind, val) in enumerate((("coin", c.coins), ("death", c.deaths))):
                 x = panel.x + 118 + k * 62
                 self._icon(kind, x, y, col)
                 self.screen.blit(self.font.render(str(val), True, numcol), (x + 12, y - 8))

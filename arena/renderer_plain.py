@@ -28,7 +28,7 @@ class ArenaRenderer:
                 txt = self.font.render(f"respawn {max(0,c.respawn_timer):.1f}s", True, color)
                 self.screen.blit(txt, (int(c.x), self.cfg.height - 25))
         p = engine.characters[0]
-        line = f"t={elapsed:.1f}s | moedas={p.coins} | mortes={p.deaths} | eliminacoes={p.eliminations}"
+        line = f"t={elapsed:.1f}s | moedas={p.coins} | mortes={p.deaths}"
         self.screen.blit(self.font.render(line, True, (240, 240, 245)), (10, 10))
         pygame.display.flip()
         self.clock.tick(self.cfg.fps)

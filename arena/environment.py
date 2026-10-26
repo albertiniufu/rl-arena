@@ -132,7 +132,6 @@ class ArenaEnv(gym.Env):
             self.elapsed += dt
             reward += (
                 event["collected"][0] * self.cfg.coin_reward
-                + event["eliminations_delta"][0] * self.cfg.elimination_reward
                 + event["deaths_delta"][0] * self.cfg.death_penalty
             )
             collected += event["collected"][0]
@@ -149,7 +148,6 @@ class ArenaEnv(gym.Env):
         info = {
             "coins": p.coins,
             "deaths": p.deaths,
-            "eliminations": p.eliminations,
             "sim_time": self.engine.sim_time,
             "collected_this_step": collected,
             "deaths_this_step": deaths,

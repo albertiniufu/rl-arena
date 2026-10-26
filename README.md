@@ -27,6 +27,7 @@ python train.py --episodes 300                       # alg_dqn (padrão)
 python train.py --episodes 300 --alg doubledqn_per_dueling
 python train.py --episodes 300 --alg ppo
 python train.py --episodes 300 --alg a2c
+python train.py --max-hours 3                        # treina por 3 h de parede
 ```
 
 Treina sem abrir janela (padrão). `--alg` escolhe o pacote `alg_<nome>` na raiz do projeto. Ao final, os pesos ficam em `checkpoints/latest.pt` e `checkpoints/best.pt`; as métricas por episódio, em `logs/training.csv`.
@@ -126,7 +127,7 @@ Para colocar o seu no lugar:
 python -m pytest -q
 ```
 
-São 105 testes (~10–30 s, dependendo da carga da máquina). Rode depois de instalar e depois de cada mudança sua para confirmar que nada quebrou.
+São 112 testes (~10–30 s, dependendo da carga da máquina). Rode depois de instalar e depois de cada mudança sua para confirmar que nada quebrou.
 
 ## Referência
 
@@ -205,12 +206,21 @@ tensorboard --logdir logs/runs
 
 mostra as mesmas curvas, histogramas dos pesos da CNN e a observação como imagem. Cada experimento escreve em `logs/runs/<alg>_configs_<opponent>_fs<stack>_fk<skip>_lr<lr>_b<batch>_seed<seed>`; o nome inclui algoritmo e configurações para distinguir os runs no TensorBoard. Use `--run-name NOME` para escolher um nome explícito.
 
+Para treinos por tempo de parede, `--max-hours N` encerra de forma limpa após N horas: o episódio corrente termina, o `latest.pt` é salvo com o número real de episódios concluídos e, em PPO/A2C, o rollout parcial é consumido por `finish_training()` antes do checkpoint final.
+
 ### Comparações controladas
 
 `scripts/compare_onpolicy.sh` repete o protocolo da comparação DQN/Double DQN para PPO e A2C: seed 7, 100 episódios, adversário `rule`, `frame_stack=4`, `frame_skip=3`, `batch_size=64`, TensorBoard e avaliação gulosa com 20 episódios (seed 1000) nos snapshots `budget/ep050.pt`, `budget/ep100.pt` e `best.pt`. O script grava treino, avaliações e logs em `logs/compare` e deixa cada run do TensorBoard com o nome `logs/runs/<alg>_configs_rule_fs4_fk3_lr<lr>_b64_seed7`; ele se recusa a sobrescrever checkpoints ou runs existentes.
 
 ```bash
 PYTHON=venv/bin/python bash scripts/compare_onpolicy.sh
+```
+
+`scripts/train_long.sh` usa o mesmo protocolo, mas com orçamento de parede: cada algoritmo treina `HOURS` horas (padrão 3) com `--max-hours` e é avaliado em `best.pt` e `latest.pt` (20 episódios, seed 1000). Grava `checkpoints/long3h/<tag>` e `logs/long3h/{training,evaluation}-*.csv`; os runs do TensorBoard levam o sufixo `_3h`. Assim como o runner de comparação, recusa sobrescrever diretórios existentes.
+
+```bash
+PYTHON=venv/bin/python bash scripts/train_long.sh          # 3 h por algoritmo
+HOURS=1 PYTHON=venv/bin/python bash scripts/train_long.sh  # orçamento menor
 ```
 
 `scripts/summarize_all.py logs/compare` lê os CSVs dos quatro algoritmos e escreve `summary-all.txt`, `training_summary_all.csv`, `evaluation_summary_all.csv` e `comparacao-all.md`, com deltas pareados contra o DQN e ranking pela avaliação. A avaliação usa uma seed e 20 episódios; diferenças pequenas estão dentro do ruído.
@@ -236,7 +246,6 @@ python play.py --player coins --opponent coins --record demonstracao.mp4
 - O cenário e a configuração inicial são fixos.
 - O episódio termina pelo limite de tempo (truncamento), nunca apenas por morte. Ao morrer, o personagem perde 10 moedas (saldo mínimo zero), fica inativo por 5 s simulados e reaparece sobre uma plataforma aleatória.
 - A observação é uma grade semântica `(5, H, W)`; velocidades e temporizadores não estão codificados, então a observação não é totalmente Markoviana — simplificação deliberada para a primeira experiência com CNN.
-- O crédito por eliminações é simplificado.
 
 ### Ideias para simplificar ainda mais o treino
 

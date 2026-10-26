@@ -138,7 +138,7 @@ class ArenaRenderer:
         self.screen.blit(panel, (px, 10))
         title = self.small_font.render("RL FOOTBALL  •  PARTIDA DE TREINO", True, (171, 220, 188))
         self.screen.blit(title, title.get_rect(center=(w // 2, 24)))
-        score = self.big_font.render(f"AZUL  {p.eliminations}  -  {engine.characters[1].eliminations}  VERMELHO",
+        score = self.big_font.render(f"AZUL  {p.coins}  -  {engine.characters[1].coins}  VERMELHO",
                                      True, self.WHITE)
         self.screen.blit(score, score.get_rect(center=(w // 2, 49)))
 

@@ -1,3 +1,4 @@
+import argparse
 import random
 
 import numpy as np
@@ -18,7 +19,13 @@ from alg_registry import CheckpointPolicy, available_algorithms, load_algorithm
 from arena.config import ArenaConfig
 from arena.environment import ArenaEnv
 from arena.vector import make_vector_env
-from train import obs_to_image, parse_args, tensorboard_run_name, validate_train_args
+from train import (
+    obs_to_image,
+    parse_args,
+    tensorboard_run_name,
+    time_budget_reached,
+    validate_train_args,
+)
 
 
 def test_algorithm_discovery_and_loading():
@@ -276,6 +283,26 @@ def test_tensorboard_run_name_uses_algorithm_and_configs():
 def test_tensorboard_run_name_accepts_override():
     args = parse_args(["--run-name", "meu_experimento"])
     assert tensorboard_run_name(args) == "meu_experimento"
+
+
+def test_parse_args_accepts_time_budget():
+    args = parse_args(["--max-hours", "3"])
+    assert args.max_hours == 3.0
+
+
+def test_time_budget_reached_uses_elapsed_wall_clock():
+    """O orçamento é wall-clock: 3 h a partir do início, não episódios."""
+    start = 100.0
+    budget_seconds = 3 * 3600
+    assert not time_budget_reached(start, 3.0, now=start + budget_seconds - 1)
+    assert time_budget_reached(start, 3.0, now=start + budget_seconds)
+    assert not time_budget_reached(start, None, now=start + 10 * budget_seconds)
+
+
+def test_validate_train_args_rejects_non_positive_time_budget():
+    args = argparse.Namespace(envs=1, alg="dqn", max_hours=0.0)
+    with pytest.raises(SystemExit):
+        validate_train_args(args)
 
 
 def test_envs_validation_rejects_incompatible_flags():

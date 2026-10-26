@@ -94,7 +94,6 @@ def training_summary():
             "best_episode": best_index + 1,
             "coins_last20": field_mean(last, "coins"),
             "deaths_last20": field_mean(last, "deaths"),
-            "elims_last20": field_mean(last, "eliminations"),
             "epsilon_final": number(rows[-1].get("epsilon")),
             "loss_last20": field_mean(last, "mean_loss"),
         }
@@ -119,7 +118,6 @@ def evaluation_summary():
                 "checkpoint": ckpt_label,
                 "coins": field_mean(rows, "coins"),
                 "deaths": field_mean(rows, "deaths"),
-                "elims": field_mean(rows, "eliminations"),
                 "duration": field_mean(rows, "duration_seconds"),
             })
             result[(tag, ckpt)] = stats
@@ -190,7 +188,7 @@ def write_training_csv(train):
         "algoritmo", "tipo", "episodios", "reward_media_primeiros20",
         "reward_media_ultimos20", "reward_melhor", "episodio_melhor",
         "coins_media_ultimos20", "deaths_media_ultimos20",
-        "eliminacoes_media_ultimos20", "epsilon_final", "loss_media_ultimos20",
+        "epsilon_final", "loss_media_ultimos20",
     ]
     with (OUT / "training_summary_all.csv").open("w", newline="") as f:
         writer = csv.DictWriter(f, fieldnames=fields)
@@ -209,7 +207,6 @@ def write_training_csv(train):
                 "episodio_melhor": item["best_episode"],
                 "coins_media_ultimos20": fmt(item["coins_last20"], 4),
                 "deaths_media_ultimos20": fmt(item["deaths_last20"], 4),
-                "eliminacoes_media_ultimos20": fmt(item["elims_last20"], 4),
                 "epsilon_final": fmt(item["epsilon_final"], 4),
                 "loss_media_ultimos20": fmt(item["loss_last20"], 6),
             })
@@ -219,7 +216,7 @@ def write_evaluation_csv(evals):
     fields = [
         "algoritmo", "tipo", "checkpoint", "episodios", "reward_media",
         "reward_desvio", "reward_mediana", "reward_min", "reward_max",
-        "coins_media", "deaths_media", "eliminacoes_media",
+        "coins_media", "deaths_media",
         "duracao_media_segundos",
     ]
     with (OUT / "evaluation_summary_all.csv").open("w", newline="") as f:
@@ -242,7 +239,6 @@ def write_evaluation_csv(evals):
                     "reward_max": fmt(item["max"], 4),
                     "coins_media": fmt(item["coins"], 4),
                     "deaths_media": fmt(item["deaths"], 4),
-                    "eliminacoes_media": fmt(item["elims"], 4),
                     "duracao_media_segundos": fmt(item["duration"], 4),
                 })
 
@@ -282,8 +278,7 @@ def write_text(train, evals, deltas, ranks):
                 f"reward={item['mean']:.2f} ± {item['std']:.2f} "
                 f"(mediana {item['median']:.1f}, faixa "
                 f"{item['min']:.0f}..{item['max']:.0f})  "
-                f"moedas={item['coins']:.2f}  mortes={item['deaths']:.2f}  "
-                f"eliminações={item['elims']:.2f}")
+                f"moedas={item['coins']:.2f}  mortes={item['deaths']:.2f}")
     if not evals:
         lines.append("  n/d")
     lines.append("")
@@ -320,8 +315,8 @@ def write_markdown(train, evals, deltas, ranks):
     md.append("")
     md.append("## Treino")
     md.append("")
-    md.append("| algoritmo | tipo | eps | primeiros 20 | últimos 20 | melhor | ep. do melhor | moedas (últ. 20) | mortes (últ. 20) | eliminações (últ. 20) | epsilon final |")
-    md.append("|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|")
+    md.append("| algoritmo | tipo | eps | primeiros 20 | últimos 20 | melhor | ep. do melhor | moedas (últ. 20) | mortes (últ. 20) | epsilon final |")
+    md.append("|---|---|---:|---:|---:|---:|---:|---:|---:|---:|")
     for tag, _, _ in ALGS:
         item = train.get(tag)
         if item is None:
@@ -332,12 +327,12 @@ def write_markdown(train, evals, deltas, ranks):
             f"{item['first20']:.2f} | {item['last20']:.2f} | "
             f"{item['best']:.2f} | {item['best_episode']} | "
             f"{fmt(item['coins_last20'])} | {fmt(item['deaths_last20'])} | "
-            f"{fmt(item['elims_last20'])} | {fmt(item['epsilon_final'], 3)} |")
+            f"{fmt(item['epsilon_final'], 3)} |")
     md.append("")
     md.append("## Avaliação gulosa")
     md.append("")
-    md.append("| algoritmo | checkpoint | eps | reward médio | desvio | mediana | mín | máx | moedas | mortes | eliminações | duração (s) |")
-    md.append("|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|")
+    md.append("| algoritmo | checkpoint | eps | reward médio | desvio | mediana | mín | máx | moedas | mortes | duração (s) |")
+    md.append("|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|")
     for tag, _, _ in ALGS:
         for ckpt, _ in CHECKPOINTS:
             item = evals.get((tag, ckpt))
@@ -348,7 +343,7 @@ def write_markdown(train, evals, deltas, ranks):
                 f"{item['mean']:.2f} | {item['std']:.2f} | "
                 f"{item['median']:.1f} | {item['min']:.0f} | "
                 f"{item['max']:.0f} | {item['coins']:.2f} | "
-                f"{item['deaths']:.2f} | {item['elims']:.2f} | "
+                f"{item['deaths']:.2f} | "
                 f"{fmt(item['duration'])} |")
     if not evals:
         md.append("| n/d | n/d | n/d | n/d | n/d | n/d | n/d | n/d | n/d | n/d | n/d | n/d |")

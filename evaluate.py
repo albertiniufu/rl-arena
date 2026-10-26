@@ -45,7 +45,7 @@ def main():
             total += reward; steps += 1
             if terminated or truncated: break
         row = {"episode": ep + 1, "reward": total, "coins": info.get("coins", 0),
-               "deaths": info.get("deaths", 0), "eliminations": info.get("eliminations", 0),
+               "deaths": info.get("deaths", 0),
                "duration_steps": steps, "duration_seconds": info.get("sim_time", steps / cfg.fps)}
         rows.append(row)
         print(row)

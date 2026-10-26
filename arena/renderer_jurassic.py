@@ -163,7 +163,7 @@ class ArenaRenderer:
 
         # Estatísticas
         p = engine.characters[0]
-        stats_str = f"TEMPO: {elapsed:.1f}s | OVOS: {p.coins} | MORTES: {p.deaths} | CAPTURAS: {p.eliminations}"
+        stats_str = f"TEMPO: {elapsed:.1f}s | OVOS: {p.coins} | MORTES: {p.deaths}"
         stats_txt = self.font.render(stats_str, True, (210, 220, 210))
         self.screen.blit(stats_txt, (220, 10))
 

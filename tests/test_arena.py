@@ -204,6 +204,42 @@ def test_one_episode_without_render():
     env.close()
 
 
+def test_character_and_events_have_no_elimination_concept():
+    """Eliminações deixaram de existir: nem o personagem nem os eventos as expõem."""
+    from arena.engine import Character
+    assert "eliminations" not in Character.__dataclass_fields__
+    env = ArenaEnv(ArenaConfig(opponent_count=1, frame_skip=1))
+    env.reset(seed=1)
+    event = env.engine.step([STOP, STOP], 1 / env.cfg.fps)
+    assert "eliminations_delta" not in event
+    env.close()
+
+
+def test_info_has_no_eliminations():
+    env = ArenaEnv(ArenaConfig(opponent_count=0, frame_skip=1))
+    env.reset(seed=1)
+    _, _, _, _, info = env.step(STOP)
+    assert "eliminations" not in info
+    env.close()
+
+
+def test_opponent_death_gives_no_elimination_bonus():
+    """Morte do oponente não rende recompensa extra ao jogador."""
+    env = ArenaEnv(ArenaConfig(opponent_count=1, frame_skip=1))
+    env.reset(seed=1)
+    env.engine.coins.clear()
+    opponent = env.engine.characters[1]
+    opponent.y = env.cfg.height + 50
+    _, reward, *_ = env.step(STOP)
+    assert not opponent.alive
+    assert reward == pytest.approx(env.cfg.stop_penalty)
+    env.close()
+
+
+def test_config_has_no_elimination_reward():
+    assert not hasattr(ArenaConfig(), "elimination_reward")
+
+
 def test_death_penalty_and_random_platform_respawn():
     cfg = ArenaConfig(respawn_seconds=0.1)
     env = ArenaEnv(cfg)

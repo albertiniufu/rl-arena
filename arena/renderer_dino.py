@@ -248,7 +248,7 @@ class ArenaRenderer:
         panel = pygame.Surface((min(self.cfg.width - 20, 510), 42), pygame.SRCALPHA)
         panel.fill((12, 25, 29, 205))
         self.screen.blit(panel, (10, 10))
-        line = f"MOEDAS {p.coins}   |   MORTES {p.deaths}   |   ELIMINACOES {p.eliminations}"
+        line = f"MOEDAS {p.coins}   |   MORTES {p.deaths}"
         self._text(line, (21, 20), (255, 240, 196), self.small_font)
         self._text("DINO ARENA", (16, 58), (201, 224, 151), self.small_font)
 

@@ -1,4 +1,4 @@
-import argparse, csv, random, warnings
+import argparse, csv, random, time, warnings
 from pathlib import Path
 import numpy as np
 import torch
@@ -32,6 +32,18 @@ def budget_snapshots(total_episodes):
     usados no protocolo de A/B para comparar fases no mesmo orçamento.
     """
     return {b for b in (50, 100, 150, 300) if b <= total_episodes}
+
+
+def time_budget_reached(start, max_hours, now=None):
+    """O orçamento wall-clock do treino terminou?
+
+    `max_hours=None` desliga o orçamento. O relógio é monotônico e pode ser
+    injetado (`now`) para os testes; o treino checa ao fim de cada episódio.
+    """
+    if max_hours is None:
+        return False
+    now = time.monotonic() if now is None else now
+    return (now - start) >= max_hours * 3600.0
 
 
 def obs_to_image(obs):
@@ -178,6 +190,10 @@ def parse_args(argv=None):
     ap.add_argument("--run-name", default=None,
                     help="nome do experimento no TensorBoard; padrão: "
                          "<alg>_configs_<opponent>_fs<stack>_fk<skip>_lr<lr>_b<batch>_seed<seed>")
+    ap.add_argument("--max-hours", type=float, default=None,
+                    help="encerra o treino de forma limpa após N horas de parede; "
+                         "salva o checkpoint final e consome o rollout on-policy "
+                         "(padrão: sem limite)")
     ap.add_argument("--skin", choices=list_skins(), default=None,
                     help="visual do renderer (arena/renderer_<skin>.py; padrão: clássico)")
     ap.add_argument("--frame-stack", type=int, default=1,
@@ -228,6 +244,9 @@ def validate_train_args(args):
     """
     if args.envs < 1:
         raise SystemExit(f"--envs deve ser >= 1 (recebido {args.envs})")
+    max_hours = getattr(args, "max_hours", None)
+    if max_hours is not None and max_hours <= 0:
+        raise SystemExit(f"--max-hours deve ser > 0 (recebido {max_hours})")
     if args.envs == 1:
         return
     # Os algoritmos on-policy (PPO/A2C) precisam do rollout contíguo por
@@ -288,7 +307,8 @@ def _worker_final_info(infos, index):
             and hasattr(value, "__getitem__")}
 
 
-def _train_vectorized(args, cfg, agent, ckpt_dir, start_ep, last_ep, best, budgets):
+def _train_vectorized(args, cfg, agent, ckpt_dir, start_ep, last_ep, best, budgets,
+                      start_time):
     """Loop de treino com coleta vetorizada (`--envs > 1`, Fase 5).
 
     Cada passo do vetor coleta uma transição de cada worker e `learn()` roda a
@@ -325,7 +345,7 @@ def _train_vectorized(args, cfg, agent, ckpt_dir, start_ep, last_ep, best, budge
         pending_reset = np.zeros(n_envs, dtype=bool)
         with log_path.open("w" if new_file else "a", newline="") as f:
             writer = csv.DictWriter(f, fieldnames=[
-                "episode", "steps", "reward", "coins", "deaths", "eliminations",
+                "episode", "steps", "reward", "coins", "deaths",
                 "mean_loss", "epsilon"])
             if new_file:
                 writer.writeheader()
@@ -376,7 +396,6 @@ def _train_vectorized(args, cfg, agent, ckpt_dir, start_ep, last_ep, best, budge
                         "reward": reward,
                         "coins": info.get("coins", 0),
                         "deaths": info.get("deaths", 0),
-                        "eliminations": info.get("eliminations", 0),
                         "mean_loss": mean_loss,
                         "epsilon": agent.epsilon,
                     }
@@ -410,6 +429,10 @@ def _train_vectorized(args, cfg, agent, ckpt_dir, start_ep, last_ep, best, budge
                     worker_rewards[i] = 0.0
                     worker_steps[i] = 0
                 obs = next_obs
+                if time_budget_reached(start_time, args.max_hours):
+                    print(f"orçamento de {args.max_hours:g} h atingido; "
+                          f"encerrando após o episódio {total_episodes}")
+                    break
     finally:
         venv.close()
     save_checkpoint(ckpt_dir / "latest.pt", agent, cfg,
@@ -421,6 +444,7 @@ def _train_vectorized(args, cfg, agent, ckpt_dir, start_ep, last_ep, best, budge
 def main():
     args = parse_args()
     validate_train_args(args)
+    start_time = time.monotonic()
     alg = load_algorithm(args.alg)
     # Os RNGs globais precisam ser semeados para o treino ser reproduzível:
     # a exploração usa o módulo `random`; o replay uniforme amostra com
@@ -471,7 +495,8 @@ def main():
         # vetorizado cria os próprios workers. Caminho histórico fica intacto
         # com --envs 1 (default).
         env.close()
-        _train_vectorized(args, cfg, agent, ckpt_dir, start_ep, last_ep, best, budgets)
+        _train_vectorized(args, cfg, agent, ckpt_dir, start_ep, last_ep, best,
+                          budgets, start_time)
         return
     # Estatísticas adicionais, opcionais: não consomem RNG, então não alteram o treino.
     stats_f = None
@@ -496,9 +521,10 @@ def main():
         tb_writer = SummaryWriter(
             str(Path("logs/runs") / tensorboard_run_name(args)))
     with log_path.open("w" if new_file else "a", newline="") as f:
-        writer = csv.DictWriter(f, fieldnames=["episode", "steps", "reward", "coins", "deaths", "eliminations", "mean_loss", "epsilon"])
+        writer = csv.DictWriter(f, fieldnames=["episode", "steps", "reward", "coins", "deaths", "mean_loss", "epsilon"])
         if new_file: writer.writeheader()
         last_total = 0.0
+        last_done = start_ep - 1
         for ep in range(start_ep, last_ep + 1):
             if auto is not None:
                 env.opponent_policy = auto.choose(ep)
@@ -533,7 +559,7 @@ def main():
                 losses.append(end_loss)
             last_total = total
             row = {"episode": ep, "steps": steps, "reward": total, "coins": info.get("coins", 0),
-                   "deaths": info.get("deaths", 0), "eliminations": info.get("eliminations", 0),
+                   "deaths": info.get("deaths", 0),
                    "mean_loss": float(np.mean(losses)) if losses else "", "epsilon": agent.epsilon}
             writer.writerow(row); f.flush()
             if args.stats or tb_writer is not None:
@@ -550,7 +576,6 @@ def main():
                 tb_writer.add_scalar("train/reward", total, ep)
                 tb_writer.add_scalar("train/coins", info.get("coins", 0), ep)
                 tb_writer.add_scalar("train/deaths", info.get("deaths", 0), ep)
-                tb_writer.add_scalar("train/eliminations", info.get("eliminations", 0), ep)
                 for name in ("mean_loss", "min_loss", "max_loss", "grad_mean", "grad_max", "q_mean", "q_max"):
                     tb_writer.add_scalar(f"train/{name}", agg[name], ep)
                 tb_writer.add_scalar("train/epsilon", agent.epsilon, ep)
@@ -589,6 +614,11 @@ def main():
                 save_checkpoint(ckpt_dir / "budget" / f"ep{ep:03d}.pt", agent, cfg,
                                 {"episode": ep}, episodes=ep)
             print(f"episode={ep} reward={total:.2f} coins={row['coins']} deaths={row['deaths']} epsilon={agent.epsilon:.3f}")
+            last_done = ep
+            if time_budget_reached(start_time, args.max_hours):
+                print(f"orçamento de {args.max_hours:g} h atingido; "
+                      f"encerrando após o episódio {ep}")
+                break
     if stats_f is not None:
         stats_f.close()
     if tb_writer is not None:
@@ -600,8 +630,9 @@ def main():
         if tail_loss is not None:
             print(f"finish_training loss={tail_loss:.5f}")
     save_checkpoint(ckpt_dir / "latest.pt", agent, cfg,
-                    {"episode": last_ep, "reward": last_total, "episodes_done": last_ep, "best_reward": best},
-                    episodes=last_ep)
+                    {"episode": last_done, "reward": last_total,
+                     "episodes_done": last_done, "best_reward": best},
+                    episodes=last_done)
     env.close()
 
 if __name__ == "__main__":

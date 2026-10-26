@@ -111,7 +111,7 @@ class ArenaRenderer:
 
         # Estatísticas estilo Terminal
         stats_line1 = f"TIME: {elapsed:05.1f}s | ENERGY CELLS: {p.coins:02d}"
-        stats_line2 = f"TERMINATIONS: {p.eliminations:02d} | DAMAGE TAKEN: {p.deaths:02d}"
+        stats_line2 = f"DAMAGE TAKEN: {p.deaths:02d}"
 
         txt1 = self.font.render(stats_line1, True, (255, 100, 100))
         txt2 = self.font.render(stats_line2, True, (255, 100, 100))
