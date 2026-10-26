@@ -183,7 +183,7 @@ def parse_args(argv=None):
     ap.add_argument("--alg", choices=available_algorithms(), default="dqn",
                     help="algoritmo de RL: pacote alg_<nome> na raiz do projeto "
                          "(dqn = DQN padrão; doubledqn_per_dueling = Double DQN "
-                         "+ PER + dueling)")
+                         "+ PER + dueling; ppo = PPO; a2c = A2C)")
     ap.add_argument("--lr", type=float, default=1e-3,
                     help="taxa de aprendizado do Adam (na retomada, o otimizador "
                          "restaurado do checkpoint sobrepõe este valor)")
@@ -206,6 +206,14 @@ def validate_train_args(args):
         raise SystemExit(f"--envs deve ser >= 1 (recebido {args.envs})")
     if args.envs == 1:
         return
+    # Os algoritmos on-policy (PPO/A2C) precisam do rollout contíguo por
+    # worker e do gancho de fim de episódio; o loop vetorizado descarta
+    # transições de autoreset e não mapeia essa fronteira. O caminho de
+    # 1 ambiente é o suportado para eles.
+    if getattr(load_algorithm(args.alg).Agent, "on_policy", False):
+        raise SystemExit(
+            f"--alg {args.alg} é on-policy e não é compatível com --envs "
+            f"{args.envs}; use --envs 1")
     incompat = [
         ("--opponent auto", args.opponent == "auto",
          "o currículo escolhe a política por episódio; no vetor ela é fixa"),
@@ -492,6 +500,11 @@ def main():
                         tb_writer.add_scalar("train/grad_norm_step", agent.last_grad_norm, agent.steps)
                 obs = next_obs; total += reward; steps += 1
                 if terminated or truncated: break
+            # Algoritmos on-policy marcam a fronteira do episódio no rollout
+            # e podem fazer um update parcial aqui (A2C).
+            end_loss = agent.end_episode(info) if hasattr(agent, "end_episode") else None
+            if end_loss is not None:
+                losses.append(end_loss)
             last_total = total
             row = {"episode": ep, "steps": steps, "reward": total, "coins": info.get("coins", 0),
                    "deaths": info.get("deaths", 0), "eliminations": info.get("eliminations", 0),
@@ -554,6 +567,12 @@ def main():
         stats_f.close()
     if tb_writer is not None:
         tb_writer.close()
+    # O PPO pode terminar com um rollout parcial; consumi-lo antes do
+    # checkpoint final evita desperdiçar as últimas transições.
+    if hasattr(agent, "finish_training"):
+        tail_loss = agent.finish_training()
+        if tail_loss is not None:
+            print(f"finish_training loss={tail_loss:.5f}")
     save_checkpoint(ckpt_dir / "latest.pt", agent, cfg,
                     {"episode": last_ep, "reward": last_total, "episodes_done": last_ep, "best_reward": best},
                     episodes=last_ep)

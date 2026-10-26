@@ -1,6 +1,6 @@
 # RL Arena — plataforma 2D mínima para DQN
 
-Projeto didático para estudar Reinforcement Learning na prática: um agente DQN (PyTorch + Gymnasium + NumPy + Pygame) treina num mapa 2D fixo para coletar moedas e empurrar um adversário de política simples. Há duas implementações prontas — um DQN enxuto e um Double DQN com replay priorizado e rede dueling — e este guia leva você do zero até plugar o seu próprio modelo e o seu próprio algoritmo de RL.
+Projeto didático para estudar Reinforcement Learning na prática: um agente DQN (PyTorch + Gymnasium + NumPy + Pygame) treina num mapa 2D fixo para coletar moedas e empurrar um adversário de política simples. Há quatro implementações prontas — um DQN enxuto, um Double DQN com replay priorizado e rede dueling, e os algoritmos on-policy PPO e A2C — e este guia leva você do zero até plugar o seu próprio modelo e o seu próprio algoritmo de RL.
 
 ## Demonstração
 
@@ -25,6 +25,8 @@ pip install -r requirements.txt
 ```bash
 python train.py --episodes 300                       # alg_dqn (padrão)
 python train.py --episodes 300 --alg doubledqn_per_dueling
+python train.py --episodes 300 --alg ppo
+python train.py --episodes 300 --alg a2c
 ```
 
 Treina sem abrir janela (padrão). `--alg` escolhe o pacote `alg_<nome>` na raiz do projeto. Ao final, os pesos ficam em `checkpoints/latest.pt` e `checkpoints/best.pt`; as métricas por episódio, em `logs/training.csv`.
@@ -76,10 +78,11 @@ python play.py --player human --opponent coins
 
 ### 6. Experimentar
 
-- Algoritmo: `--alg dqn` (padrão) ou `--alg doubledqn_per_dueling` — veja [Algoritmos](#algoritmos).
+- Algoritmo: `--alg dqn` (padrão), `doubledqn_per_dueling`, `ppo` ou `a2c` — veja [Algoritmos](#algoritmos).
 - Adversário: `--opponent random`, `coins` ou `rule` (o padrão `auto` é um currículo — veja [Adversários](#adversários)).
 - Semente: `--seed N` (treinos com a mesma semente são idênticos).
 - Mundo: física, recompensas, duração do episódio e contagens ficam em `arena/config.py`.
+- Vetorização: `--envs N` só vale para algoritmos off-policy (DQN/Double DQN); PPO e A2C exigem `--envs 1`.
 
 ### 7. Seu próprio modelo e seu próprio algoritmo de RL
 
@@ -95,9 +98,21 @@ alg_doubledqn_per_dueling/        # --alg doubledqn_per_dueling
 ├── model.py                      # DuelingQNetwork: Q = V + A - média(A)
 ├── replay_buffer.py              # PER rank-based (prioridade = |erro de TD|)
 └── agent.py                      # DoubleDQNPerDuelingAgent + double_td_target
+
+alg_ppo/                          # --alg ppo
+├── model.py                      # ActorCriticNetwork: logits + V(s)
+├── rollout_buffer.py             # transições on-policy + fronteira de episódio
+└── agent.py                      # PPOAgent + compute_gae
+
+alg_a2c/                          # --alg a2c
+├── model.py                      # ActorCriticNetwork: logits + V(s)
+├── rollout_buffer.py             # transições on-policy + fronteira de episódio
+└── agent.py                      # A2CAgent + n_step_returns
 ```
 
 O contrato mínimo de um pacote é um `agent.py` expondo `Agent` (a classe usada por `train.py`, `evaluate.py` e `play.py`) e uma instância com `algorithm` (nome gravado no checkpoint), `arch_version`, `obs_shape`, `n_actions`, `online`, `target`, `optimizer`, `buffer`, `steps`, `epsilon`, além dos métodos `act`, `act_batch`, `learn`, `q_stats` e `head_weights`. O `alg_registry.py` descobre os diretórios, importa o pacote e centraliza o checkpoint pesos-only e o adaptador `CheckpointPolicy`.
+
+Algoritmos on-policy podem declarar `on_policy = True` e implementar dois ganchos opcionais: `end_episode(info)`, chamado ao fim de cada episódio (marca a fronteira no rollout e, no A2C, consome o rabo do buffer), e `finish_training()`, chamado antes do checkpoint final (o PPO consome o rollout parcial). Nesses algoritmos `target` é um alias de `online`, porque não existe rede-alvo; o campo continua no checkpoint para manter o formato comum. `--envs` maior que 1 é rejeitado para eles: o loop vetorizado não mapeia a fronteira de episódio necessária ao rollout.
 
 Para colocar o seu no lugar:
 
@@ -111,7 +126,7 @@ Para colocar o seu no lugar:
 python -m pytest -q
 ```
 
-São 81 testes (~8 s). Rode depois de instalar e depois de cada mudança sua para confirmar que nada quebrou.
+São 103 testes (~10–30 s, dependendo da carga da máquina). Rode depois de instalar e depois de cada mudança sua para confirmar que nada quebrou.
 
 ## Referência
 
@@ -134,18 +149,24 @@ Ficar parado tem um custo pequeno: escolher `STOP` desconta `stop_penalty = -0.1
 
 ### Algoritmos
 
-Os dois algoritmos usam a mesma observação, o mesmo alvo fixo `C = 10` (sincroniza a rede-alvo a cada 10 `learn()` bem-sucedidos) e o mesmo contrato, para que a comparação isole as técnicas:
+Os algoritmos off-policy (`dqn` e `doubledqn_per_dueling`) usam a mesma observação, o mesmo alvo fixo `C = 10` (sincroniza a rede-alvo a cada 10 `learn()` bem-sucedidos) e o mesmo contrato, para que a comparação isole as técnicas. PPO e A2C usam a mesma observação e o mesmo formato de checkpoint, mas são on-policy:
 
 - **`dqn`** (padrão): o DQN enxuto do artigo — Q direto por ação, replay uniforme (toda transição com a mesma chance) e alvo `r + γ·max Q(s', ·)`.
 - **`doubledqn_per_dueling`**: três mudanças sobre o `dqn`:
   - **Double DQN**: a rede online escolhe a ação do próximo estado e a target avalia o valor, reduzindo a superestimação;
   - **PER**: a amostragem do replay favorece transições com erro de TD alto (prioridade `|erro| + 1e-6`, rank-based);
   - **Dueling**: a rede separa `V(s)` de `A(s, a)` e devolve `Q = V + A − média(A)`.
+- **`ppo`**: on-policy, com ator categórico e crítico compartilhando a CNN. O rollout tem 1024 transições; o GAE(λ=0.95) usa a marca de fim de episódio para não misturar episódios, mas faz bootstrap no truncamento por tempo. O update tem 4 épocas de minibatches de 64, clip de razão 0.2, perda de valor 0.5, bônus de entropia 0.01 e grad clip 10. O rollout parcial é consumido em `finish_training()`.
+- **`a2c`**: on-policy, com a mesma rede actor-critic, mas retornos n-step (`n_steps = batch_size`, 64 no protocolo) e um único passo de otimização por rollout. Quando o episódio termina antes de completar o rollout, `end_episode()` consome o rabo; o retorno usa bootstrap no truncamento e não atravessa a fronteira do episódio. Usa as mesmas perdas de valor e entropia do PPO.
 
 ```bash
 python train.py --episodes 300 --alg dqn
 python train.py --episodes 300 --alg doubledqn_per_dueling
+python train.py --episodes 300 --alg ppo
+python train.py --episodes 300 --alg a2c
 ```
+
+PPO e A2C são on-policy e exigem `--envs 1`; a política é estocástica no treino e gulosa na avaliação (`evaluate.py`/`play.py` chamam `act(..., greedy=True)`).
 
 `evaluate.py` e `play.py` não precisam de `--alg`: o checkpoint grava o algoritmo e esses scripts carregam o pacote certo.
 
@@ -165,7 +186,7 @@ python train.py --episodes 300 --resume checkpoints/latest.pt
 python train.py --episodes 300 --checkpoint-dir /caminho/para/run1 --resume latest.pt
 ```
 
-`--episodes` indica episódios **adicionais** ao retomar. O checkpoint é pesos-only: guarda as redes (online e alvo), o otimizador, os passos de treino, o epsilon, o número de episódios consumidos, a config do ambiente e os metadados `algorithm`/`arch_version`/`n_actions`/`obs_shape` — retomar continua a numeração de episódios e o treino de onde parou. Replay buffer e RNGs **não** são persistidos, então a retomada não é mais reproduzível bit a bit.
+`--episodes` indica episódios **adicionais** ao retomar. O checkpoint é pesos-only: guarda as redes (online e alvo), o otimizador, os passos de treino, o epsilon, o número de episódios consumidos, a config do ambiente e os metadados `algorithm`/`arch_version`/`n_actions`/`obs_shape` — retomar continua a numeração de episódios e o treino de onde parou. Replay buffer, rollout on-policy e RNGs **não** são persistidos, então a retomada não é mais reproduzível bit a bit. Em PPO/A2C o campo `target` repete os pesos da online (não há rede-alvo) e `epsilon` fica em 0; o restante do formato é idêntico.
 
 O algoritmo, a versão de arquitetura, o número de ações e o formato da observação são validados **antes** de copiar qualquer peso: retomar com `--alg` diferente, com `frame_stack` diferente ou com um checkpoint antigo (formato `cnn-dqn-*`, 12 ações) falha com mensagem clara, sem deixar o agente com pesos parcialmente sobrescritos.
 
@@ -175,7 +196,7 @@ O algoritmo, a versão de arquitetura, o número de ações e o formato da obser
 python train.py --episodes 300 --stats
 ```
 
-grava `logs/stats.csv` por episódio: recompensa, perda (média/mín/máx), norma do gradiente antes do clip, Q-valores, epsilon e tamanho do buffer.
+grava `logs/stats.csv` por episódio: recompensa, perda (média/mín/máx), norma do gradiente antes do clip, valores do crítico (ou Q-values, nos algoritmos de valor), epsilon e tamanho do buffer. Em PPO/A2C o buffer é o rollout e volta a zero a cada update; episódios sem update podem ficar com perda vazia.
 
 ```bash
 python train.py --episodes 300 --tensorboard
@@ -226,6 +247,8 @@ rl-arena/
 ├── agents/                   # políticas baseline usadas como adversário
 ├── alg_dqn/                  # DQN enxuto: QNetwork, replay uniforme, DQNAgent
 ├── alg_doubledqn_per_dueling/  # Double DQN + PER + dueling
+├── alg_ppo/                  # PPO: actor-critic, rollout com GAE
+├── alg_a2c/                  # A2C: actor-critic, retornos n-step
 ├── alg_registry.py           # descoberta dos alg_*, checkpoint e CheckpointPolicy
 ├── tests/
 ├── train.py
