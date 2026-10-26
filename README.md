@@ -127,7 +127,7 @@ Para colocar o seu no lugar:
 python -m pytest -q
 ```
 
-São 112 testes (~10–30 s, dependendo da carga da máquina). Rode depois de instalar e depois de cada mudança sua para confirmar que nada quebrou.
+São 116 testes (~10–30 s, dependendo da carga da máquina). Rode depois de instalar e depois de cada mudança sua para confirmar que nada quebrou.
 
 ## Referência
 
@@ -223,7 +223,7 @@ PYTHON=venv/bin/python bash scripts/train_long.sh          # 3 h por algoritmo
 HOURS=1 PYTHON=venv/bin/python bash scripts/train_long.sh  # orçamento menor
 ```
 
-`scripts/summarize_all.py logs/compare` lê os CSVs dos quatro algoritmos e escreve `summary-all.txt`, `training_summary_all.csv`, `evaluation_summary_all.csv` e `comparacao-all.md`, com deltas pareados contra o DQN e ranking pela avaliação. A avaliação usa uma seed e 20 episódios; diferenças pequenas estão dentro do ruído.
+`scripts/summarize_all.py logs/compare` lê os CSVs dos quatro algoritmos e escreve `summary-all.txt`, `training_summary_all.csv`, `evaluation_summary_all.csv` e `comparacao-all.md`, com deltas pareados contra o DQN e ranking pela avaliação. Para o protocolo por tempo de parede, use `scripts/summarize_all.py logs/long3h --hours 3`, que descreve o orçamento e inclui o checkpoint `final` (`latest.pt`) na avaliação. A avaliação usa uma seed e 20 episódios; diferenças pequenas estão dentro do ruído.
 
 ### Skins
 

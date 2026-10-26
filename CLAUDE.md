@@ -15,7 +15,7 @@ Use o venv existente em `venv/` (Python 3.10; o README menciona `.venv`, mas o d
 ```bash
 source venv/bin/activate          # ou venv/bin/python diretamente
 pip install -r requirements.txt   # só se faltar dependência
-pytest -q                         # 112 testes, ~10–30s
+pytest -q                         # 116 testes, ~10–30s
 pytest tests/test_arena.py::test_reset_step_observation -q   # um único teste
 ```
 
@@ -78,7 +78,7 @@ Três camadas, cada uma importando apenas a camada de baixo:
 
 - **`scripts/train_long.sh`** — treino por tempo de parede dos quatro algoritmos em sequência: `HOURS` (padrão 3) por algoritmo via `--max-hours`, mesmo protocolo de seed/oponente/frame stack/batch, avaliação de `best.pt` e `latest.pt` (20 eps, seed 1000) ao fim de cada treino. Grava em `checkpoints/long3h/<tag>` e `logs/long3h/`, com runs do TensorBoard sufixados `_3h`; recusa sobrescrever diretórios existentes.
 
-- **`scripts/compare_onpolicy.sh` + `scripts/summarize_all.py`** — runner reprodutível de PPO/A2C no mesmo protocolo da comparação DQN/Double DQN (seed 7, 100 eps, `rule`, `frame_stack=4`, `frame_skip=3`, `batch=64`, TensorBoard, snapshots `ep050`/`ep100`/`best`, avaliação gulosa de 20 eps com seed 1000). Grava tudo em `logs/compare` e deixa os runs em `logs/runs/<alg>_configs_<opponent>_fs<stack>_fk<skip>_lr<lr>_b<batch>_seed<seed>`; recusa sobrescrever diretórios existentes. O sumarizador lê os quatro algoritmos, usa campos ausentes como `n/d`, calcula deltas pareados contra o DQN e escreve `summary-all.txt`, `training_summary_all.csv`, `evaluation_summary_all.csv` e `comparacao-all.md`.
+- **`scripts/compare_onpolicy.sh` + `scripts/summarize_all.py`** — runner reprodutível de PPO/A2C no mesmo protocolo da comparação DQN/Double DQN (seed 7, 100 eps, `rule`, `frame_stack=4`, `frame_skip=3`, `batch=64`, TensorBoard, snapshots `ep050`/`ep100`/`best`, avaliação gulosa de 20 eps com seed 1000). Grava tudo em `logs/compare` e deixa os runs em `logs/runs/<alg>_configs_<opponent>_fs<stack>_fk<skip>_lr<lr>_b<batch>_seed<seed>`; recusa sobrescrever diretórios existentes. O sumarizador lê os quatro algoritmos, usa campos ausentes como `n/d`, calcula deltas pareados contra o DQN e escreve `summary-all.txt`, `training_summary_all.csv`, `evaluation_summary_all.csv` e `comparacao-all.md`. Com `--hours N`, descreve o protocolo por tempo de parede e inclui o checkpoint `latest`/`final` (ausente nos CSVs antigos vira `n/d`).
 
 ## Semântica que não é óbvia
 

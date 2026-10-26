@@ -11,6 +11,7 @@ DQN/Double DQN e escreve, em logs/compare:
 
 Não inventa números: arquivo ou campo ausente aparece como n/d.
 """
+import argparse
 import csv
 import statistics
 import sys
@@ -23,7 +24,8 @@ ALGS = [
     ("ppo", "PPO", "on-policy"),
     ("a2c", "A2C", "on-policy"),
 ]
-CHECKPOINTS = [("ep050", "50 eps"), ("ep100", "100 eps"), ("best", "melhor")]
+CHECKPOINTS = [("ep050", "50 eps"), ("ep100", "100 eps"),
+               ("best", "melhor"), ("latest", "final")]
 
 
 def read_csv(path):
@@ -243,18 +245,21 @@ def write_evaluation_csv(evals):
                 })
 
 
-def protocol_text():
+def protocol_text(hours=None):
+    treino = (f"{hours:g} h de parede por algoritmo (--max-hours)"
+              if hours else "100 episódios")
     return (
         "seed=7  adversário=rule  frame_stack=4  frame_skip=3  batch=64  "
-        "treino=100 episódios; avaliação gulosa com 20 episódios, seed=1000, "
+        f"treino={treino}; avaliação gulosa com 20 episódios, seed=1000, "
         "adversário=rule. DQN/Double DQN: lr=2.5e-4, alvo fixo C=10. "
         "PPO: lr=2.5e-4, rollout=1024, 4 épocas. "
         "A2C: lr=7e-4, n_steps=64. PPO e A2C usam 1 ambiente."
     )
 
 
-def write_text(train, evals, deltas, ranks):
-    lines = ["COMPARAÇÃO CONTROLADA — DQN, Double DQN, PPO e A2C", protocol_text(), ""]
+def write_text(train, evals, deltas, ranks, hours=None):
+    lines = ["COMPARAÇÃO CONTROLADA — DQN, Double DQN, PPO e A2C",
+             protocol_text(hours), ""]
     lines.append("TREINO")
     for tag, label, _ in ALGS:
         item = train.get(tag)
@@ -309,9 +314,9 @@ def write_text(train, evals, deltas, ranks):
     print(text, end="")
 
 
-def write_markdown(train, evals, deltas, ranks):
+def write_markdown(train, evals, deltas, ranks, hours=None):
     md = ["# Comparação controlada — DQN, Double DQN, PPO e A2C", ""]
-    md.append(f"Protocolo: {protocol_text()}")
+    md.append(f"Protocolo: {protocol_text(hours)}")
     md.append("")
     md.append("## Treino")
     md.append("")
@@ -389,19 +394,38 @@ def write_markdown(train, evals, deltas, ranks):
               "worker), enquanto os demais usam `2.5e-4`; isso é uma escolha "
               "de configuração razoável por algoritmo, não um controle "
               "estrito de learning rate.")
-    md.append("- `best.pt` é escolhido durante o treino; os snapshots "
-              "`ep050` e `ep100` permitem comparar orçamentos iguais.")
-    md.append("")
-    md.append("Curvas: `tensorboard --logdir logs/runs` (runs "
-              "`dqn_configs_rule_fs4_fk3_lr0.00025_b64_seed7`, "
-              "`doubledqn_per_dueling_configs_rule_fs4_fk3_lr0.00025_b64_seed7`, "
-              "`ppo_configs_rule_fs4_fk3_lr0.00025_b64_seed7` e "
-              "`a2c_configs_rule_fs4_fk3_lr0.0007_b64_seed7`).")
+    if hours:
+        md.append(f"- Cada algoritmo treinou {hours:g} h de parede "
+                  "(`--max-hours`); `best.pt` é o melhor episódio do treino "
+                  "e `latest.pt`, o checkpoint final.")
+        md.append("")
+        md.append("Curvas: `tensorboard --logdir logs/runs` (runs "
+                  "`<alg>_configs_rule_fs4_fk3_lr<lr>_b64_seed7_"
+                  f"{hours:g}h`, com lr=2.5e-4 em DQN/DDQN/PPO e "
+                  "lr=7e-4 no A2C).")
+    else:
+        md.append("- `best.pt` é escolhido durante o treino; os snapshots "
+                  "`ep050` e `ep100` permitem comparar orçamentos iguais.")
+        md.append("")
+        md.append("Curvas: `tensorboard --logdir logs/runs` (runs "
+                  "`dqn_configs_rule_fs4_fk3_lr0.00025_b64_seed7`, "
+                  "`doubledqn_per_dueling_configs_rule_fs4_fk3_lr0.00025_b64_seed7`, "
+                  "`ppo_configs_rule_fs4_fk3_lr0.00025_b64_seed7` e "
+                  "`a2c_configs_rule_fs4_fk3_lr0.0007_b64_seed7`).")
     md.append("")
     (OUT / "comparacao-all.md").write_text("\n".join(md))
 
 
-def main():
+def main(argv=None):
+    parser = argparse.ArgumentParser(
+        description="Resume a comparação controlada dos quatro algoritmos.")
+    parser.add_argument("out", nargs="?", default="logs/compare",
+                        help="diretório com os CSVs (padrão: logs/compare)")
+    parser.add_argument("--hours", type=float, default=None,
+                        help="protocolo por tempo de parede: horas por algoritmo")
+    args = parser.parse_args(argv)
+    global OUT
+    OUT = Path(args.out)
     OUT.mkdir(parents=True, exist_ok=True)
     train = training_summary()
     evals = evaluation_summary()
@@ -409,8 +433,8 @@ def main():
     ranks = ranking(evals, train)
     write_training_csv(train)
     write_evaluation_csv(evals)
-    write_text(train, evals, deltas, ranks)
-    write_markdown(train, evals, deltas, ranks)
+    write_text(train, evals, deltas, ranks, hours=args.hours)
+    write_markdown(train, evals, deltas, ranks, hours=args.hours)
 
 
 if __name__ == "__main__":
