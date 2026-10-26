@@ -1,8 +1,9 @@
 """Política controlada por humano via teclado.
 
-Usada pelo `play.py --player human`: o jogador (personagem 0) é controlado
-pelo teclado enquanto o adversário usa a política de `--opponent`.
-Requer renderização, que o play.py ativa automaticamente.
+Usada pelo `play.py --player human` ou `--opponent human`: o personagem
+correspondente é controlado pelo teclado (o `PolicyContext` diz qual), e o
+outro lado usa a política/checkpoint escolhido. Requer renderização, que o
+play.py ativa automaticamente.
 """
 import pygame
 

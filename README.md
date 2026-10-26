@@ -70,6 +70,16 @@ Para jogar no teclado contra um adversário não humano (a janela abre automatic
 python play.py --player human --opponent coins
 ```
 
+O adversário também pode ser humano ou outro checkpoint:
+
+```bash
+python play.py --checkpoint checkpoints/best.pt --opponent human --render
+python play.py --checkpoint checkpoints/best.pt --opponent checkpoints/long3h/ppo/latest.pt --render
+python play.py --player human --opponent checkpoints/long3h/ppo/latest.pt --render
+```
+
+Com `--opponent human` a janela também abre sozinha e o adversário usa o mesmo teclado do jogador (`--player human` e `--opponent human` juntos são recusados). Ao colocar dois checkpoints no mesmo ambiente, o `play.py` exige o mesmo `frame_stack`/`frame_skip`; se forem diferentes, ele explica o conflito antes de iniciar.
+
 | Tecla | Ação |
 |---|---|
 | ← → ou A D | Andar |
@@ -127,7 +137,7 @@ Para colocar o seu no lugar:
 python -m pytest -q
 ```
 
-São 116 testes (~10–30 s, dependendo da carga da máquina). Rode depois de instalar e depois de cada mudança sua para confirmar que nada quebrou.
+São 123 testes (~10–30 s, dependendo da carga da máquina). Rode depois de instalar e depois de cada mudança sua para confirmar que nada quebrou.
 
 ## Referência
 
