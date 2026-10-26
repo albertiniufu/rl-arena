@@ -18,7 +18,7 @@ from alg_registry import CheckpointPolicy, available_algorithms, load_algorithm
 from arena.config import ArenaConfig
 from arena.environment import ArenaEnv
 from arena.vector import make_vector_env
-from train import obs_to_image, parse_args, validate_train_args
+from train import obs_to_image, parse_args, tensorboard_run_name, validate_train_args
 
 
 def test_algorithm_discovery_and_loading():
@@ -260,6 +260,22 @@ def test_train_cli_lr_and_batch():
     args = parse_args(["--lr", "2.5e-4", "--batch-size", "128"])
     assert args.lr == 2.5e-4
     assert args.batch_size == 128
+
+
+def test_tensorboard_run_name_uses_algorithm_and_configs():
+    """O run do TensorBoard identifica algoritmo e configurações do treino."""
+    args = parse_args([
+        "--alg", "ppo", "--opponent", "rule", "--frame-stack", "4",
+        "--frame-skip", "3", "--lr", "2.5e-4", "--batch-size", "64",
+        "--seed", "7",
+    ])
+    assert tensorboard_run_name(args) == (
+        "ppo_configs_rule_fs4_fk3_lr0.00025_b64_seed7")
+
+
+def test_tensorboard_run_name_accepts_override():
+    args = parse_args(["--run-name", "meu_experimento"])
+    assert tensorboard_run_name(args) == "meu_experimento"
 
 
 def test_envs_validation_rejects_incompatible_flags():

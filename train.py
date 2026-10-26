@@ -173,7 +173,11 @@ def parse_args(argv=None):
                          "em logs/stats.csv e no terminal")
     ap.add_argument("--tensorboard", action="store_true",
                     help="grava escalares, histogramas e a observação em "
-                         "logs/runs/seed<N> (abra com: tensorboard --logdir logs/runs)")
+                         "logs/runs/<alg>_configs_<opponent>_fs..._fk..._lr..._b..._seed... "
+                         "(abra com: tensorboard --logdir logs/runs)")
+    ap.add_argument("--run-name", default=None,
+                    help="nome do experimento no TensorBoard; padrão: "
+                         "<alg>_configs_<opponent>_fs<stack>_fk<skip>_lr<lr>_b<batch>_seed<seed>")
     ap.add_argument("--skin", choices=list_skins(), default=None,
                     help="visual do renderer (arena/renderer_<skin>.py; padrão: clássico)")
     ap.add_argument("--frame-stack", type=int, default=1,
@@ -193,6 +197,26 @@ def parse_args(argv=None):
                     help="ambientes vetorizados na coleta (Fase 5; incompatível "
                          "com --opponent auto, --render, --stats e --tensorboard)")
     return ap.parse_args(argv)
+
+
+def tensorboard_run_name(args):
+    """Nome do experimento no TensorBoard: algoritmo + configurações.
+
+    O nome precisa ser estável para retomar o mesmo treino. Por isso ele
+    inclui algoritmo, adversário, frame stack/skip, lr, batch e seed — e não
+    inclui o número de episódios, que muda ao retomar. `--run-name` permite
+    um nome explícito.
+    """
+    if args.run_name:
+        name = args.run_name.strip()
+        if not name or "/" in name or "\\" in name or name in (".", ".."):
+            raise SystemExit("--run-name deve ser um nome simples, sem barras")
+        return name
+    return (
+        f"{args.alg}_configs_{args.opponent}"
+        f"_fs{args.frame_stack}_fk{args.frame_skip}"
+        f"_lr{args.lr:g}_b{args.batch_size}_seed{args.seed}"
+    )
 
 
 def validate_train_args(args):
@@ -467,8 +491,10 @@ def main():
             from torch.utils.tensorboard import SummaryWriter
         except ImportError as exc:
             raise SystemExit("TensorBoard não está instalado. Instale com: pip install tensorboard") from exc
-        # Um diretório por seed: retomar com o mesmo seed continua as curvas.
-        tb_writer = SummaryWriter(str(Path("logs/runs") / f"seed{args.seed}"))
+        # Um diretório por experimento: o nome inclui algoritmo e configs,
+        # então retomar com os mesmos argumentos continua as curvas.
+        tb_writer = SummaryWriter(
+            str(Path("logs/runs") / tensorboard_run_name(args)))
     with log_path.open("w" if new_file else "a", newline="") as f:
         writer = csv.DictWriter(f, fieldnames=["episode", "steps", "reward", "coins", "deaths", "eliminations", "mean_loss", "epsilon"])
         if new_file: writer.writeheader()

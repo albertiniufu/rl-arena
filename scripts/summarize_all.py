@@ -397,8 +397,11 @@ def write_markdown(train, evals, deltas, ranks):
     md.append("- `best.pt` é escolhido durante o treino; os snapshots "
               "`ep050` e `ep100` permitem comparar orçamentos iguais.")
     md.append("")
-    md.append("Curvas: `tensorboard --logdir logs/runs` (runs `dqn-seed7`, "
-              "`ddqn-seed7`, `ppo-seed7` e `a2c-seed7`).")
+    md.append("Curvas: `tensorboard --logdir logs/runs` (runs "
+              "`dqn_configs_rule_fs4_fk3_lr0.00025_b64_seed7`, "
+              "`doubledqn_per_dueling_configs_rule_fs4_fk3_lr0.00025_b64_seed7`, "
+              "`ppo_configs_rule_fs4_fk3_lr0.00025_b64_seed7` e "
+              "`a2c_configs_rule_fs4_fk3_lr0.0007_b64_seed7`).")
     md.append("")
     (OUT / "comparacao-all.md").write_text("\n".join(md))
 

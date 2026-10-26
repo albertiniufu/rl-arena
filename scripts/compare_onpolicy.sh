@@ -32,12 +32,13 @@ COMMON=(
 
 run_alg() {
   local alg=$1 ckpt=$2 tag=$3 lr=$4
+  local run_name="${alg}_configs_${OPPONENT}_fs4_fk3_lr${lr}_b64_seed${SEED}"
   if [ -d "$ckpt" ]; then
     echo "ERRO: $ckpt já existe; remova ou use outro diretório para não misturar execuções" >&2
     exit 1
   fi
-  if [ -d "logs/runs/$tag-seed$SEED" ]; then
-    echo "ERRO: logs/runs/$tag-seed$SEED já existe; remova antes de repetir" >&2
+  if [ -d "logs/runs/$run_name" ]; then
+    echo "ERRO: logs/runs/$run_name já existe; remova antes de repetir" >&2
     exit 1
   fi
 
@@ -47,14 +48,14 @@ run_alg() {
     --episodes "$EPISODES" \
     --checkpoint-dir "$ckpt" \
     --lr "$lr" \
+    --run-name "$run_name" \
     "${COMMON[@]}" 2>&1 | tee "$OUT/train-$tag.log"
 
   mv logs/training.csv "$OUT/training-$tag.csv"
-  if [ ! -d "logs/runs/seed$SEED" ]; then
-    echo "ERRO: logs/runs/seed$SEED não foi criado pelo treino $tag" >&2
+  if [ ! -d "logs/runs/$run_name" ]; then
+    echo "ERRO: logs/runs/$run_name não foi criado pelo treino $tag" >&2
     exit 1
   fi
-  mv "logs/runs/seed$SEED" "logs/runs/$tag-seed$SEED"
 
   local pair target name
   for pair in "budget/ep050.pt:ep050" "budget/ep100.pt:ep100" "best.pt:best"; do
@@ -72,8 +73,8 @@ run_alg() {
 
 # A2C usa um lr um pouco maior, como é usual para actor-critic com um único
 # worker; o restante do protocolo é idêntico ao da comparação DQN/DDQN.
-run_alg ppo checkpoints/compare/ppo ppo 2.5e-4
-run_alg a2c checkpoints/compare/a2c a2c 7e-4
+run_alg ppo checkpoints/compare/ppo ppo 0.00025
+run_alg a2c checkpoints/compare/a2c a2c 0.0007
 
 "$PY" scripts/summarize_all.py "$OUT" | tee "$OUT/summary-all.txt"
 echo "=== [$(date +%H:%M:%S)] COMPARAÇÃO ON-POLICY CONCLUÍDA ==="
