@@ -205,6 +205,16 @@ tensorboard --logdir logs/runs
 
 mostra as mesmas curvas, histogramas dos pesos da CNN e a observação como imagem; cada seed escreve em `logs/runs/seed<N>`.
 
+### Comparações controladas
+
+`scripts/compare_onpolicy.sh` repete o protocolo da comparação DQN/Double DQN para PPO e A2C: seed 7, 100 episódios, adversário `rule`, `frame_stack=4`, `frame_skip=3`, `batch_size=64`, TensorBoard e avaliação gulosa com 20 episódios (seed 1000) nos snapshots `budget/ep050.pt`, `budget/ep100.pt` e `best.pt`. O script grava treino, avaliações e logs em `logs/compare` e move cada run do TensorBoard para `logs/runs/{ppo,a2c}-seed7`; ele se recusa a sobrescrever checkpoints ou runs existentes.
+
+```bash
+PYTHON=venv/bin/python bash scripts/compare_onpolicy.sh
+```
+
+`scripts/summarize_all.py logs/compare` lê os CSVs dos quatro algoritmos e escreve `summary-all.txt`, `training_summary_all.csv`, `evaluation_summary_all.csv` e `comparacao-all.md`, com deltas pareados contra o DQN e ranking pela avaliação. A avaliação usa uma seed e 20 episódios; diferenças pequenas estão dentro do ruído.
+
 ### Skins
 
 ```bash
@@ -250,6 +260,7 @@ rl-arena/
 ├── alg_ppo/                  # PPO: actor-critic, rollout com GAE
 ├── alg_a2c/                  # A2C: actor-critic, retornos n-step
 ├── alg_registry.py           # descoberta dos alg_*, checkpoint e CheckpointPolicy
+├── scripts/                  # comparações controladas e sumarizador
 ├── tests/
 ├── train.py
 ├── evaluate.py
