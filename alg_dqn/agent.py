@@ -33,7 +33,7 @@ class DQNAgent:
 
     def __init__(self, obs_shape, n_actions, lr=1e-3, gamma=.99,
                  epsilon=1.0, epsilon_min=.05, epsilon_decay=.9995,
-                 batch_size=64, buffer_size=50000, device=None):
+                 batch_size=64, buffer_size=50000, warmup=0, device=None):
         self.device = torch.device(device or ("cuda" if torch.cuda.is_available() else "cpu"))
         self.obs_shape = tuple(obs_shape)
         self.n_actions = int(n_actions)
@@ -42,6 +42,9 @@ class DQNAgent:
         self.epsilon_min = epsilon_min
         self.epsilon_decay = epsilon_decay
         self.batch_size = batch_size
+        # `warmup` adia o primeiro update até o buffer ter transições
+        # suficientes (evita aprender só com o começo do episódio).
+        self.warmup = int(warmup)
         self.online = QNetwork(self.obs_shape, self.n_actions).to(self.device)
         self.target = QNetwork(self.obs_shape, self.n_actions).to(self.device)
         self.target.load_state_dict(self.online.state_dict())
@@ -84,7 +87,7 @@ class DQNAgent:
         return self.online.head[-1].weight
 
     def learn(self):
-        if len(self.buffer) < self.batch_size:
+        if len(self.buffer) < max(self.warmup, self.batch_size):
             return None
         states, actions, rewards, next_states, terms = self.buffer.sample(self.batch_size)
         s = torch.as_tensor(states, dtype=torch.float32, device=self.device)

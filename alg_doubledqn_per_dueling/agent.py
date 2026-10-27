@@ -3,7 +3,9 @@
 As três diferenças em relação ao `alg_dqn`:
   * Double DQN: a ação do próximo estado é escolhida pela online e o valor
     vem da target (menos superestimação);
-  * PER: a amostragem do replay favorece transições com erro de TD alto;
+  * PER: a amostragem do replay favorece transições com erro de TD alto
+    (`rank^-α`, com pesos de importância corrigindo o viés no loss e β
+    agendado de `beta_start` até 1);
   * dueling: a rede separa V(s) de A(s, a).
 """
 import random
@@ -39,7 +41,8 @@ class DoubleDQNPerDuelingAgent:
 
     def __init__(self, obs_shape, n_actions, lr=1e-3, gamma=.99,
                  epsilon=1.0, epsilon_min=.05, epsilon_decay=.9995,
-                 batch_size=64, buffer_size=50000, device=None):
+                 batch_size=64, buffer_size=50000, warmup=0, per_alpha=0.6,
+                 beta_start=0.4, beta_steps=100_000, device=None):
         self.device = torch.device(device or ("cuda" if torch.cuda.is_available() else "cpu"))
         self.obs_shape = tuple(obs_shape)
         self.n_actions = int(n_actions)
@@ -48,16 +51,29 @@ class DoubleDQNPerDuelingAgent:
         self.epsilon_min = epsilon_min
         self.epsilon_decay = epsilon_decay
         self.batch_size = batch_size
+        # `warmup` adia o primeiro update até o buffer ter transições
+        # suficientes (evita aprender só com o começo do episódio).
+        self.warmup = int(warmup)
+        self.per_alpha = float(per_alpha)
+        self.beta_start = float(beta_start)
+        self.beta_steps = max(1, int(beta_steps))
         self.online = DuelingQNetwork(self.obs_shape, self.n_actions).to(self.device)
         self.target = DuelingQNetwork(self.obs_shape, self.n_actions).to(self.device)
         self.target.load_state_dict(self.online.state_dict())
         self.optimizer = torch.optim.Adam(self.online.parameters(), lr=lr)
-        self.loss_fn = nn.SmoothL1Loss()
-        self.buffer = PrioritizedReplayBuffer(buffer_size)
+        # O PER devolve um peso por amostra; a perda é reduzida depois de
+        # multiplicar esses pesos (por isso `reduction="none"`).
+        self.loss_fn = nn.SmoothL1Loss(reduction="none")
+        self.buffer = PrioritizedReplayBuffer(buffer_size, alpha=self.per_alpha)
         self.steps = 0
         self.last_grad_norm = 0.0
         # Índices do último sample() priorizado, expostos para inspeção/testes.
         self._last_indices = None
+
+    def _beta(self):
+        """β do PER: sobe linearmente de `beta_start` até 1."""
+        frac = min(1.0, self.steps / self.beta_steps)
+        return self.beta_start + (1.0 - self.beta_start) * frac
 
     @torch.no_grad()
     def act(self, state, greedy=False):
@@ -95,18 +111,21 @@ class DoubleDQNPerDuelingAgent:
         return self.online.v_head[-1].weight
 
     def learn(self):
-        if len(self.buffer) < self.batch_size:
+        if len(self.buffer) < max(self.warmup, self.batch_size):
             return None
-        states, actions, rewards, next_states, terms, indices = \
-            self.buffer.sample(self.batch_size)
+        states, actions, rewards, next_states, terms, indices, weights = \
+            self.buffer.sample(self.batch_size, alpha=self.per_alpha,
+                               beta=self._beta())
         s = torch.as_tensor(states, dtype=torch.float32, device=self.device)
         a = torch.as_tensor(actions, dtype=torch.int64, device=self.device).unsqueeze(1)
         r = torch.as_tensor(rewards, dtype=torch.float32, device=self.device)
         ns = torch.as_tensor(next_states, dtype=torch.float32, device=self.device)
         term = torch.as_tensor(terms, dtype=torch.float32, device=self.device)
+        w = torch.as_tensor(weights, dtype=torch.float32, device=self.device)
         q = self.online(s).gather(1, a).squeeze(1)
         target = double_td_target(self.online, self.target, ns, r, term, self.gamma)
-        loss = self.loss_fn(q, target)
+        # Peso de importância por amostra (β agendado) corrige o viés do PER.
+        loss = (self.loss_fn(q, target) * w).mean()
         # O erro de TD do batch vira a prioridade da próxima amostragem.
         # Nenhum `add` aconteceu desde o sample, então os índices valem.
         self.buffer.update_priorities(

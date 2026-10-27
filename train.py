@@ -169,6 +169,31 @@ class AutoOpponent:
             return make_policy(pick)
         return CheckpointPolicy(self.checkpoint_agent)
 
+def epsilon_for_episode(ep, ramp_end, floor):
+    """Rampa linear de epsilon por episódio: 1 → `floor` em `ramp_end`.
+
+    `ep` é o número absoluto do episódio (a retomada continua a numeração),
+    então a rampa retoma de onde parou. Ancorar em episódios — e não em
+    `--episodes` — mantém o comportamento de treinos por tempo de parede
+    (`--max-hours` com `--episodes 1000000`), em que a rampa relativa nunca
+    terminaria.
+    """
+    return max(floor, 1.0 - (1.0 - floor) * ep / ramp_end)
+
+
+def schedule_epsilon(agent, ep, ramp_episodes, floor):
+    """Aplica a rampa de epsilon do `train.py` ao agente, se ele usar epsilon.
+
+    Algoritmos on-policy (PPO/A2C) têm `on_policy = True` e não exploram por
+    epsilon. Com a rampa ligada, o decay por passo do agente é desligado:
+    quem controla ε é o episódio, não o número de `learn()`.
+    """
+    if getattr(agent, "on_policy", False) or ramp_episodes <= 0:
+        return
+    agent.epsilon_decay = 1.0
+    agent.epsilon = epsilon_for_episode(ep, ramp_episodes, floor)
+
+
 def parse_args(argv=None):
     """Argumentos da CLI; separado de `main` para poder ser testado."""
     ap = argparse.ArgumentParser()
@@ -209,6 +234,15 @@ def parse_args(argv=None):
                          "restaurado do checkpoint sobrepõe este valor)")
     ap.add_argument("--batch-size", type=int, default=64,
                     help="tamanho do batch amostrado do replay buffer por learn()")
+    ap.add_argument("--epsilon-ramp-episodes", type=int, default=150,
+                    help="rampa linear de epsilon (1 → --epsilon-min) ao longo "
+                         "destes episódios absolutos; 0 desliga a rampa e usa o "
+                         "decay por passo do agente")
+    ap.add_argument("--epsilon-min", type=float, default=0.1,
+                    help="piso de epsilon na rampa (e no decay do agente)")
+    ap.add_argument("--warmup", type=int, default=1000,
+                    help="transições no buffer antes do primeiro learn() "
+                         "(só algoritmos off-policy)")
     ap.add_argument("--envs", type=int, default=1,
                     help="ambientes vetorizados na coleta (Fase 5; incompatível "
                          "com --opponent auto, --render, --stats e --tensorboard)")
@@ -350,6 +384,8 @@ def _train_vectorized(args, cfg, agent, ckpt_dir, start_ep, last_ep, best, budge
             if new_file:
                 writer.writeheader()
             while total_episodes < last_ep:
+                schedule_epsilon(agent, total_episodes + 1,
+                                 args.epsilon_ramp_episodes, args.epsilon_min)
                 actions = agent.act_batch(obs)
                 next_obs, rewards, terminations, truncations, infos = venv.step(actions)
                 vector_steps += 1
@@ -460,8 +496,13 @@ def main():
     env = ArenaEnv(cfg, render_mode="human" if args.render else None,
                    opponent_policy="random" if args.opponent == "auto" else args.opponent,
                    skin=args.skin)
+    agent_kwargs = dict(lr=args.lr, batch_size=args.batch_size)
+    if not getattr(alg.Agent, "on_policy", False):
+        # Só os agentes off-policy usam epsilon e warmup; PPO/A2C não
+        # aceitam esses parâmetros (a exploração deles é a entropia).
+        agent_kwargs.update(epsilon_min=args.epsilon_min, warmup=args.warmup)
     agent = alg.Agent(env.observation_space.shape, env.action_space.n,
-                      lr=args.lr, batch_size=args.batch_size)
+                      **agent_kwargs)
     # O `auto` é criado antes do load para que a retomada já possa chamar
     # `init_from_disk` nele (carregar o melhor checkpoint como adversário).
     auto = (AutoOpponent(env, alg, checkpoint_dir=ckpt_dir)
@@ -526,6 +567,7 @@ def main():
         last_total = 0.0
         last_done = start_ep - 1
         for ep in range(start_ep, last_ep + 1):
+            schedule_epsilon(agent, ep, args.epsilon_ramp_episodes, args.epsilon_min)
             if auto is not None:
                 env.opponent_policy = auto.choose(ep)
             obs, _ = env.reset(seed=args.seed + ep)

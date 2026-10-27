@@ -20,8 +20,10 @@ from arena.config import ArenaConfig
 from arena.environment import ArenaEnv
 from arena.vector import make_vector_env
 from train import (
+    epsilon_for_episode,
     obs_to_image,
     parse_args,
+    schedule_epsilon,
     tensorboard_run_name,
     time_budget_reached,
     validate_train_args,
@@ -103,7 +105,7 @@ def test_uniform_buffer_gives_each_transition_same_chance():
 
 
 def test_per_buffer_favors_high_priority():
-    """Rank-based: prioridade alta vira rank 1 e domina a amostragem."""
+    """Rank-based: prioridade alta vira rank 1 e domina a amostragem (α atenua)."""
     buf = PrioritizedReplayBuffer(100)
     np.random.seed(1)
     obs = np.zeros((5, 20, 32), dtype=np.float32)
@@ -111,17 +113,18 @@ def test_per_buffer_favors_high_priority():
         buf.add(obs, 0, float(i + 1), obs, False)
     assert len(set(buf.priorities)) == 1
     buf.update_priorities([3], [1000.0])
-    s, a, r, ns, term, indices = buf.sample(500)
+    s, a, r, ns, term, indices, weights = buf.sample(2000)
     assert indices.dtype == np.int64
-    assert len(indices) == 500
+    assert len(indices) == 2000
     count_high = int((indices == 3).sum())
     count_low = int((indices == 17).sum())
-    assert count_high > 10 * count_low
+    assert count_high > 4 * count_low
     for j in range(8):
         assert r[j] == pytest.approx(float(indices[j] + 1))
         assert np.array_equal(s[j], obs)
         assert np.array_equal(ns[j], obs)
         assert term[j] == 0.0
+        assert 0.0 < weights[j] <= 1.0
 
 
 def test_per_update_priorities_and_new_default():
@@ -136,6 +139,58 @@ def test_per_update_priorities_and_new_default():
     buf.add(obs, 2, 3.0, obs, False)  # sem prioridade
     assert buf.priorities[2] == pytest.approx(1.0)
     assert len(buf) == 3
+
+
+def test_per_sample_returns_importance_weights():
+    """sample() devolve pesos de importância normalizados pelo máximo."""
+    buf = PrioritizedReplayBuffer(100)
+    obs = np.zeros((5, 20, 32), dtype=np.float32)
+    for i in range(50):
+        buf.add(obs, 0, float(i + 1), obs, False)
+    np.random.seed(2)
+    s, a, r, ns, term, indices, weights = buf.sample(32, alpha=0.6, beta=0.4)
+    assert weights.shape == (32,)
+    assert np.all(weights > 0) and np.all(np.isfinite(weights))
+    assert weights.max() == pytest.approx(1.0)
+
+
+def test_per_beta_zero_has_unit_weights():
+    """Com β=0 não há correção de viés: todos os pesos valem 1."""
+    buf = PrioritizedReplayBuffer(100)
+    obs = np.zeros((5, 20, 32), dtype=np.float32)
+    for i in range(30):
+        buf.add(obs, 0, 1.0, obs, False)
+    np.random.seed(3)
+    *_, indices, weights = buf.sample(16, alpha=0.6, beta=0.0)
+    assert np.allclose(weights, 1.0)
+
+
+def test_per_alpha_controls_concentration():
+    """α menor espalha a amostragem: o topo do rank domina menos."""
+    def top_count(alpha):
+        buf = PrioritizedReplayBuffer(500)
+        obs = np.zeros((5, 20, 32), dtype=np.float32)
+        for i in range(500):
+            buf.add(obs, 0, 1.0, obs, False)
+        buf.update_priorities([0], [1000.0])  # item 0 vira rank 1
+        np.random.seed(4)
+        _, _, _, _, _, indices, _ = buf.sample(500, alpha=alpha)
+        return int((indices == 0).sum())
+
+    assert top_count(0.5) < top_count(1.0) / 2
+
+
+def test_ddqn_beta_anneals_to_one():
+    """β sobe linearmente de beta_start até 1 ao longo de beta_steps."""
+    agent = DoubleDQNPerDuelingAgent(
+        (5, 20, 32), 6, beta_start=0.4, beta_steps=100)
+    assert agent._beta() == pytest.approx(0.4)
+    agent.steps = 50
+    assert agent._beta() == pytest.approx(0.7)
+    agent.steps = 100
+    assert agent._beta() == pytest.approx(1.0)
+    agent.steps = 250
+    assert agent._beta() == pytest.approx(1.0)
 
 
 def test_agents_use_the_expected_replay_buffers():
@@ -163,6 +218,96 @@ def test_hard_target_sync_every_c(agent_cls):
     assert agent.steps == agent.C
     for param_t, param_o in zip(agent.target.parameters(), agent.online.parameters()):
         assert torch.equal(param_t.data, param_o.data)
+
+
+def _tiny_mdp_obs(state):
+    """Observação (5, 3, 3) com um pixel aceso no canal do estado."""
+    obs = np.zeros((5, 3, 3), dtype=np.float32)
+    obs[state, 0, 0] = 1.0
+    return obs
+
+
+@pytest.mark.parametrize("agent_cls", [DQNAgent, DoubleDQNPerDuelingAgent])
+def test_offpolicy_agents_learn_two_state_mdp(agent_cls):
+    """O laço completo (buffer, alvo, perda, otimizador) aprende um MDP trivial.
+
+    No estado 0 a ação 0 dá +1; no estado 1 a ação 1 dá +1. É um teste de
+    fumaça do aprendizado, não de desempenho na arena: pega regressões em que
+    o agente para de aprender até uma tarefa de dois estados.
+    """
+    random.seed(0)
+    np.random.seed(0)
+    torch.manual_seed(0)
+    agent = agent_cls((5, 3, 3), 2, lr=1e-3, gamma=.9, epsilon=1.0,
+                      epsilon_min=.05, epsilon_decay=.995, batch_size=32,
+                      buffer_size=2000)
+    agent.C = 10
+    for i in range(800):
+        state = i % 2
+        obs = _tiny_mdp_obs(state)
+        action = agent.act(obs)
+        reward = 1.0 if action == state else 0.0
+        agent.buffer.add(obs, action, reward,
+                         np.zeros_like(obs), True)
+        agent.learn()
+    assert agent.act(_tiny_mdp_obs(0), greedy=True) == 0
+    assert agent.act(_tiny_mdp_obs(1), greedy=True) == 1
+
+
+@pytest.mark.parametrize("agent_cls", [DQNAgent, DoubleDQNPerDuelingAgent])
+def test_warmup_delays_learning(agent_cls):
+    """`learn()` não atualiza enquanto o buffer não alcança `warmup`.
+
+    Sem warmup, o primeiro update acontece com `batch_size` transições (64),
+    todas do início do episódio e altamente correlacionadas.
+    """
+    agent = agent_cls((5, 20, 32), 6, warmup=100, batch_size=32)
+    obs = np.zeros((5, 20, 32), dtype=np.float32)
+    for _ in range(99):
+        agent.buffer.add(obs, 0, 0.0, obs, False)
+    assert len(agent.buffer) >= agent.batch_size
+    assert agent.learn() is None
+    assert agent.steps == 0
+    agent.buffer.add(obs, 0, 1.0, obs, False)
+    assert agent.learn() is not None
+    assert agent.steps == 1
+
+
+def test_epsilon_for_episode_ramps_linearly_to_floor():
+    """Rampa de 1 → piso ao longo de `ramp_end` episódios (número absoluto)."""
+    assert epsilon_for_episode(1, 60, 0.1) == pytest.approx(1.0 - 0.9 / 60)
+    assert epsilon_for_episode(30, 60, 0.1) == pytest.approx(0.55)
+    assert epsilon_for_episode(60, 60, 0.1) == pytest.approx(0.1)
+    assert epsilon_for_episode(61, 60, 0.1) == pytest.approx(0.1)
+
+
+class _DummyAgent:
+    def __init__(self, on_policy=False, epsilon=1.0):
+        self.on_policy = on_policy
+        self.epsilon = epsilon
+        self.epsilon_decay = 0.9995
+
+
+def test_schedule_epsilon_applies_ramp_to_offpolicy_agents():
+    agent = _DummyAgent()
+    schedule_epsilon(agent, ep=15, ramp_episodes=60, floor=0.1)
+    assert agent.epsilon == pytest.approx(1.0 - 0.9 * 15 / 60)
+    # A rampa substitui o decay por passo: dentro do episódio ε não muda.
+    assert agent.epsilon_decay == 1.0
+
+
+def test_schedule_epsilon_leaves_onpolicy_agents_untouched():
+    agent = _DummyAgent(on_policy=True, epsilon=0.0)
+    schedule_epsilon(agent, ep=15, ramp_episodes=60, floor=0.1)
+    assert agent.epsilon == 0.0
+
+
+def test_parse_args_defaults_epsilon_ramp():
+    """A rampa é ancorada em episódios absolutos, não em `--episodes`."""
+    args = parse_args([])
+    assert args.epsilon_ramp_episodes == 150
+    assert args.epsilon_min == 0.1
+    assert args.warmup == 1000
 
 
 @pytest.mark.parametrize("agent_cls", [DQNAgent, DoubleDQNPerDuelingAgent])
