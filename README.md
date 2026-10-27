@@ -107,7 +107,7 @@ alg_dqn/                          # --alg dqn (padrão)
 
 alg_doubledqn_per_dueling/        # --alg doubledqn_per_dueling
 ├── model.py                      # DuelingQNetwork: Q = V + A - média(A)
-├── replay_buffer.py              # PER rank-based (prioridade = |erro de TD|)
+├── replay_buffer.py              # PER rank^-α (α=0,6) + pesos de importância
 └── agent.py                      # DoubleDQNPerDuelingAgent + double_td_target
 
 alg_ppo/                          # --alg ppo
@@ -137,7 +137,7 @@ Para colocar o seu no lugar:
 python -m pytest -q
 ```
 
-São 123 testes (~10–30 s, dependendo da carga da máquina). Rode depois de instalar e depois de cada mudança sua para confirmar que nada quebrou.
+São 137 testes (~10–30 s, dependendo da carga da máquina). Rode depois de instalar e depois de cada mudança sua para confirmar que nada quebrou.
 
 ## Referência
 
@@ -160,12 +160,12 @@ Ficar parado tem um custo pequeno: escolher `STOP` desconta `stop_penalty = -0.1
 
 ### Algoritmos
 
-Os algoritmos off-policy (`dqn` e `doubledqn_per_dueling`) usam a mesma observação, o mesmo alvo fixo `C = 10` (sincroniza a rede-alvo a cada 10 `learn()` bem-sucedidos) e o mesmo contrato, para que a comparação isole as técnicas. PPO e A2C usam a mesma observação e o mesmo formato de checkpoint, mas são on-policy:
+Os algoritmos off-policy (`dqn` e `doubledqn_per_dueling`) usam a mesma observação, o mesmo contrato e um alvo fixo sincronizado a cada `C = 1000` `learn()` bem-sucedidos (a busca de hiperparâmetros mostrou que `C = 10` é agressivo demais para os dois). PPO e A2C usam a mesma observação e o mesmo formato de checkpoint, mas são on-policy:
 
 - **`dqn`** (padrão): o DQN enxuto do artigo — Q direto por ação, replay uniforme (toda transição com a mesma chance) e alvo `r + γ·max Q(s', ·)`.
 - **`doubledqn_per_dueling`**: três mudanças sobre o `dqn`:
   - **Double DQN**: a rede online escolhe a ação do próximo estado e a target avalia o valor, reduzindo a superestimação;
-  - **PER**: a amostragem do replay favorece transições com erro de TD alto (prioridade `|erro| + 1e-6`, rank-based);
+  - **PER**: a amostragem do replay favorece transições com erro de TD alto (prioridade `|erro| + 1e-6`, sorteio proporcional a `rank^-α` com α=0,6) e o loss pesa cada amostra pelo peso de importância `(N·p)^-β`, com β subindo de 0,4 até 1;
   - **Dueling**: a rede separa `V(s)` de `A(s, a)` e devolve `Q = V + A − média(A)`.
 - **`ppo`**: on-policy, com ator categórico e crítico compartilhando a CNN. O rollout tem 1024 transições; o GAE(λ=0.95) usa a marca de fim de episódio para não misturar episódios, mas faz bootstrap no truncamento por tempo. O update tem 4 épocas de minibatches de 64, clip de razão 0.2, perda de valor 0.5, bônus de entropia 0.01 e grad clip 10. O rollout parcial é consumido em `finish_training()`.
 - **`a2c`**: on-policy, com a mesma rede actor-critic, mas retornos n-step (`n_steps = batch_size`, 64 no protocolo) e um único passo de otimização por rollout. Quando o episódio termina antes de completar o rollout, `end_episode()` consome o rabo; o retorno usa bootstrap no truncamento e não atravessa a fronteira do episódio. Usa as mesmas perdas de valor e entropia do PPO.
@@ -178,6 +178,8 @@ python train.py --episodes 300 --alg a2c
 ```
 
 PPO e A2C são on-policy e exigem `--envs 1`; a política é estocástica no treino e gulosa na avaliação (`evaluate.py`/`play.py` chamam `act(..., greedy=True)`).
+
+Nos algoritmos off-policy, a exploração é agendada por **episódio**: `--epsilon-ramp-episodes 150` (padrão) leva ε de 1 até `--epsilon-min 0.1` ao longo de 150 episódios **absolutos**, então retomar continua a rampa de onde parou; `0` desliga a rampa e volta ao decay por passo do agente. `--warmup 1000` adia o primeiro update até o buffer ter 1000 transições. `--learn-every 4` faz um update a cada 4 passos do ambiente (padrão; no modo vetorizado é 1) — menos updates por transição, mais dados por hora de parede; só vale com `--envs 1`. O `--lr` padrão é 2,5e-4, o mesmo dos scripts de comparação.
 
 `evaluate.py` e `play.py` não precisam de `--alg`: o checkpoint grava o algoritmo e esses scripts carregam o pacote certo.
 
