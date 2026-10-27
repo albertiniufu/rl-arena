@@ -243,6 +243,10 @@ def parse_args(argv=None):
     ap.add_argument("--warmup", type=int, default=1000,
                     help="transições no buffer antes do primeiro learn() "
                          "(só algoritmos off-policy)")
+    ap.add_argument("--learn-every", type=int, default=1,
+                    help="um update a cada N passos do agente (só com --envs 1). "
+                         "1 = um update por transição; 4 = padrão do DQN do "
+                         "Nature e ~4x mais passos de ambiente por hora")
     ap.add_argument("--envs", type=int, default=1,
                     help="ambientes vetorizados na coleta (Fase 5; incompatível "
                          "com --opponent auto, --render, --stats e --tensorboard)")
@@ -281,8 +285,15 @@ def validate_train_args(args):
     max_hours = getattr(args, "max_hours", None)
     if max_hours is not None and max_hours <= 0:
         raise SystemExit(f"--max-hours deve ser > 0 (recebido {max_hours})")
+    if args.learn_every < 1:
+        raise SystemExit(
+            f"--learn-every deve ser >= 1 (recebido {args.learn_every})")
     if args.envs == 1:
         return
+    if args.learn_every != 1:
+        raise SystemExit(
+            "--learn-every não se combina com --envs > 1: o loop vetorizado "
+            "já faz um update a cada 4 passos do vetor")
     # Os algoritmos on-policy (PPO/A2C) precisam do rollout contíguo por
     # worker e do gancho de fim de episódio; o loop vetorizado descarta
     # transições de autoreset e não mapeia essa fronteira. O caminho de
@@ -566,6 +577,9 @@ def main():
         if new_file: writer.writeheader()
         last_total = 0.0
         last_done = start_ep - 1
+        # Contador global de passos: com --learn-every K o update acontece a
+        # cada K transições, sem reiniciar a fase a cada episódio.
+        learn_counter = 0
         for ep in range(start_ep, last_ep + 1):
             schedule_epsilon(agent, ep, args.epsilon_ramp_episodes, args.epsilon_min)
             if auto is not None:
@@ -584,7 +598,9 @@ def main():
                     qm, qx = agent.q_stats(obs)
                     q_means.append(qm)
                     q_maxes.append(qx)
-                loss = agent.learn()
+                learn_counter += 1
+                loss = (agent.learn()
+                        if learn_counter % args.learn_every == 0 else None)
                 if loss is not None:
                     losses.append(loss)
                     if args.stats or args.tensorboard:

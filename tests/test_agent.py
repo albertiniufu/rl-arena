@@ -308,6 +308,19 @@ def test_parse_args_defaults_epsilon_ramp():
     assert args.epsilon_ramp_episodes == 150
     assert args.epsilon_min == 0.1
     assert args.warmup == 1000
+    assert args.learn_every == 1
+
+
+def test_validate_rejects_bad_learn_every():
+    """`--learn-every` precisa ser >= 1 e não se combina com `--envs > 1`."""
+    args = parse_args([])
+    args.learn_every = 0
+    with pytest.raises(SystemExit):
+        validate_train_args(args)
+    args = parse_args(["--envs", "2", "--opponent", "rule"])
+    args.learn_every = 4
+    with pytest.raises(SystemExit):
+        validate_train_args(args)
 
 
 @pytest.mark.parametrize("agent_cls", [DQNAgent, DoubleDQNPerDuelingAgent])
