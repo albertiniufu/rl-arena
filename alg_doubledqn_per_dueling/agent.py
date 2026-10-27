@@ -17,9 +17,11 @@ from torch import nn
 from .model import DuelingQNetwork
 from .replay_buffer import PrioritizedReplayBuffer
 
-# Mesmo alvo fixo do alg_dqn (C=10), para a comparação isolar as três
-# técnicas deste pacote.
-C = 10
+# Alvo fixo sincronizado a cada C updates. A busca de hiperparâmetros
+# mostrou que C=10 (o valor do alg_dqn) é agressivo demais para o PER:
+# com 300 episódios, C=1000 coletou 7,35 moedas/ep contra 4,65 do C=10,
+# com Q máximo 7,6 contra 17,9 e gradiente bem menor.
+C = 1000
 
 
 @torch.no_grad()

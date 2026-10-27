@@ -229,8 +229,9 @@ def parse_args(argv=None):
                     help="algoritmo de RL: pacote alg_<nome> na raiz do projeto "
                          "(dqn = DQN padrão; doubledqn_per_dueling = Double DQN "
                          "+ PER + dueling; ppo = PPO; a2c = A2C)")
-    ap.add_argument("--lr", type=float, default=1e-3,
-                    help="taxa de aprendizado do Adam (na retomada, o otimizador "
+    ap.add_argument("--lr", type=float, default=2.5e-4,
+                    help="taxa de aprendizado do Adam (padrão = valor do "
+                         "protocolo validado; na retomada, o otimizador "
                          "restaurado do checkpoint sobrepõe este valor)")
     ap.add_argument("--batch-size", type=int, default=64,
                     help="tamanho do batch amostrado do replay buffer por learn()")
@@ -243,14 +244,22 @@ def parse_args(argv=None):
     ap.add_argument("--warmup", type=int, default=1000,
                     help="transições no buffer antes do primeiro learn() "
                          "(só algoritmos off-policy)")
-    ap.add_argument("--learn-every", type=int, default=1,
+    ap.add_argument("--learn-every", type=int, default=None,
                     help="um update a cada N passos do agente (só com --envs 1). "
-                         "1 = um update por transição; 4 = padrão do DQN do "
-                         "Nature e ~4x mais passos de ambiente por hora")
+                         "Padrão: 4 no modo de 1 ambiente (valor validado, o "
+                         "do DQN do Nature, ~3x mais passos por hora) e 1 no "
+                         "modo vetorizado, onde o update já é por passo do "
+                         "vetor; 1 = um update por transição")
     ap.add_argument("--envs", type=int, default=1,
                     help="ambientes vetorizados na coleta (Fase 5; incompatível "
                          "com --opponent auto, --render, --stats e --tensorboard)")
-    return ap.parse_args(argv)
+    args = ap.parse_args(argv)
+    # O default depende do modo: K=4 só faz sentido com 1 ambiente; no loop
+    # vetorizado o update já acontece a cada passo do vetor. Um valor
+    # explícito continua sendo validado em `validate_train_args`.
+    if args.learn_every is None:
+        args.learn_every = 1 if args.envs > 1 else 4
+    return args
 
 
 def tensorboard_run_name(args):

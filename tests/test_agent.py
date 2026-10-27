@@ -201,6 +201,17 @@ def test_agents_use_the_expected_replay_buffers():
     assert isinstance(advanced.buffer, PrioritizedReplayBuffer)
 
 
+def test_offpolicy_agents_use_validated_target_sync_period():
+    """C=1000 é o período de sincronização validado para os dois algoritmos.
+
+    A busca de hiperparâmetros mostrou que C=10 é agressivo demais: com a
+    rampa de ε e `--learn-every 4`, o DQN com C=1000 coletou 15,8 moedas de
+    treino contra 8,8 do C=10 (avaliação final 12,3 contra 5,9).
+    """
+    assert DQNAgent.C == 1000
+    assert DoubleDQNPerDuelingAgent.C == 1000
+
+
 @pytest.mark.parametrize("agent_cls", [DQNAgent, DoubleDQNPerDuelingAgent])
 def test_hard_target_sync_every_c(agent_cls):
     """O alvo fixo copia a online a cada C learn() bem-sucedidos."""
@@ -308,7 +319,11 @@ def test_parse_args_defaults_epsilon_ramp():
     assert args.epsilon_ramp_episodes == 150
     assert args.epsilon_min == 0.1
     assert args.warmup == 1000
-    assert args.learn_every == 1
+    # K=4 é o padrão validado: com 300 episódios ele coletou 15,8 moedas
+    # (DQN) contra 4,55 do K=1, e roda ~3x mais rápido.
+    assert args.learn_every == 4
+    # No modo vetorizado o update já é por passo do vetor, então K volta a 1.
+    assert parse_args(["--envs", "4"]).learn_every == 1
 
 
 def test_validate_rejects_bad_learn_every():
@@ -421,7 +436,8 @@ def test_train_help_lists_algorithm_and_grid_flags(capsys):
 
 def test_train_cli_lr_and_batch():
     defaults = parse_args([])
-    assert (defaults.lr, defaults.batch_size) == (1e-3, 64)
+    # 2,5e-4 é o lr do protocolo validado (scripts e busca de hiperparâmetros).
+    assert (defaults.lr, defaults.batch_size) == (2.5e-4, 64)
     args = parse_args(["--lr", "2.5e-4", "--batch-size", "128"])
     assert args.lr == 2.5e-4
     assert args.batch_size == 128

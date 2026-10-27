@@ -13,8 +13,11 @@ from .model import QNetwork
 from .replay_buffer import ReplayBuffer
 
 # Alvo fixo: a cada C learn() bem-sucedidos a target recebe uma cópia dura
-# da online (o "C" da notação clássica do DQN).
-C = 10
+# da online (o "C" da notação clássica do DQN). A busca de hiperparâmetros
+# mostrou que C=10 é agressivo demais: com a rampa de ε e --learn-every 4,
+# C=1000 coletou 15,8 moedas de treino contra 8,8 do C=10, e a avaliação
+# final coletou 12,3 contra 5,9, com Q e gradiente bem menores.
+C = 1000
 
 
 def td_target(reward, next_q, terminated, gamma):
