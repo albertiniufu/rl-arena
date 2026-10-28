@@ -43,6 +43,32 @@ def test_reset_step_observation():
     assert isinstance(reward, float)
     env.close()
 
+def test_observation_cells_e_clamp_nas_bordas():
+    """A grade semântica marca as células certas e limita às bordas.
+
+    Regressão da otimização de `_observation`: trocar o `np.clip` escalar
+    por clamp em Python puro não pode mudar o frame produzido.
+    """
+    env = ArenaEnv(ArenaConfig())
+    env.reset(seed=0)
+    env.engine.characters[0].x, env.engine.characters[0].y = 90, 320
+    env.engine.characters[1].x, env.engine.characters[1].y = 500, 320
+    env.engine.coins = env.engine.coins[:1]
+    env.engine.coins[0].x, env.engine.coins[0].y = 10, 30
+    obs = env._observation()
+    assert obs[0, 18, 0] == 1.0          # plataforma (0, 360, 220, 20)
+    assert obs[1, 15, 4] == 1.0          # jogador em (90, 320)
+    assert obs[2, 15, 25] == 1.0         # oponente em (500, 320)
+    assert obs[3, 1, 0] == 1.0           # moeda em (10, 30)
+    # Fora do mapa: a célula é limitada à borda (sem índice negativo).
+    env.engine.characters[0].x, env.engine.characters[0].y = 10_000, -100
+    env.engine.characters[1].alive = False
+    obs = env._observation()
+    assert obs[1, 0, 31] == 1.0
+    assert obs[4, 19, 25] == 1.0         # morto desenhado na base
+    env.close()
+
+
 def test_action_space_has_six_actions():
     """Uma única intensidade de pulo e de empurrão por direção."""
     env = ArenaEnv()
