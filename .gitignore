@@ -16,3 +16,6 @@ dist/
 *.mp4
 # ... exceto o exemplo exibido no README
 !demo.mp4
+
+# Configuração local do Claude Code (worktrees, settings etc.)
+.claude/
