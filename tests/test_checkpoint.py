@@ -1,9 +1,9 @@
 import pytest
 import torch
 
-from alg_doubledqn_per_dueling.agent import DoubleDQNPerDuelingAgent
-from alg_dqn.agent import DQNAgent
-from alg_registry import (
+from algs.alg_doubledqn_per_dueling.agent import DoubleDQNPerDuelingAgent
+from algs.alg_dqn.agent import DQNAgent
+from algs.alg_registry import (
     algorithm_from_checkpoint,
     apply_env_config,
     checkpoint_meta,

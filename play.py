@@ -8,7 +8,7 @@ from arena.actions import N_ACTIONS
 from arena.environment import ArenaEnv
 from arena.config import ArenaConfig
 from arena.skins import list_skins
-from alg_registry import (
+from algs.alg_registry import (
     CheckpointPolicy,
     algorithm_from_checkpoint,
     apply_env_config,

@@ -28,9 +28,10 @@ python train.py --episodes 300 --alg doubledqn_per_dueling
 python train.py --episodes 300 --alg ppo
 python train.py --episodes 300 --alg a2c
 python train.py --max-hours 3                        # treina por 3 h de parede
+python train.py --episodes 300 --tensorboard --eval-every 10  # curvas + avaliação gulosa periódica
 ```
 
-Treina sem abrir janela (padrão). `--alg` escolhe o pacote `alg_<nome>` na raiz do projeto. Ao final, os pesos ficam em `checkpoints/latest.pt` e `checkpoints/best.pt`; as métricas por episódio, em `logs/training.csv`.
+Treina sem abrir janela (padrão). `--alg` escolhe o pacote `alg_<nome>` em `algs/`. Ao final, os pesos ficam em `checkpoints/latest.pt` e `checkpoints/best.pt`; as métricas por episódio, em `logs/training.csv`.
 
 Dica: se o terminal for inundado por avisos do NNPACK, rode com `TORCH_CPP_LOG_LEVEL=ERROR python train.py ...`.
 
@@ -97,38 +98,37 @@ Com `--opponent human` a janela também abre sozinha e o adversário usa o mesmo
 
 ### 7. Seu próprio modelo e seu próprio algoritmo de RL
 
-Cada algoritmo é um diretório `alg_<nome>` autocontido, com o modelo, o replay e o loop de aprendizado:
+Cada algoritmo é um diretório `algs/alg_<nome>` autocontido, com o modelo, o replay e o loop de aprendizado:
 
 ```text
-alg_dqn/                          # --alg dqn (padrão)
-├── model.py                      # QNetwork: CNN -> 6 Q-valores diretos
-├── replay_buffer.py              # amostragem uniforme
-└── agent.py                      # DQNAgent + Agent = DQNAgent + td_target
-
-alg_doubledqn_per_dueling/        # --alg doubledqn_per_dueling
-├── model.py                      # DuelingQNetwork: Q = V + A - média(A)
-├── replay_buffer.py              # PER rank^-α (α=0,6) + pesos de importância
-└── agent.py                      # DoubleDQNPerDuelingAgent + double_td_target
-
-alg_ppo/                          # --alg ppo
-├── model.py                      # ActorCriticNetwork: logits + V(s)
-├── rollout_buffer.py             # transições on-policy + fronteira de episódio
-└── agent.py                      # PPOAgent + compute_gae
-
-alg_a2c/                          # --alg a2c
-├── model.py                      # ActorCriticNetwork: logits + V(s)
-├── rollout_buffer.py             # transições on-policy + fronteira de episódio
-└── agent.py                      # A2CAgent + n_step_returns
+algs/
+├── alg_registry.py               # descoberta, checkpoint e CheckpointPolicy
+├── alg_dqn/                      # --alg dqn (padrão)
+│   ├── model.py                  # QNetwork: CNN -> 6 Q-valores diretos
+│   ├── replay_buffer.py          # amostragem uniforme
+│   └── agent.py                  # DQNAgent + Agent = DQNAgent + td_target
+├── alg_doubledqn_per_dueling/    # --alg doubledqn_per_dueling
+│   ├── model.py                  # DuelingQNetwork: Q = V + A - média(A)
+│   ├── replay_buffer.py          # PER rank^-α (α=0,6) + pesos de importância
+│   └── agent.py                  # DoubleDQNPerDuelingAgent + double_td_target
+├── alg_ppo/                      # --alg ppo
+│   ├── model.py                  # ActorCriticNetwork: logits + V(s)
+│   ├── rollout_buffer.py         # transições on-policy + fronteira de episódio
+│   └── agent.py                  # PPOAgent + compute_gae
+└── alg_a2c/                      # --alg a2c
+    ├── model.py                  # ActorCriticNetwork: logits + V(s)
+    ├── rollout_buffer.py         # transições on-policy + fronteira de episódio
+    └── agent.py                  # A2CAgent + n_step_returns
 ```
 
-O contrato mínimo de um pacote é um `agent.py` expondo `Agent` (a classe usada por `train.py`, `evaluate.py` e `play.py`) e uma instância com `algorithm` (nome gravado no checkpoint), `arch_version`, `obs_shape`, `n_actions`, `online`, `target`, `optimizer`, `buffer`, `steps`, `epsilon`, além dos métodos `act`, `act_batch`, `learn`, `q_stats` e `head_weights`. O `alg_registry.py` descobre os diretórios, importa o pacote e centraliza o checkpoint pesos-only e o adaptador `CheckpointPolicy`.
+O contrato mínimo de um pacote é um `agent.py` expondo `Agent` (a classe usada por `train.py`, `evaluate.py` e `play.py`) e uma instância com `algorithm` (nome gravado no checkpoint), `arch_version`, `obs_shape`, `n_actions`, `online`, `target`, `optimizer`, `buffer`, `steps`, `epsilon`, além dos métodos `act`, `act_batch`, `learn`, `q_stats` e `head_weights`. O `algs/alg_registry.py` descobre os diretórios, importa o pacote e centraliza o checkpoint pesos-only e o adaptador `CheckpointPolicy`.
 
 Algoritmos on-policy podem declarar `on_policy = True` e implementar dois ganchos opcionais: `end_episode(info)`, chamado ao fim de cada episódio (marca a fronteira no rollout e, no A2C, consome o rabo do buffer), e `finish_training()`, chamado antes do checkpoint final (o PPO consome o rollout parcial). Nesses algoritmos `target` é um alias de `online`, porque não existe rede-alvo; o campo continua no checkpoint para manter o formato comum. `--envs` maior que 1 é rejeitado para eles: o loop vetorizado não mapeia a fronteira de episódio necessária ao rollout.
 
 Para colocar o seu no lugar:
 
 - **Só a rede**: copie/edite o `model.py` de um algoritmo mantendo a entrada da CNN e a saída com `n_actions` valores. O agente, o treino, os checkpoints e a retomada continuam funcionando.
-- **O algoritmo inteiro**: crie `alg_meu/agent.py` com a classe `Agent` no contrato acima. `--alg meu` passa a funcionar automaticamente, sem tocar em `train.py`; `evaluate.py` e `play.py` reconhecem o algoritmo pelo checkpoint.
+- **O algoritmo inteiro**: crie `algs/alg_meu/agent.py` com a classe `Agent` no contrato acima. `--alg meu` passa a funcionar automaticamente, sem tocar em `train.py`; `evaluate.py` e `play.py` reconhecem o algoritmo pelo checkpoint.
 - **Uma política nova (ex.: para o adversário)**: implemente `act(ctx: PolicyContext)` e registre o nome em `make_policy()`, em `agents/baseline.py`.
 
 ### 8. Verificar
@@ -218,6 +218,8 @@ tensorboard --logdir logs/runs
 
 mostra as mesmas curvas, histogramas dos pesos da CNN e a observação como imagem. Cada experimento escreve em `logs/runs/<alg>_configs_<opponent>_fs<stack>_fk<skip>_lr<lr>_b<batch>_seed<seed>`; o nome inclui algoritmo e configurações para distinguir os runs no TensorBoard. Use `--run-name NOME` para escolher um nome explícito.
 
+`--eval-every N` acrescenta uma avaliação gulosa a cada N episódios: um ambiente dedicado, adversário fixo `--eval-opponent` (padrão `rule`), `--eval-episodes` episódios (padrão 5) e seeds fixas a partir de `--eval-seed` (padrão 1000, no formato `seed+i`, o mesmo do `evaluate.py`). As médias e os desvios de moedas, recompensa e mortes aparecem como `eval/coins_mean`, `eval/reward_mean`, `eval/deaths_mean` (e os respectivos `_std`) no TensorBoard. Como o ambiente e as seeds são fixos, a curva é comparável entre algoritmos e runs; a avaliação não usa ε, não atualiza pesos e não consome os RNGs do treino. O custo é `--eval-episodes` episódios extras a cada N. Só vale com `--envs 1`.
+
 Para treinos por tempo de parede, `--max-hours N` encerra de forma limpa após N horas: o episódio corrente termina, o `latest.pt` é salvo com o número real de episódios concluídos e, em PPO/A2C, o rollout parcial é consumido por `finish_training()` antes do checkpoint final.
 
 ### Comparações controladas
@@ -266,7 +268,7 @@ Mudanças de ambiente que costumam acelerar o aprendizado (nenhuma está aplicad
 - **Terminar o episódio na morte**, em vez de só truncar aos 45 s: encurta o retorno e dá um sinal de fim mais claro (a morte hoje só custa 5 s e 10 moedas).
 - **Episódios mais curtos** (15–20 s): mais episódios por hora e menos passos em estados fáceis; combine com o término na morte.
 - **Adversário fixo** (`--opponent coins` ou `rule`) durante a comparação de algoritmos: menos não-estacionariedade que o currículo `auto`; use o `auto` depois.
-- **Estado compacto** (posições e velocidades dos personagens, moedas e plataformas) com um MLP no lugar da CNN: resolve a não-Markovianidade e treina muito mais rápido; mantenha `alg_dqn` como variante com imagem.
+- **Estado compacto** (posições e velocidades dos personagens, moedas e plataformas) com um MLP no lugar da CNN: resolve a não-Markovianidade e treina muito mais rápido; mantenha `algs/alg_dqn` como variante com imagem.
 - **Rede menor** (menos filtros, cabeça 128 → 64) e `--frame-stack 4 --frame-skip 3`: menos parâmetros e mais passos de simulação por segundo.
 - **Recompensa mais densa** (ex.: pequeno bônus por se aproximar da moeda): acelera o aprendizado inicial, mas pode enviesar a política — meça com e sem.
 
@@ -276,11 +278,12 @@ Mudanças de ambiente que costumam acelerar o aprendizado (nenhuma está aplicad
 rl-arena/
 ├── arena/                    # configuração, motor, ambiente, ações e renderizadores
 ├── agents/                   # políticas baseline usadas como adversário
-├── alg_dqn/                  # DQN enxuto: QNetwork, replay uniforme, DQNAgent
-├── alg_doubledqn_per_dueling/  # Double DQN + PER + dueling
-├── alg_ppo/                  # PPO: actor-critic, rollout com GAE
-├── alg_a2c/                  # A2C: actor-critic, retornos n-step
-├── alg_registry.py           # descoberta dos alg_*, checkpoint e CheckpointPolicy
+├── algs/                     # algoritmos e infraestrutura comum
+│   ├── alg_registry.py       # descoberta dos alg_*, checkpoint e CheckpointPolicy
+│   ├── alg_dqn/              # DQN enxuto: QNetwork, replay uniforme, DQNAgent
+│   ├── alg_doubledqn_per_dueling/  # Double DQN + PER + dueling
+│   ├── alg_ppo/              # PPO: actor-critic, rollout com GAE
+│   └── alg_a2c/              # A2C: actor-critic, retornos n-step
 ├── scripts/                  # comparações controladas e sumarizador
 ├── tests/
 ├── train.py
