@@ -4,7 +4,7 @@ Data: 2026-10-27.
 
 ## Resumo
 
-As implementações de `alg_dqn` e `alg_doubledqn_per_dueling` estão
+As implementações de `algs/alg_dqn` e `algs/alg_doubledqn_per_dueling` estão
 matematicamente corretas: o alvo de TD, o Double DQN, a cabeça dueling, o
 replay e a sincronização da rede-alvo foram auditados e um teste
 automatizado mostra que os dois agentes aprendem um MDP de dois estados.
@@ -35,7 +35,7 @@ episódios), C=1000 nos dois algoritmos, warmup de 1000 transições, PER com
 
 ## 1. Auditoria da implementação
 
-Revisão linha a linha de `alg_dqn/` e `alg_doubledqn_per_dueling/`:
+Revisão linha a linha de `algs/alg_dqn/` e `algs/alg_doubledqn_per_dueling/`:
 
 | Item | Situação |
 | --- | --- |
@@ -128,7 +128,7 @@ diferença de desempenho é orçamento de dados, não só o algoritmo.
   uma rampa relativa a `--episodes` nunca terminaria. Como `ep` continua a
   numeração na retomada, a rampa também retoma de onde parou.
 
-### 3.2 Warmup (`alg_dqn`, `alg_doubledqn_per_dueling`)
+### 3.2 Warmup (`algs/alg_dqn`, `algs/alg_doubledqn_per_dueling`)
 
 - `warmup` no construtor (padrão 0 para compatibilidade; `train.py` passa
   `--warmup`, padrão 1000).
@@ -160,7 +160,7 @@ diferença de desempenho é orçamento de dados, não só o algoritmo.
 Seed 7, adversário `rule`, `frame_stack=4`, `frame_skip=3`, batch 64,
 buffer 20 mil, lr 2,5e-4. Avaliação gulosa em 20 episódios (seeds
 1000–1019) do melhor checkpoint de treino e do final. Treino e avaliação
-usam o mesmo algoritmo de `alg_registry`/`ArenaEnv` do projeto.
+usam o mesmo algoritmo de `algs/alg_registry`/`ArenaEnv` do projeto.
 
 ### 4.2 Triagem DQN (90 episódios)
 
@@ -280,8 +280,8 @@ limite conhecido da avaliação gulosa, não do treino.
 | `--lr` | 2,5e-4 (novo default da CLI) | protocolo da busca |
 | Batch / buffer | 64 / 50 mil (a busca usou 20 mil por RAM) | protocolo |
 
-Os três primeiros são mudanças de código (`alg_dqn/agent.py`,
-`alg_doubledqn_per_dueling/agent.py`, `train.py`); o restante são defaults
+Os três primeiros são mudanças de código (`algs/alg_dqn/agent.py`,
+`algs/alg_doubledqn_per_dueling/agent.py`, `train.py`); o restante são defaults
 da CLI. Com esses valores, o DQN de 300 episódios (16 min) coleta 12,3
 moedas na avaliação final, contra 5,9 do default antigo — e o Double DQN
 14,15, contra 5,95.

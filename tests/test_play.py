@@ -3,8 +3,8 @@ import pytest
 
 from arena.actions import N_ACTIONS
 from arena.config import ArenaConfig
-from alg_dqn.agent import DQNAgent
-from alg_registry import CheckpointPolicy, save_checkpoint
+from algs.alg_dqn.agent import DQNAgent
+from algs.alg_registry import CheckpointPolicy, save_checkpoint
 from play import needs_render, parse_args, resolve_opponent, validate_play_args
 
 

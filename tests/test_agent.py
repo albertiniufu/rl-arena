@@ -6,16 +6,16 @@ import pytest
 import torch
 from torch import nn
 
-from alg_doubledqn_per_dueling.agent import (
+from algs.alg_doubledqn_per_dueling.agent import (
     DoubleDQNPerDuelingAgent,
     double_td_target,
 )
-from alg_doubledqn_per_dueling.model import DuelingQNetwork
-from alg_doubledqn_per_dueling.replay_buffer import PrioritizedReplayBuffer
-from alg_dqn.agent import DQNAgent, td_target
-from alg_dqn.model import QNetwork
-from alg_dqn.replay_buffer import ReplayBuffer
-from alg_registry import CheckpointPolicy, available_algorithms, load_algorithm
+from algs.alg_doubledqn_per_dueling.model import DuelingQNetwork
+from algs.alg_doubledqn_per_dueling.replay_buffer import PrioritizedReplayBuffer
+from algs.alg_dqn.agent import DQNAgent, td_target
+from algs.alg_dqn.model import QNetwork
+from algs.alg_dqn.replay_buffer import ReplayBuffer
+from algs.alg_registry import CheckpointPolicy, available_algorithms, load_algorithm
 from arena.config import ArenaConfig
 from arena.environment import ArenaEnv
 from arena.vector import make_vector_env

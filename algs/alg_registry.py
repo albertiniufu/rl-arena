@@ -1,8 +1,8 @@
 """Descoberta dos algoritmos e infraestrutura comum de checkpoint.
 
-Cada algoritmo é um pacote `alg_<nome>` na raiz do repositório com um
+Cada algoritmo é um pacote `alg_<nome>` dentro de `algs/` com um
 `agent.py` que expõe a classe `Agent`. O nome usado na CLI (`--alg`) é o
-sufixo do diretório: `alg_dqn` -> `--alg dqn`.
+sufixo do diretório: `algs/alg_dqn` -> `--alg dqn`.
 
 Este módulo concentra o que não é específico de nenhum algoritmo — descoberta
 dos pacotes, checkpoint pesos-only e o adaptador de política — para que cada
@@ -20,6 +20,7 @@ ENV_VERSION = "arena-v1"
 
 def available_algorithms():
     """Nomes dos pacotes `alg_*` que expõem um `agent.py` (sufixo do diretório)."""
+    # Este módulo mora em `algs/`, então o diretório dele é a raiz da busca.
     root = Path(__file__).resolve().parent
     return sorted(
         path.name[len(ALG_PREFIX):]
@@ -36,7 +37,7 @@ def load_algorithm(name):
         raise ValueError(
             f"Algoritmo desconhecido: {name!r} "
             f"(opções: {', '.join(available_algorithms())})")
-    return importlib.import_module(f"{ALG_PREFIX}{name}")
+    return importlib.import_module(f"{__package__}.{ALG_PREFIX}{name}")
 
 
 def checkpoint_meta(path, map_location="cpu"):

@@ -4,7 +4,7 @@ import numpy as np
 from arena.environment import ArenaEnv
 from arena.config import ArenaConfig
 from arena.skins import list_skins
-from alg_registry import algorithm_from_checkpoint, apply_env_config, load_checkpoint
+from algs.alg_registry import algorithm_from_checkpoint, apply_env_config, load_checkpoint
 
 def parse_args(argv=None):
     """Argumentos da CLI; separado de `main` para poder ser testado."""

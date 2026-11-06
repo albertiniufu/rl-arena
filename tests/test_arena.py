@@ -11,8 +11,8 @@ os.environ.setdefault("SDL_VIDEODRIVER", "dummy")
 os.environ.setdefault("SDL_AUDIODRIVER", "dummy")
 
 from agents.baseline import CoinRulePolicy, PolicyContext, PushRulePolicy, RandomPolicy, make_policy
-from alg_dqn.agent import DQNAgent
-from alg_registry import (
+from algs.alg_dqn.agent import DQNAgent
+from algs.alg_registry import (
     CheckpointPolicy,
     load_algorithm,
     load_checkpoint,

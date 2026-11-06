@@ -55,7 +55,7 @@ OPPONENT = "random"
 
 - O checkpoint guarda o algoritmo e `frame_stack`/`frame_skip`;
   `evaluate.py` e `play.py` aplicam a config gravada automaticamente e
-  carregam o pacote `alg_*` certo. Retomar exige o mesmo `--alg`.
+  carregam o pacote `algs/alg_*` certo. Retomar exige o mesmo `--alg`.
 - A rede é pequena: a GPU pode não acelerar muito o treino, porque o gargalo
   é a simulação em CPU. O modo vetorizado com vários workers costuma ser o
   ganho real.

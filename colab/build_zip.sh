@@ -13,7 +13,7 @@ fi
 
 mkdir -p dist
 git archive --format=zip --prefix=rl-arena/ -o dist/rl-arena-colab.zip HEAD -- \
-    agents arena colab alg_dqn alg_doubledqn_per_dueling alg_registry.py \
+    agents arena colab algs \
     tests train.py evaluate.py play.py requirements.txt README.md
 
 echo "Gerado: $(pwd)/dist/rl-arena-colab.zip"

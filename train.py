@@ -7,7 +7,7 @@ from arena.environment import ArenaEnv
 from arena.config import ArenaConfig
 from arena.skins import list_skins
 from arena.vector import make_vector_env
-from alg_registry import (
+from algs.alg_registry import (
     CheckpointPolicy,
     available_algorithms,
     checkpoint_meta,
@@ -66,6 +66,43 @@ def obs_to_image(obs):
     for channel, color in colors.items():
         img[frame[channel] > 0] = color
     return img
+
+
+def greedy_evaluation(agent, env, episodes, seed):
+    """Roda `episodes` episódios gulosos e devolve médias/desvios.
+
+    O ambiente é dedicado e as seeds são fixas (`seed + i`, como no
+    `evaluate.py`), então a avaliação é comparável entre algoritmos, seeds de
+    treino e retomadas. `act(..., greedy=True)` não usa ε nem atualiza pesos;
+    `reset(seed=...)` semeia os RNGs do próprio ambiente, de modo que os RNGs
+    do treino não são consumidos.
+    """
+    rows = []
+    for i in range(episodes):
+        obs, _ = env.reset(seed=seed + i)
+        total, info = 0.0, {}
+        while True:
+            action = agent.act(obs, greedy=True)
+            obs, reward, terminated, truncated, info = env.step(action)
+            total += reward
+            if terminated or truncated:
+                break
+        rows.append({
+            "reward": total,
+            "coins": info.get("coins", 0),
+            "deaths": info.get("deaths", 0),
+        })
+    rewards = np.array([r["reward"] for r in rows], dtype=float)
+    coins = np.array([r["coins"] for r in rows], dtype=float)
+    deaths = np.array([r["deaths"] for r in rows], dtype=float)
+    return {
+        "reward_mean": float(rewards.mean()),
+        "reward_std": float(rewards.std()),
+        "coins_mean": float(coins.mean()),
+        "coins_std": float(coins.std()),
+        "deaths_mean": float(deaths.mean()),
+        "deaths_std": float(deaths.std()),
+    }
 
 
 def _try_load_checkpoint(path, agent, frame_stack=None):
@@ -215,6 +252,18 @@ def parse_args(argv=None):
     ap.add_argument("--run-name", default=None,
                     help="nome do experimento no TensorBoard; padrão: "
                          "<alg>_configs_<opponent>_fs<stack>_fk<skip>_lr<lr>_b<batch>_seed<seed>")
+    ap.add_argument("--eval-every", type=int, default=0,
+                    help="avalia a política gulosa a cada N episódios e grava "
+                         "eval/* no TensorBoard; 0 desliga (só com --envs 1)")
+    ap.add_argument("--eval-episodes", type=int, default=5,
+                    help="episódios por avaliação gulosa periódica")
+    ap.add_argument("--eval-seed", type=int, default=1000,
+                    help="seed base da avaliação periódica (episódios seed+i, "
+                         "como no evaluate.py)")
+    ap.add_argument("--eval-opponent", choices=["rule", "random", "coins"],
+                    default="rule",
+                    help="adversário fixo da avaliação periódica; independente "
+                         "do --opponent do treino")
     ap.add_argument("--max-hours", type=float, default=None,
                     help="encerra o treino de forma limpa após N horas de parede; "
                          "salva o checkpoint final e consome o rollout on-policy "
@@ -226,7 +275,7 @@ def parse_args(argv=None):
     ap.add_argument("--frame-skip", type=int, default=1,
                     help="repetições da ação por step do agente")
     ap.add_argument("--alg", choices=available_algorithms(), default="dqn",
-                    help="algoritmo de RL: pacote alg_<nome> na raiz do projeto "
+                    help="algoritmo de RL: pacote alg_<nome> em algs/ "
                          "(dqn = DQN padrão; doubledqn_per_dueling = Double DQN "
                          "+ PER + dueling; ppo = PPO; a2c = A2C)")
     ap.add_argument("--lr", type=float, default=2.5e-4,
@@ -252,7 +301,8 @@ def parse_args(argv=None):
                          "vetor; 1 = um update por transição")
     ap.add_argument("--envs", type=int, default=1,
                     help="ambientes vetorizados na coleta (Fase 5; incompatível "
-                         "com --opponent auto, --render, --stats e --tensorboard)")
+                         "com --opponent auto, --render, --stats, --tensorboard "
+                         "e --eval-every)")
     args = ap.parse_args(argv)
     # O default depende do modo: K=4 só faz sentido com 1 ambiente; no loop
     # vetorizado o update já acontece a cada passo do vetor. Um valor
@@ -297,6 +347,14 @@ def validate_train_args(args):
     if args.learn_every < 1:
         raise SystemExit(
             f"--learn-every deve ser >= 1 (recebido {args.learn_every})")
+    eval_every = getattr(args, "eval_every", 0)
+    if eval_every < 0:
+        raise SystemExit(
+            f"--eval-every deve ser >= 0 (recebido {eval_every})")
+    eval_episodes = getattr(args, "eval_episodes", 5)
+    if eval_every > 0 and eval_episodes < 1:
+        raise SystemExit(
+            f"--eval-episodes deve ser >= 1 (recebido {eval_episodes})")
     if args.envs == 1:
         return
     if args.learn_every != 1:
@@ -320,6 +378,9 @@ def validate_train_args(args):
          "a telemetria por episódio não mapeia em workers concorrentes"),
         ("--tensorboard", args.tensorboard,
          "a telemetria por episódio não mapeia em workers concorrentes"),
+        ("--eval-every", getattr(args, "eval_every", 0) > 0,
+         "a avaliação periódica usa um ambiente dedicado e não mapeia em "
+         "workers concorrentes"),
     ]
     for flag, used, reason in incompat:
         if used:
@@ -559,6 +620,13 @@ def main():
         _train_vectorized(args, cfg, agent, ckpt_dir, start_ep, last_ep, best,
                           budgets, start_time)
         return
+    # Avaliação gulosa periódica: ambiente separado, com adversário e seeds
+    # fixos. Criar depois do early return garante que ele só existe no caminho
+    # suportado (--envs 1).
+    eval_env = None
+    if args.eval_every > 0:
+        eval_env = ArenaEnv(cfg, render_mode=None,
+                            opponent_policy=args.eval_opponent, skin=None)
     # Estatísticas adicionais, opcionais: não consomem RNG, então não alteram o treino.
     stats_f = None
     stats_writer = None
@@ -681,6 +749,18 @@ def main():
                 save_checkpoint(ckpt_dir / "budget" / f"ep{ep:03d}.pt", agent, cfg,
                                 {"episode": ep}, episodes=ep)
             print(f"episode={ep} reward={total:.2f} coins={row['coins']} deaths={row['deaths']} epsilon={agent.epsilon:.3f}")
+            if eval_env is not None and ep % args.eval_every == 0:
+                metrics = greedy_evaluation(
+                    agent, eval_env, args.eval_episodes, args.eval_seed)
+                print(f"  eval ep={ep} coins={metrics['coins_mean']:.2f}"
+                      f"±{metrics['coins_std']:.2f} "
+                      f"reward={metrics['reward_mean']:.2f} "
+                      f"deaths={metrics['deaths_mean']:.2f}")
+                if tb_writer is not None:
+                    for name in ("coins_mean", "coins_std", "reward_mean",
+                                 "reward_std", "deaths_mean", "deaths_std"):
+                        tb_writer.add_scalar(f"eval/{name}", metrics[name], ep)
+                    tb_writer.flush()
             last_done = ep
             if time_budget_reached(start_time, args.max_hours):
                 print(f"orçamento de {args.max_hours:g} h atingido; "
@@ -700,6 +780,8 @@ def main():
                     {"episode": last_done, "reward": last_total,
                      "episodes_done": last_done, "best_reward": best},
                     episodes=last_done)
+    if eval_env is not None:
+        eval_env.close()
     env.close()
 
 if __name__ == "__main__":

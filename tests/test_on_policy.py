@@ -3,13 +3,13 @@ import numpy as np
 import pytest
 import torch
 
-from alg_a2c.agent import A2CAgent, n_step_returns
-from alg_a2c.model import ActorCriticNetwork as A2CNetwork
-from alg_a2c.rollout_buffer import RolloutBuffer as A2CRolloutBuffer
-from alg_ppo.agent import PPOAgent, compute_gae
-from alg_ppo.model import ActorCriticNetwork as PPONetwork
-from alg_ppo.rollout_buffer import RolloutBuffer as PPORolloutBuffer
-from alg_registry import (
+from algs.alg_a2c.agent import A2CAgent, n_step_returns
+from algs.alg_a2c.model import ActorCriticNetwork as A2CNetwork
+from algs.alg_a2c.rollout_buffer import RolloutBuffer as A2CRolloutBuffer
+from algs.alg_ppo.agent import PPOAgent, compute_gae
+from algs.alg_ppo.model import ActorCriticNetwork as PPONetwork
+from algs.alg_ppo.rollout_buffer import RolloutBuffer as PPORolloutBuffer
+from algs.alg_registry import (
     algorithm_from_checkpoint,
     available_algorithms,
     load_algorithm,
