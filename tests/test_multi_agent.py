@@ -8,8 +8,10 @@ os.environ.setdefault("SDL_AUDIODRIVER", "dummy")
 
 from arena.actions import JUMP, PUSH_RIGHT, STOP
 from arena.config import ArenaConfig
-from arena.engine import ArenaEngine
+from arena.engine import ArenaEngine, Coin
+from arena.environment import ArenaEnv
 from arena.multi_environment import ArenaMultiEnv
+from arena.reward_shaping import coin_potential
 from arena.scenario import Scenario
 from algs.alg_ippo.agent import IPPOAgent
 from algs.alg_registry import (
@@ -198,6 +200,55 @@ def test_multi_env_rewards_push_transfer_signed():
     assert rewards[1] == pytest.approx(-5.0)
     assert info["agents"][0]["coins_transferred_this_step"] == 5
     assert info["agents"][1]["coins_transferred_this_step"] == -5
+    env.close()
+
+
+def test_coin_potential_uses_team_margin():
+    engine = ArenaEngine(ArenaConfig())
+    engine.reset(seed=0, n_characters=4,
+                 spawn_positions=[(10, 320), (20, 320), (30, 320), (40, 320)])
+    for character, coins in zip(engine.characters, [10, 2, 3, 1]):
+        character.coins = coins
+
+    team_ids = (0, 0, 1, 1)
+    assert coin_potential(engine, 0, team_ids) == pytest.approx(8.0)
+    assert coin_potential(engine, 2, team_ids) == pytest.approx(-8.0)
+    # Sem times: o viewer contra todos os demais.
+    assert coin_potential(engine, 0) == pytest.approx(10 - (2 + 3 + 1))
+
+
+def test_pbrs_shapes_reward_with_coin_margin():
+    env, _ = make_env(2, frame_skip=1, pbrs_coef=1.0, pbrs_gamma=0.99)
+    env.reset(seed=3)
+    actor, target = env.engine.characters
+    actor.x, actor.y = 100.0, 320.0
+    target.x, target.y = 128.0, 320.0
+    target.coins = 8
+    env.engine.coins.clear()
+
+    _, rewards, _, _, info = env.step([PUSH_RIGHT, JUMP])
+    # Densa: +5/-5 pela transferência. PBRS: gamma*Phi' - Phi.
+    # Phi(ator): -8 -> 2; Phi(alvo): 8 -> -2.
+    assert rewards[0] == pytest.approx(5.0 + (0.99 * 2 - (-8)))
+    assert rewards[1] == pytest.approx(-5.0 + (0.99 * -2 - 8))
+    assert info["agents"][0]["pbrs_this_step"] == pytest.approx(9.98)
+    assert info["agents"][1]["pbrs_this_step"] == pytest.approx(-9.98)
+    assert info["teams"][0]["pbrs"] == pytest.approx(9.98)
+    assert info["teams"][1]["pbrs"] == pytest.approx(-9.98)
+    env.close()
+
+
+def test_single_env_pbrs_only_counts_balance_changes():
+    env = ArenaEnv(ArenaConfig(opponent_count=1, frame_skip=1, pbrs_coef=1.0))
+    env.reset(seed=1)
+    player, opponent = env.engine.characters
+    player.coins, opponent.coins = 2, 6
+    env.engine.coins = [Coin(player.x, player.y - env.cfg.player_size / 2, 60)]
+
+    _, reward, _, _, info = env.step(JUMP)
+    # Coleta +1 (densa); Phi: -4 -> -3, então PBRS = 0.99*(-3) - (-4).
+    assert reward == pytest.approx(1.0 + 1.03)
+    assert info["pbrs_this_step"] == pytest.approx(1.03)
     env.close()
 
 

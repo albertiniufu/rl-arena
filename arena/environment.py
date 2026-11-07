@@ -10,6 +10,7 @@ from .actions import N_ACTIONS, PUSH_LEFT, PUSH_RIGHT, STOP
 from .config import ArenaConfig
 from .engine import ArenaEngine, Character, Coin
 from .observations import render_grid
+from .reward_shaping import coin_potential
 from .skins import load_renderer_class
 
 class ArenaEnv(gym.Env):
@@ -109,6 +110,9 @@ class ArenaEnv(gym.Env):
         if not self.action_space.contains(action):
             raise ValueError(f"Invalid action: {action}")
         action = int(action)
+        # PBRS: potencial no estado em que a ação foi escolhida.
+        if self.cfg.pbrs_coef:
+            phi_before = coin_potential(self.engine, 0)
         push_missed = action in (PUSH_LEFT, PUSH_RIGHT) and not self._push_target_in_range()
         dt = 1.0 / self.cfg.fps
         reward = 0.0
@@ -128,6 +132,12 @@ class ArenaEnv(gym.Env):
             collected += event["collected"][0]
             deaths += event["deaths_delta"][0]
             transferred += event["coins_transferred"][0]
+        pbrs = 0.0
+        if self.cfg.pbrs_coef:
+            phi_after = coin_potential(self.engine, 0)
+            pbrs = self.cfg.pbrs_coef * (
+                self.cfg.pbrs_gamma * phi_after - phi_before)
+            reward += pbrs
         if action == STOP:
             reward += self.cfg.stop_penalty
         elif push_missed:
@@ -144,6 +154,7 @@ class ArenaEnv(gym.Env):
             "collected_this_step": collected,
             "deaths_this_step": deaths,
             "coins_transferred_this_step": transferred,
+            "pbrs_this_step": pbrs,
         }
         self._last_info = info
         self._frames.append(self._observation())

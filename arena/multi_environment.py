@@ -23,6 +23,7 @@ from .actions import N_ACTIONS, PUSH_LEFT, PUSH_RIGHT, STOP
 from .config import ArenaConfig
 from .engine import ArenaEngine
 from .observations import render_grid
+from .reward_shaping import coin_potential
 from .scenario import Scenario
 from .skins import load_renderer_class
 
@@ -72,7 +73,7 @@ class ArenaMultiEnv:
         ])
 
     def _info(self, rewards=None, raw=None, collected=None, deaths=None,
-              transferred=None):
+              transferred=None, pbrs=None):
         agents = []
         for i, c in enumerate(self.engine.characters):
             agents.append({
@@ -85,6 +86,7 @@ class ArenaMultiEnv:
                 "deaths_this_step": 0 if deaths is None else int(deaths[i]),
                 "coins_transferred_this_step": (
                     0 if transferred is None else int(transferred[i])),
+                "pbrs_this_step": 0.0 if pbrs is None else float(pbrs[i]),
             })
         teams = []
         for team in sorted(set(self.scenario.team_ids)):
@@ -94,6 +96,7 @@ class ArenaMultiEnv:
                 "reward": float(np.mean([a["reward"] for a in members])),
                 "coins": int(sum(a["coins"] for a in members)),
                 "deaths": int(sum(a["deaths"] for a in members)),
+                "pbrs": float(np.mean([a["pbrs_this_step"] for a in members])),
             })
         return {
             "sim_time": float(self.engine.sim_time),
@@ -149,6 +152,12 @@ class ArenaMultiEnv:
                 f"esperado {self.n_agents} ações, recebido {actions.shape[0]}")
         if np.any(actions < 0) or np.any(actions >= N_ACTIONS):
             raise ValueError(f"ações inválidas: {actions.tolist()}")
+        # PBRS: potencial no estado em que a ação foi escolhida. Aplicado uma
+        # vez por step do agente (não por substep), casando com o gamma do GAE.
+        if self.cfg.pbrs_coef:
+            phi_before = np.array([
+                coin_potential(self.engine, i, self.scenario.team_ids)
+                for i in range(self.n_agents)])
         push_missed = np.array([
             bool(a in (PUSH_LEFT, PUSH_RIGHT))
             and not self._push_target_in_range(i)
@@ -174,6 +183,15 @@ class ArenaMultiEnv:
             deaths += step_deaths
             transferred += step_transferred
 
+        pbrs = np.zeros(self.n_agents, dtype=np.float64)
+        if self.cfg.pbrs_coef:
+            phi_after = np.array([
+                coin_potential(self.engine, i, self.scenario.team_ids)
+                for i in range(self.n_agents)])
+            pbrs = self.cfg.pbrs_coef * (
+                self.cfg.pbrs_gamma * phi_after - phi_before)
+            raw += pbrs
+
         # Penalidades de modelagem: uma vez por step do agente, não por substep.
         raw += np.where(actions == STOP, self.cfg.stop_penalty, 0.0)
         raw += np.where(push_missed, self.cfg.push_miss_penalty, 0.0)
@@ -185,7 +203,7 @@ class ArenaMultiEnv:
         terminated = np.zeros(self.n_agents, dtype=bool)
         truncated = np.full(
             self.n_agents, self.elapsed >= self.cfg.episode_seconds, dtype=bool)
-        info = self._info(rewards, raw, collected, deaths, transferred)
+        info = self._info(rewards, raw, collected, deaths, transferred, pbrs)
         self._last_info = info
         if self.render_mode == "human":
             self.render()

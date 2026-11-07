@@ -1,4 +1,4 @@
-import argparse, copy, csv, queue, random, threading, time, warnings
+import argparse, copy, csv, os, queue, random, threading, time, warnings
 from pathlib import Path
 import numpy as np
 import torch
@@ -331,6 +331,15 @@ def parse_args(argv=None):
                     help="moedas que um empurrão transfere do alvo para quem "
                          "empurrou (0 desliga; omitido usa o default do "
                          "ArenaConfig, 5)")
+    ap.add_argument("--pbrs-coef", type=float, default=None,
+                    help="coeficiente do PBRS sobre a diferença de moedas "
+                         "(0 desliga; omitido usa o ArenaConfig, 0)")
+    ap.add_argument("--save-every-minutes", type=float, default=0.0,
+                    help="checkpoint extra a cada N minutos de parede "
+                         "(0 desliga; multiagente)")
+    ap.add_argument("--video-every-minutes", type=float, default=0.0,
+                    help="grava um episódio guloso em MP4 a cada N minutos "
+                         "de parede (0 desliga; multiagente)")
     ap.add_argument("--alg", choices=available_algorithms(), default="dqn",
                     help="algoritmo de RL: pacote alg_<nome> em algs/ "
                          "(dqn = DQN enxuto; doubledqn_per_dueling = Double DQN "
@@ -461,6 +470,13 @@ def validate_train_args(args):
     elif scenario != "all-vs-all":
         raise SystemExit(
             "--scenario só se aplica ao modo multiagente (--alg ippo/mappo)")
+    if getattr(args, "save_every_minutes", 0) < 0:
+        raise SystemExit("--save-every-minutes deve ser >= 0")
+    if getattr(args, "video_every_minutes", 0) < 0:
+        raise SystemExit("--video-every-minutes deve ser >= 0")
+    pbrs_coef = getattr(args, "pbrs_coef", None)
+    if pbrs_coef is not None and pbrs_coef < 0:
+        raise SystemExit("--pbrs-coef deve ser >= 0")
     overlap = getattr(args, "overlap", False)
     if overlap and not getattr(load_algorithm(args.alg).Agent, "on_policy", False):
         raise SystemExit(
@@ -774,6 +790,46 @@ def multi_greedy_evaluation(agent, env, episodes, seed):
     return metrics
 
 
+def record_multi_episode(agent, env, path, seed):
+    """Grava um episódio guloso em MP4 e devolve o caminho.
+
+    Usa um ambiente dedicado e `act_batch(greedy=True)`: não consome o RNG do
+    treino. Headless com `SDL_VIDEODRIVER=dummy` (definido pelo chamador).
+    """
+    try:
+        import imageio
+        import pygame
+        import pygame.surfarray  # noqa: F401 — submódulo precisa de import explícito
+    except ImportError as exc:
+        raise SystemExit(
+            "Gravar vídeo requer: pip install imageio imageio-ffmpeg") from exc
+    path = Path(path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    writer = imageio.get_writer(
+        str(path), fps=env.cfg.fps, codec="libx264",
+        output_params=["-pix_fmt", "yuv420p", "-crf", "23",
+                       "-movflags", "+faststart"])
+
+    def append_frame():
+        frame = np.transpose(
+            pygame.surfarray.array3d(pygame.display.get_surface()), (1, 0, 2))
+        writer.append_data(frame)
+
+    try:
+        obs, _ = env.reset(seed=seed)
+        env.render()
+        append_frame()
+        while True:
+            actions = agent.act_batch(obs, greedy=True)
+            obs, _, _, truncated, _ = env.step(actions)
+            append_frame()
+            if bool(np.all(truncated)):
+                break
+    finally:
+        writer.close()
+    return path
+
+
 def _train_multi_agent(args, cfg, scenario, env, agent, ckpt_dir, start_ep,
                        last_ep, best, budgets, start_time):
     """Loop de treino multiagente (IPPO/MAPPO): ações conjuntas.
@@ -790,6 +846,16 @@ def _train_multi_agent(args, cfg, scenario, env, agent, ckpt_dir, start_ep,
     eval_env = None
     if args.eval_every > 0:
         eval_env = ArenaMultiEnv(cfg, scenario=scenario, render_mode=None)
+    # Vídeos periódicos usam um ambiente dedicado e render headless. O
+    # driver é definido antes de o pygame ser inicializado pelo renderer.
+    video_env = None
+    if args.video_every_minutes > 0:
+        os.environ.setdefault("SDL_VIDEODRIVER", "dummy")
+        os.environ.setdefault("SDL_AUDIODRIVER", "dummy")
+        video_env = ArenaMultiEnv(cfg, scenario=scenario, render_mode="human",
+                                  skin=args.skin)
+    last_clock_save = time.monotonic()
+    last_video_at = time.monotonic()
     stats_f = stats_writer = None
     if args.stats:
         stats_path = Path("logs/stats.csv")
@@ -826,12 +892,16 @@ def _train_multi_agent(args, cfg, scenario, env, agent, ckpt_dir, start_ep,
                 ep_start = time.monotonic()
                 obs, info = env.reset(seed=args.seed + ep)
                 totals = np.zeros(n_agents, dtype=np.float64)
+                pbrs_totals = np.zeros(n_agents, dtype=np.float64)
                 losses, q_means, q_maxes, grad_norms = [], [], [], []
                 steps = 0
                 while True:
                     actions = agent.act_batch(obs)
                     next_obs, rewards, terminated, truncated, info = \
                         env.step(actions)
+                    pbrs_totals += np.array(
+                        [a["pbrs_this_step"] for a in info["agents"]],
+                        dtype=np.float64)
                     for i in range(n_agents):
                         agent.add_transition(
                             i, obs[i], int(actions[i]), float(rewards[i]),
@@ -881,6 +951,14 @@ def _train_multi_agent(args, cfg, scenario, env, agent, ckpt_dir, start_ep,
                     tb_writer.add_scalar("train/epsilon", agent.epsilon, ep)
                     tb_writer.add_scalar(
                         "train/buffer_size", len(agent.buffer), ep)
+                    tb_writer.add_scalar(
+                        "train/pbrs_mean", float(pbrs_totals.mean()), ep)
+                    for team in sorted(set(scenario.team_ids)):
+                        idx = [i for i, t in enumerate(scenario.team_ids)
+                               if t == team]
+                        tb_writer.add_scalar(
+                            f"train/team{team}/pbrs",
+                            float(pbrs_totals[idx].mean()), ep)
                     for team in info.get("teams", []):
                         t = team["team"]
                         tb_writer.add_scalar(
@@ -898,6 +976,30 @@ def _train_multi_agent(args, cfg, scenario, env, agent, ckpt_dir, start_ep,
                     tb_writer.add_histogram(
                         "weights/head", agent.head_weights(), ep)
                     tb_writer.flush()
+                # Snapshots e vídeos por relógio de parede (15 min no run de
+                # 3 h), sempre na fronteira de um episódio.
+                if args.save_every_minutes > 0 and (
+                        time.monotonic() - last_clock_save
+                        >= args.save_every_minutes * 60.0):
+                    save_checkpoint(
+                        ckpt_dir / "timed" / f"ep{ep:05d}.pt", agent, cfg,
+                        {"episode": ep, "reward": reward_mean,
+                         "episodes_done": ep, "best_reward": best},
+                        episodes=ep)
+                    last_clock_save = time.monotonic()
+                    print(f"checkpoint por tempo: ep{ep:05d}.pt")
+                if video_env is not None and (
+                        time.monotonic() - last_video_at
+                        >= args.video_every_minutes * 60.0):
+                    video_path = record_multi_episode(
+                        agent, video_env,
+                        ckpt_dir / "videos" / f"ep{ep:05d}.mp4",
+                        seed=args.eval_seed + ep)
+                    last_video_at = time.monotonic()
+                    print(f"vídeo salvo em {video_path}")
+                    if tb_writer is not None:
+                        tb_writer.add_text("videos/ultimo", str(video_path), ep)
+                        tb_writer.flush()
                 if stats_writer is not None:
                     agg = {
                         "mean_loss": mean_loss,
@@ -952,6 +1054,8 @@ def _train_multi_agent(args, cfg, scenario, env, agent, ckpt_dir, start_ep,
             tb_writer.close()
         if eval_env is not None:
             eval_env.close()
+        if video_env is not None:
+            video_env.close()
         env.close()
     # O rollout parcial final é consumido antes de gravar o checkpoint.
     if hasattr(agent, "finish_training"):
@@ -1254,6 +1358,8 @@ def main():
     cfg.frame_stack, cfg.frame_skip = args.frame_stack, args.frame_skip
     if args.push_coin_transfer is not None:
         cfg.push_coin_transfer = args.push_coin_transfer
+    if args.pbrs_coef is not None:
+        cfg.pbrs_coef = args.pbrs_coef
     ckpt_dir = Path(args.checkpoint_dir)
     resume_path = resolve_resume_path(args.resume, ckpt_dir) if args.resume else None
     multi_agent = getattr(alg.Agent, "multi_agent", False)
