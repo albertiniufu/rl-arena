@@ -48,6 +48,10 @@ python train.py --alg ippo --agents 4 --scenario all-vs-all --checkpoint-dir che
 python train.py --alg mappo --agents 4 --scenario teams --teams 2 --checkpoint-dir checkpoints/mappo_teams4
 python evaluate.py --checkpoint checkpoints/teams4/best.pt --episodes 10
 python play.py --checkpoint checkpoints/teams4/best.pt --render   # modo espectador
+python scripts/duel_multiagent.py \
+  --mappo-checkpoint checkpoints/mappo_teams4_3h/best.pt \
+  --ippo-checkpoint checkpoints/ippo_teams4_3h/best.pt \
+  --record duelo.mp4   # MAPPO × IPPO, um checkpoint por time
 ```
 
 O padrão de `--agents` é 4 com um algoritmo multiagente (1 nos demais algoritmos).

@@ -63,7 +63,7 @@ class MAPPOAgent:
                  lr=2.5e-4, gamma=.99, batch_size=64, rollout_steps=1024,
                  epochs=4, clip=0.2, gae_lambda=.95, value_coef=.5,
                  entropy_coef=.01, max_grad_norm=10.0, value_clip=None,
-                 device=None):
+                 eval_chunk_steps=64, device=None):
         self.device = torch.device(
             device or ("cuda" if torch.cuda.is_available() else "cpu"))
         self.obs_shape = tuple(obs_shape)
@@ -88,6 +88,11 @@ class MAPPOAgent:
         self.entropy_coef = float(entropy_coef)
         self.max_grad_norm = float(max_grad_norm)
         self.value_clip = None if value_clip is None else float(value_clip)
+        # O rollout fica na CPU e vai para a GPU em blocos. Um rollout de
+        # 1024 passos × 4 agentes com frame stack ocupa centenas de MB; em
+        # GPUs pequenas (6 GB) mantê-lo no device junto com as ativações
+        # estoura a memória.
+        self.eval_chunk_steps = max(1, int(eval_chunk_steps))
         # Uma única rede (ator + crítico centralizado) para todos os agentes.
         self.online = CentralizedActorCriticNetwork(
             self.obs_shape, self.n_actions, self.n_agents).to(self.device)
@@ -186,35 +191,46 @@ class MAPPOAgent:
         arrays = self.buffer.as_arrays()
         if arrays is None:
             return None
-        states = torch.as_tensor(arrays["states"], dtype=torch.float32,
-                                 device=self.device)
-        next_states = torch.as_tensor(arrays["next_states"],
-                                      dtype=torch.float32, device=self.device)
-        actions = torch.as_tensor(arrays["actions"], dtype=torch.int64,
-                                  device=self.device)
+        # O rollout fica na CPU e só os blocos usados vão para a GPU; um
+        # rollout com frame stack ocupa centenas de MB no device.
+        states = torch.as_tensor(arrays["states"], dtype=torch.float32)
+        next_states = torch.as_tensor(
+            arrays["next_states"], dtype=torch.float32)
+        actions = torch.as_tensor(arrays["actions"], dtype=torch.int64)
         returns_np = arrays["rewards"]
         terminated_cpu = torch.as_tensor(arrays["terminated"], dtype=torch.bool)
         ends_cpu = torch.as_tensor(arrays["episode_ends"], dtype=torch.bool)
 
         n_steps, n_agents = actions.shape
+        old_log_probs_parts, values_parts, next_values_parts = [], [], []
         with torch.no_grad():
             # A política não muda durante a coleta: recalcular os log-probs
-            # antigos com os pesos atuais é exato.
-            feats = self._features(states)
-            logits = self.online.actor(feats)
-            old_log_probs = torch.log_softmax(logits, dim=-1).gather(
-                -1, actions.unsqueeze(-1)).squeeze(-1)
-            values = self.online.joint_values(feats)
-            next_feats = self._features(next_states)
-            next_values = self.online.joint_values(next_feats)
+            # antigos com os pesos atuais é exato. O forward vai em blocos
+            # para limitar a memória de ativações.
+            for start in range(0, n_steps, self.eval_chunk_steps):
+                stop = start + self.eval_chunk_steps
+                s = states[start:stop].to(self.device)
+                a = actions[start:stop].to(self.device)
+                feats = self._features(s)
+                logits = self.online.actor(feats)
+                old_log_probs_parts.append(torch.log_softmax(
+                    logits, dim=-1).gather(
+                        -1, a.unsqueeze(-1)).squeeze(-1).cpu())
+                values_parts.append(self.online.joint_values(feats).cpu())
+                ns = next_states[start:stop].to(self.device)
+                next_values_parts.append(
+                    self.online.joint_values(self._features(ns)).cpu())
+        old_log_probs = torch.cat(old_log_probs_parts)
+        values = torch.cat(values_parts)
+        next_values = torch.cat(next_values_parts)
 
         rewards_cpu = torch.as_tensor(returns_np, dtype=torch.float32)
         advantages, returns = compute_gae(
-            rewards_cpu, values.cpu(), next_values.cpu(), terminated_cpu,
-            ends_cpu, self.gamma, self.gae_lambda)
+            rewards_cpu, values, next_values, terminated_cpu, ends_cpu,
+            self.gamma, self.gae_lambda)
         advantages = advantages.to(self.device)
         returns = returns.to(self.device)
-        values_old = values.detach()
+        values_old = values.to(self.device)
         advantages = (advantages - advantages.mean()) / (
             advantages.std(unbiased=False) + 1e-8)
 
@@ -223,27 +239,31 @@ class MAPPOAgent:
         steps_per_batch = max(1, self.batch_size // n_agents)
         last_loss = 0.0
         for _ in range(self.epochs):
-            order = torch.randperm(n_steps, device=self.device)
+            order = torch.randperm(n_steps)
             for start in range(0, n_steps, steps_per_batch):
                 idx = order[start:start + steps_per_batch]
-                mb_feats = self._features(states[idx])  # (S, n, F)
+                mb_idx = idx.to(self.device)
+                mb_states = states[idx].to(self.device)
+                mb_actions = actions[idx].to(self.device)
+                mb_feats = self._features(mb_states)  # (S, n, F)
                 mb_logits = self.online.actor(mb_feats)
                 dist = Categorical(logits=mb_logits)
-                log_probs = dist.log_prob(actions[idx])
-                ratio = torch.exp(log_probs - old_log_probs[idx])
-                adv = advantages[idx]
+                log_probs = dist.log_prob(mb_actions)
+                ratio = torch.exp(
+                    log_probs - old_log_probs[idx].to(self.device))
+                adv = advantages[mb_idx]
                 unclipped = ratio * adv
                 clipped = torch.clamp(
                     ratio, 1.0 - self.clip, 1.0 + self.clip) * adv
                 policy_loss = -torch.min(unclipped, clipped).mean()
 
                 mb_values = self.online.joint_values(mb_feats)
-                mb_returns = returns[idx]
+                mb_returns = returns[mb_idx]
                 if self.value_clip is None:
                     value_loss = nn.functional.mse_loss(
                         mb_values, mb_returns)
                 else:
-                    old = values_old[idx]
+                    old = values_old[mb_idx]
                     clipped_values = old + torch.clamp(
                         mb_values - old, -self.value_clip, self.value_clip)
                     value_loss = torch.max(
