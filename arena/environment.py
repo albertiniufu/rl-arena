@@ -112,7 +112,7 @@ class ArenaEnv(gym.Env):
         push_missed = action in (PUSH_LEFT, PUSH_RIGHT) and not self._push_target_in_range()
         dt = 1.0 / self.cfg.fps
         reward = 0.0
-        collected = deaths = 0
+        collected = deaths = transferred = 0
         for _ in range(self.cfg.frame_skip):
             # Observação pré-substep: é o estado sobre o qual as políticas decidem.
             policy_obs = self._observation()
@@ -122,9 +122,12 @@ class ArenaEnv(gym.Env):
             reward += (
                 event["collected"][0] * self.cfg.coin_reward
                 + event["deaths_delta"][0] * self.cfg.death_penalty
+                # Transferência assinada: ganha quem empurra, perde o alvo.
+                + event["coins_transferred"][0] * self.cfg.coin_reward
             )
             collected += event["collected"][0]
             deaths += event["deaths_delta"][0]
+            transferred += event["coins_transferred"][0]
         if action == STOP:
             reward += self.cfg.stop_penalty
         elif push_missed:
@@ -140,6 +143,7 @@ class ArenaEnv(gym.Env):
             "sim_time": self.engine.sim_time,
             "collected_this_step": collected,
             "deaths_this_step": deaths,
+            "coins_transferred_this_step": transferred,
         }
         self._last_info = info
         self._frames.append(self._observation())

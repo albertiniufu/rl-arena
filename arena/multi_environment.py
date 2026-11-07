@@ -71,7 +71,8 @@ class ArenaMultiEnv:
             np.concatenate(frames, axis=0) for frames in self._frames
         ])
 
-    def _info(self, rewards=None, raw=None, collected=None, deaths=None):
+    def _info(self, rewards=None, raw=None, collected=None, deaths=None,
+              transferred=None):
         agents = []
         for i, c in enumerate(self.engine.characters):
             agents.append({
@@ -82,6 +83,8 @@ class ArenaMultiEnv:
                 "raw_reward": 0.0 if raw is None else float(raw[i]),
                 "collected_this_step": 0 if collected is None else int(collected[i]),
                 "deaths_this_step": 0 if deaths is None else int(deaths[i]),
+                "coins_transferred_this_step": (
+                    0 if transferred is None else int(transferred[i])),
             })
         teams = []
         for team in sorted(set(self.scenario.team_ids)):
@@ -156,15 +159,20 @@ class ArenaMultiEnv:
         raw = np.zeros(self.n_agents, dtype=np.float64)
         collected = np.zeros(self.n_agents, dtype=np.int64)
         deaths = np.zeros(self.n_agents, dtype=np.int64)
+        transferred = np.zeros(self.n_agents, dtype=np.int64)
         for _ in range(self.cfg.frame_skip):
             event = self.engine.step(actions.tolist(), dt)
             self.elapsed += dt
             step_collected = np.asarray(event["collected"], dtype=np.int64)
             step_deaths = np.asarray(event["deaths_delta"], dtype=np.int64)
+            # Transferência assinada: ganha quem empurra, perde o alvo.
+            step_transferred = np.asarray(event["coins_transferred"], dtype=np.int64)
             raw += (step_collected * self.cfg.coin_reward
-                    + step_deaths * self.cfg.death_penalty)
+                    + step_deaths * self.cfg.death_penalty
+                    + step_transferred * self.cfg.coin_reward)
             collected += step_collected
             deaths += step_deaths
+            transferred += step_transferred
 
         # Penalidades de modelagem: uma vez por step do agente, não por substep.
         raw += np.where(actions == STOP, self.cfg.stop_penalty, 0.0)
@@ -177,7 +185,7 @@ class ArenaMultiEnv:
         terminated = np.zeros(self.n_agents, dtype=bool)
         truncated = np.full(
             self.n_agents, self.elapsed >= self.cfg.episode_seconds, dtype=bool)
-        info = self._info(rewards, raw, collected, deaths)
+        info = self._info(rewards, raw, collected, deaths, transferred)
         self._last_info = info
         if self.render_mode == "human":
             self.render()

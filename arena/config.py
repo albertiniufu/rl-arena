@@ -22,6 +22,7 @@ class ArenaConfig:
     death_penalty: float = -2.0
     stop_penalty: float = -0.1 # escolher STOP (ficar parado) a cada step do agente
     push_miss_penalty: float = -0.1 # empurrar sem oponente em contato no início do step
+    push_coin_transfer: int = 5 # moedas que passam do empurrado para quem empurra (0 desliga)
     opponent_count: int = 1 # adicionar mais bots?
     n_agents: int = 0 # 0 = legado (1 + opponent_count); >= 2 = ambiente multiagente
     team_ids: tuple = () # id do time por agente (multiagente); () = legado

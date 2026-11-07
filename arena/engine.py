@@ -115,6 +115,12 @@ class ArenaEngine:
         target.vx = float(np.clip(target.vx + direction * self.cfg.push_impulse * intensity,
                                   -self.cfg.max_speed * 2, self.cfg.max_speed * 2))
         target.vy = min(target.vy, -45.0)
+        # O empurrão transfere moedas do alvo para quem empurrou. Quem tem
+        # menos que `push_coin_transfer` passa o que tem (nunca fica negativo).
+        transfer = min(int(self.cfg.push_coin_transfer), int(target.coins))
+        if transfer > 0:
+            target.coins -= transfer
+            actor.coins += transfer
         return True
 
     def _move_character(self, c, action, dt, is_player=False):
@@ -166,6 +172,9 @@ class ArenaEngine:
     def step(self, actions, dt):
         self.sim_time += dt
         before_deaths = [c.deaths for c in self.characters]
+        # Saldo antes dos empurrões: o delta isola a transferência de moedas
+        # (a morte também mexe no saldo, mas acontece depois).
+        before_push_coins = [c.coins for c in self.characters]
         # Empurrões são resolvidos antes do movimento, sempre na intensidade
         # máxima: um código por direção.
         for i, action in enumerate(actions):
@@ -177,6 +186,9 @@ class ArenaEngine:
                 self.push(i, direction, PUSH_INTENSITY)
             else:
                 self.push(i, direction, PUSH_INTENSITY, eligible)
+        # Positivo para quem recebeu moedas, negativo para quem as perdeu.
+        coins_transferred = [c.coins - before
+                             for c, before in zip(self.characters, before_push_coins)]
         for i, (c, action) in enumerate(zip(self.characters, actions)):
             push = action in (PUSH_LEFT, PUSH_RIGHT)
             self._move_character(c, STOP if push else action, dt, i == 0)
@@ -197,4 +209,5 @@ class ArenaEngine:
         return {
             "collected": collected,
             "deaths_delta": [c.deaths - before_deaths[i] for i, c in enumerate(self.characters)],
+            "coins_transferred": coins_transferred,
         }

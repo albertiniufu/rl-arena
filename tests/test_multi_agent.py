@@ -6,7 +6,7 @@ import pytest
 os.environ.setdefault("SDL_VIDEODRIVER", "dummy")
 os.environ.setdefault("SDL_AUDIODRIVER", "dummy")
 
-from arena.actions import PUSH_RIGHT, STOP
+from arena.actions import JUMP, PUSH_RIGHT, STOP
 from arena.config import ArenaConfig
 from arena.engine import ArenaEngine
 from arena.multi_environment import ArenaMultiEnv
@@ -153,6 +153,51 @@ def test_push_ignores_teammates_and_penalizes_miss():
     # Controle: sem o filtro de time, o engine empurraria o aliado.
     env.engine.push(0, 1, 3)
     assert ally.vx > 0
+    env.close()
+
+
+def test_push_transfers_coins_from_target_to_pusher():
+    engine = ArenaEngine(ArenaConfig(push_coin_transfer=5))
+    engine.reset(seed=0, n_characters=2,
+                 spawn_positions=[(100, 320), (128, 320)])
+    actor, target = engine.characters
+    target.coins = 12
+
+    assert engine.push(0, 1, 1.0) is True
+    assert (actor.coins, target.coins) == (5, 7)
+
+    # Quem tem menos que a transferência passa o que tem, sem ficar negativo.
+    target.coins = 3
+    assert engine.push(0, 1, 1.0) is True
+    assert (actor.coins, target.coins) == (8, 0)
+
+
+def test_push_transfer_can_be_disabled():
+    engine = ArenaEngine(ArenaConfig(push_coin_transfer=0))
+    engine.reset(seed=0, n_characters=2,
+                 spawn_positions=[(100, 320), (128, 320)])
+    actor, target = engine.characters
+    target.coins = 12
+
+    assert engine.push(0, 1, 1.0) is True
+    assert (actor.coins, target.coins) == (0, 12)
+
+
+def test_multi_env_rewards_push_transfer_signed():
+    env, _ = make_env(2, frame_skip=1)
+    env.reset(seed=3)
+    actor, target = env.engine.characters
+    actor.x, actor.y = 100.0, 320.0
+    target.x, target.y = 128.0, 320.0
+    target.coins = 8
+    env.engine.coins.clear()  # isola a recompensa da coleta de moedas
+
+    _, rewards, _, _, info = env.step([PUSH_RIGHT, JUMP])
+    assert (actor.coins, target.coins) == (5, 3)
+    assert rewards[0] == pytest.approx(5.0)
+    assert rewards[1] == pytest.approx(-5.0)
+    assert info["agents"][0]["coins_transferred_this_step"] == 5
+    assert info["agents"][1]["coins_transferred_this_step"] == -5
     env.close()
 
 

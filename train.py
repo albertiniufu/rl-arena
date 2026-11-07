@@ -327,6 +327,10 @@ def parse_args(argv=None):
                     help="frames empilhados na observação (arena/environment.py)")
     ap.add_argument("--frame-skip", type=int, default=1,
                     help="repetições da ação por step do agente")
+    ap.add_argument("--push-coin-transfer", type=int, default=None,
+                    help="moedas que um empurrão transfere do alvo para quem "
+                         "empurrou (0 desliga; omitido usa o default do "
+                         "ArenaConfig, 5)")
     ap.add_argument("--alg", choices=available_algorithms(), default="dqn",
                     help="algoritmo de RL: pacote alg_<nome> em algs/ "
                          "(dqn = DQN enxuto; doubledqn_per_dueling = Double DQN "
@@ -1248,6 +1252,8 @@ def main():
     torch.manual_seed(args.seed)
     cfg = ArenaConfig()
     cfg.frame_stack, cfg.frame_skip = args.frame_stack, args.frame_skip
+    if args.push_coin_transfer is not None:
+        cfg.push_coin_transfer = args.push_coin_transfer
     ckpt_dir = Path(args.checkpoint_dir)
     resume_path = resolve_resume_path(args.resume, ckpt_dir) if args.resume else None
     multi_agent = getattr(alg.Agent, "multi_agent", False)
