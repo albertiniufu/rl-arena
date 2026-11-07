@@ -206,10 +206,12 @@ def main(argv=None):
             if video_writer is not None:
                 env.render()
                 record_frame(video_writer)
+            totals = np.zeros(scenario.n_agents, dtype=np.float64)
             steps = 0
             while True:
                 obs, rewards, terminated, truncated, info = env.step(
                     actions_for(obs))
+                totals += rewards
                 steps += 1
                 if video_writer is not None:
                     env.render()
@@ -221,12 +223,15 @@ def main(argv=None):
             ippo_rows = [row for team, row in by_team.items()
                          if team != args.mappo_team]
             ippo_coins = sum(row["coins"] for row in ippo_rows)
-            ippo_reward = float(np.mean([row["reward"] for row in ippo_rows]))
+            # `info["teams"]` traz a recompensa do último passo; o placar do
+            # duelo usa o total acumulado no episódio.
+            mappo_reward = float(totals[mappo_mask].mean())
+            ippo_reward = float(totals[~mappo_mask].mean())
             winner = ("MAPPO" if mappo_row["coins"] > ippo_coins else
                       "IPPO" if ippo_coins > mappo_row["coins"] else "empate")
             print(f"episódio {ep + 1} ({steps} passos): "
                   f"MAPPO time {args.mappo_team} {mappo_row['coins']} moedas "
-                  f"(reward {mappo_row['reward']:.2f}) | "
+                  f"(reward {mappo_reward:.2f}) | "
                   f"IPPO {ippo_coins} moedas "
                   f"(reward {ippo_reward:.2f}) -> {winner}")
             results.append({
