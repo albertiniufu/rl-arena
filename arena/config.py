@@ -23,6 +23,8 @@ class ArenaConfig:
     stop_penalty: float = -0.1 # escolher STOP (ficar parado) a cada step do agente
     push_miss_penalty: float = -0.1 # empurrar sem oponente em contato no início do step
     opponent_count: int = 1 # adicionar mais bots?
+    n_agents: int = 0 # 0 = legado (1 + opponent_count); >= 2 = ambiente multiagente
+    team_ids: tuple = () # id do time por agente (multiagente); () = legado
     coin_count: int = 10
     frame_stack: int = 1 # quantos frames compõem a observação
     frame_skip: int = 1 # quantos substeps de física cada step do agente executa

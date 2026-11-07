@@ -230,10 +230,100 @@ def test_train_cli_accepts_on_policy_algorithms():
     assert parse_args(["--alg", "a2c"]).alg == "a2c"
 
 
-def test_vectorized_training_rejects_on_policy():
+def test_vectorized_training_accepts_on_policy():
     from train import parse_args, validate_train_args
 
     for alg in ("ppo", "a2c"):
+        args = parse_args(["--alg", alg, "--envs", "2", "--opponent", "rule"])
+        validate_train_args(args)
+        assert args.learn_every == 1
+        # As restrições do modo vetorizado continuam valendo para on-policy.
         with pytest.raises(SystemExit):
             validate_train_args(parse_args(
-                ["--alg", alg, "--envs", "2", "--opponent", "rule"]))
+                ["--alg", alg, "--envs", "2", "--opponent", "rule",
+                 "--stats"]))
+        with pytest.raises(SystemExit):
+            validate_train_args(parse_args(
+                ["--alg", alg, "--envs", "2"]))  # adversário auto
+
+
+def test_append_rollout_segment_marks_worker_boundaries():
+    from train import _append_rollout_segment
+
+    agent = PPOAgent(OBS_SHAPE, 6)
+    obs = np.zeros(OBS_SHAPE, dtype=np.float32)
+    # Worker 0: dois passos, sem fim de episódio; worker 1: um passo que
+    # termina o episódio. Cada trecho precisa terminar marcado para o GAE
+    # não atravessar de um worker para o outro.
+    segment0 = [(obs, 1, 1.0, obs, False, None, False),
+                (obs, 2, 2.0, obs, False, None, False)]
+    segment1 = [(obs, 3, 3.0, obs, True, None, True)]
+    _append_rollout_segment(agent, segment0)
+    _append_rollout_segment(agent, segment1)
+    *_, episode_ends = agent.buffer.as_arrays()
+    assert episode_ends.tolist() == [False, True, True]
+    assert len(agent.buffer) == 3
+
+
+def test_rollout_target_reads_algorithm_horizon():
+    from train import _rollout_target
+
+    assert _rollout_target(PPOAgent(OBS_SHAPE, 6, rollout_steps=128)) == 128
+    assert _rollout_target(A2CAgent(OBS_SHAPE, 6, batch_size=32)) == 32
+
+
+def test_ppo_buffer_keeps_behavior_log_probs():
+    """O PPO usa o log-prob da coleta no modo --overlap."""
+    buf = PPORolloutBuffer()
+    state = np.zeros(OBS_SHAPE, dtype=np.float32)
+    buf.add(state, 1, 0.0, state, False, -0.5)
+    buf.add(state, 2, 0.0, state, False)  # sem log-prob: cai no recálculo
+    assert buf.log_probs_array() is None
+    buf.clear()
+    buf.add(state, 1, 0.0, state, False, -0.5)
+    buf.add(state, 2, 0.0, state, False, -0.25)
+    buf.mark_episode_end()
+    assert np.allclose(buf.log_probs_array(), [-0.5, -0.25])
+    # `as_arrays` mantém o contrato de 6 campos usado pelo update.
+    assert len(buf.as_arrays()) == 6
+    # O A2C aceita o log-prob no contrato comum, mas o ignora.
+    a2c_buf = A2CRolloutBuffer()
+    a2c_buf.add(state, 1, 0.0, state, False, -0.5)
+    assert len(a2c_buf.as_arrays()) == 6
+
+
+def test_overlap_cli_and_validation():
+    from train import parse_args, validate_train_args
+
+    args = parse_args(["--alg", "ppo", "--overlap", "--opponent", "rule"])
+    assert args.overlap
+    validate_train_args(args)
+    validate_train_args(parse_args(
+        ["--alg", "a2c", "--overlap", "--envs", "4", "--opponent", "rule"]))
+    # Off-policy não tem rollout síncrono para sobrepor.
+    with pytest.raises(SystemExit):
+        validate_train_args(parse_args(
+            ["--alg", "dqn", "--overlap", "--opponent", "rule"]))
+    # As mesmas restrições do modo vetorizado continuam valendo.
+    base = ["--alg", "ppo", "--overlap", "--opponent", "rule"]
+    for extra in (["--stats"], ["--tensorboard"], ["--render"],
+                  ["--eval-every", "1"]):
+        with pytest.raises(SystemExit):
+            validate_train_args(parse_args([*base, *extra]))
+    # O adversário auto (default) também é recusado.
+    with pytest.raises(SystemExit):
+        validate_train_args(parse_args(["--alg", "ppo", "--overlap"]))
+
+
+def test_act_batch_on_cpu_uses_its_own_generator():
+    from train import _act_batch_on_cpu
+
+    net = PPONetwork(OBS_SHAPE, 6).eval()
+    obs = np.zeros((3, *OBS_SHAPE), dtype=np.float32)
+    g1 = torch.Generator().manual_seed(3)
+    g2 = torch.Generator().manual_seed(3)
+    a1, lp1 = _act_batch_on_cpu(net, obs, g1)
+    a2, lp2 = _act_batch_on_cpu(net, obs, g2)
+    assert np.array_equal(a1, a2)
+    assert np.allclose(lp1, lp2)
+    assert a1.shape == (3,) and lp1.shape == (3,)

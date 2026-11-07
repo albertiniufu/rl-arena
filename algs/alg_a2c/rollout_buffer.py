@@ -12,7 +12,10 @@ class RolloutBuffer:
     def __init__(self):
         self.data = []
 
-    def add(self, state, action, reward, next_state, terminated):
+    def add(self, state, action, reward, next_state, terminated, log_prob=None):
+        # `log_prob` é aceito para o contrato comum de coleta, mas o A2C não
+        # precisa dele: o update usa a política online do início do rollout.
+        del log_prob
         self.data.append((
             np.array(state, copy=True), int(action), float(reward),
             np.array(next_state, copy=True), bool(terminated), False,

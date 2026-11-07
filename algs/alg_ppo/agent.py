@@ -123,19 +123,34 @@ class PPOAgent:
     def _update(self):
         states, actions, rewards, next_states, terminated, episode_ends = \
             self.buffer.as_arrays()
+        behavior_log_probs = self.buffer.log_probs_array()
         s = torch.as_tensor(states, dtype=torch.float32, device=self.device)
         a = torch.as_tensor(actions, dtype=torch.int64, device=self.device)
-        r = torch.as_tensor(rewards, dtype=torch.float32, device=self.device)
         ns = torch.as_tensor(next_states, dtype=torch.float32, device=self.device)
-        term = torch.as_tensor(terminated, dtype=torch.float32, device=self.device)
-        ends = torch.as_tensor(episode_ends, dtype=torch.float32, device=self.device)
+        # GAE é uma recorrência sobre escalares: em CUDA cada iteração lança
+        # kernels e sincroniza (~43 ms por rollout de 1024). Com recompensas e
+        # valores em CPU o mesmo cálculo leva ~17 ms, e a GPU só recebe as
+        # vantagens prontas para as épocas de otimização.
+        r = torch.as_tensor(rewards, dtype=torch.float32)
+        term = torch.as_tensor(terminated, dtype=torch.float32)
+        ends = torch.as_tensor(episode_ends, dtype=torch.float32)
         with torch.no_grad():
             logits_old, values = self.online(s)
             _, next_values = self.online(ns)
-            old_log_probs = torch.log_softmax(logits_old, dim=1).gather(
-                1, a.unsqueeze(1)).squeeze(1)
+            if behavior_log_probs is None:
+                # Coleta e update usam a mesma política: recalcular é exato.
+                old_log_probs = torch.log_softmax(logits_old, dim=1).gather(
+                    1, a.unsqueeze(1)).squeeze(1)
+            else:
+                # Coleta defasada (`--overlap`): o ratio do PPO precisa da
+                # política de comportamento que gerou o rollout, não da online.
+                old_log_probs = torch.as_tensor(
+                    behavior_log_probs, dtype=torch.float32, device=self.device)
             advantages, returns = compute_gae(
-                r, values, next_values, term, ends, self.gamma, self.gae_lambda)
+                r, values.cpu(), next_values.cpu(), term, ends,
+                self.gamma, self.gae_lambda)
+            advantages = advantages.to(self.device)
+            returns = returns.to(self.device)
             advantages = (advantages - advantages.mean()) / (
                 advantages.std(unbiased=False) + 1e-8)
         n = s.shape[0]

@@ -2,6 +2,8 @@ import argparse, csv
 from pathlib import Path
 import numpy as np
 from arena.environment import ArenaEnv
+from arena.multi_environment import ArenaMultiEnv
+from arena.scenario import Scenario
 from arena.config import ArenaConfig
 from arena.skins import list_skins
 from algs.alg_registry import algorithm_from_checkpoint, apply_env_config, load_checkpoint
@@ -20,6 +22,55 @@ def parse_args(argv=None):
     return ap.parse_args(argv)
 
 
+def _evaluate_multi(args, alg, cfg):
+    """Avaliação gulosa de um checkpoint multiagente (todos os agentes)."""
+    scenario = Scenario.from_config(cfg)
+    env = ArenaMultiEnv(cfg, scenario=scenario,
+                        render_mode="human" if args.render else None,
+                        skin=args.skin)
+    agent = alg.Agent(env.observation_space.shape, env.action_space.n,
+                      n_agents=scenario.n_agents,
+                      team_ids=tuple(scenario.team_ids))
+    load_checkpoint(args.checkpoint, agent, resume=False)
+    rows = []
+    for ep in range(args.episodes):
+        obs, _ = env.reset(seed=args.seed + ep)
+        totals = np.zeros(env.n_agents, dtype=np.float64)
+        steps = 0
+        info = {}
+        while True:
+            actions = agent.act_batch(obs, greedy=True)
+            obs, rewards, terminated, truncated, info = env.step(actions)
+            totals += rewards
+            steps += 1
+            if bool(np.all(truncated)):
+                break
+        for i, agent_info in enumerate(info["agents"]):
+            rows.append({
+                "episode": ep + 1,
+                "agent": i,
+                "team": agent_info["team"],
+                "reward": float(totals[i]),
+                "coins": agent_info["coins"],
+                "deaths": agent_info["deaths"],
+                "duration_steps": steps,
+                "duration_seconds": info.get("sim_time", steps / cfg.fps),
+            })
+    out = Path("logs/evaluation.csv")
+    out.parent.mkdir(exist_ok=True)
+    with out.open("w", newline="") as f:
+        writer = csv.DictWriter(f, fieldnames=rows[0].keys())
+        writer.writeheader()
+        writer.writerows(rows)
+    rewards = np.array([r["reward"] for r in rows])
+    print(f"Reward média={rewards.mean():.3f}, "
+          f"desvio-padrão={rewards.std():.3f}")
+    for team in sorted(set(r["team"] for r in rows)):
+        vals = [r["reward"] for r in rows if r["team"] == team]
+        print(f"  time {team}: reward média={np.mean(vals):.3f}")
+    env.close()
+
+
 def main():
     args = parse_args()
     # O checkpoint identifica o algoritmo: a config gravada (frame_stack/
@@ -30,6 +81,9 @@ def main():
         raise SystemExit(f"Checkpoint inválido: {exc}") from exc
     cfg = ArenaConfig()
     apply_env_config(cfg, meta)
+    if getattr(alg.Agent, "multi_agent", False) or cfg.n_agents > 1:
+        _evaluate_multi(args, alg, cfg)
+        return
     env = ArenaEnv(cfg, render_mode="human" if args.render else None,
                    opponent_policy=args.opponent, skin=args.skin)
     obs, _ = env.reset(seed=args.seed)

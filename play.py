@@ -6,6 +6,8 @@ import numpy as np
 from agents.baseline import POLICIES, PolicyContext, make_policy
 from arena.actions import N_ACTIONS
 from arena.environment import ArenaEnv
+from arena.multi_environment import ArenaMultiEnv
+from arena.scenario import Scenario
 from arena.config import ArenaConfig
 from arena.skins import list_skins
 from algs.alg_registry import (
@@ -61,6 +63,10 @@ def resolve_opponent(spec, cfg, player_frame=None):
         raise SystemExit(f"Checkpoint de adversário inválido: {exc}") from exc
 
     opp_cfg = apply_env_config(ArenaConfig(), meta)
+    if getattr(opp_alg.Agent, "multi_agent", False) or opp_cfg.n_agents > 1:
+        raise SystemExit(
+            "Checkpoint multiagente não pode ser usado como adversário único; "
+            "rode play.py sem --player para o modo espectador.")
     opp_frame = (opp_cfg.frame_stack, opp_cfg.frame_skip)
     if player_frame is not None and opp_frame != tuple(player_frame):
         raise SystemExit(
@@ -98,6 +104,61 @@ def parse_args(argv=None):
     return ap.parse_args(argv)
 
 
+def _play_multi(args, alg, cfg, render_mode):
+    """Modo espectador: todos os agentes usam a política aprendida."""
+    if args.player is not None:
+        raise SystemExit(
+            "Checkpoint multiagente não aceita --player; "
+            "rode sem --player para assistir todos os agentes.")
+    if args.opponent not in (None, "rule"):
+        raise SystemExit(
+            "Checkpoint multiagente não aceita --opponent; todos os agentes "
+            "são controlados pela política aprendida.")
+    scenario = Scenario.from_config(cfg)
+    env = ArenaMultiEnv(cfg, scenario=scenario, render_mode=render_mode,
+                        skin=args.skin)
+    agent = alg.Agent(env.observation_space.shape, env.action_space.n,
+                      n_agents=scenario.n_agents,
+                      team_ids=tuple(scenario.team_ids))
+    load_checkpoint(args.checkpoint, agent, resume=False)
+    agent.epsilon = 0.0
+    video_writer = None
+    if args.record:
+        try:
+            import imageio
+        except ImportError as exc:
+            raise SystemExit(
+                "Gravar vídeo requer: pip install imageio imageio-ffmpeg") from exc
+        video_writer = imageio.get_writer(
+            args.record, fps=env.cfg.fps, codec="libx264",
+            output_params=["-pix_fmt", "yuv420p", "-crf", "23",
+                           "-movflags", "+faststart"])
+    try:
+        for ep in range(args.episodes):
+            obs, _ = env.reset(seed=ep + 1)
+            if video_writer is not None:
+                env.render()
+                record_frame(video_writer)
+            while True:
+                actions = agent.act_batch(obs, greedy=True)
+                obs, rewards, terminated, truncated, info = env.step(actions)
+                if video_writer is not None:
+                    record_frame(video_writer)
+                if bool(np.all(truncated)):
+                    break
+            placar = " | ".join(
+                f"time {t['team'] + 1}: {t['coins']} moedas"
+                for t in info.get("teams", []))
+            print(f"episode {ep + 1}: {placar}")
+            if env.render_mode is None:
+                time.sleep(.1)
+    finally:
+        if video_writer is not None:
+            video_writer.close()
+            print(f"vídeo salvo em {args.record}")
+    env.close()
+
+
 def main():
     args = parse_args()
     validate_play_args(args)
@@ -115,6 +176,9 @@ def main():
         except (ValueError, OSError) as exc:
             raise SystemExit(f"Checkpoint inválido: {exc}") from exc
         apply_env_config(cfg, meta)
+        if getattr(alg.Agent, "multi_agent", False) or cfg.n_agents > 1:
+            _play_multi(args, alg, cfg, render_mode)
+            return
         player_frame = (cfg.frame_stack, cfg.frame_skip)
     opponent_policy = resolve_opponent(args.opponent, cfg, player_frame=player_frame)
     env = ArenaEnv(cfg, render_mode=render_mode, opponent_policy=opponent_policy, skin=args.skin)

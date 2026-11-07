@@ -213,7 +213,7 @@ def test_cnn_and_checkpoint(tmp_path):
     env = ArenaEnv()
     obs, _ = env.reset(seed=1)
     agent = DQNAgent(env.observation_space.shape, env.action_space.n, batch_size=2)
-    assert agent.online(torch.as_tensor(obs).unsqueeze(0)).shape == (1, N_ACTIONS)
+    assert agent.online(torch.as_tensor(obs, device=agent.device).unsqueeze(0)).shape == (1, N_ACTIONS)
     p = tmp_path / "test.pt"
     save_checkpoint(p, agent)
     agent2 = DQNAgent(env.observation_space.shape, env.action_space.n)

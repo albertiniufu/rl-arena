@@ -9,6 +9,7 @@ from agents.baseline import PolicyContext, make_policy
 from .actions import N_ACTIONS, PUSH_LEFT, PUSH_RIGHT, STOP
 from .config import ArenaConfig
 from .engine import ArenaEngine, Character, Coin
+from .observations import render_grid
 from .skins import load_renderer_class
 
 class ArenaEnv(gym.Env):
@@ -46,34 +47,11 @@ class ArenaEnv(gym.Env):
     def _observation(self):
         """Frame único atual: grade semântica (5, H, W).
 
-        O clamp é feito em Python puro de propósito: `np.clip` sobre um
-        escalar custa dezenas de microssegundos por célula, e esta função
-        roda `frame_skip + 1` vezes por passo do agente (a maior parte do
-        custo do `env.step` em CPU). O resultado é idêntico ao de antes.
+        A montagem fica em `arena/observations.py` para ser compartilhada com
+        o ambiente multiagente (que usa uma grade egocêntrica de 6 canais).
+        Os defaults reproduzem exatamente a grade legada.
         """
-        cell, gh, gw = self.cfg.cell, self.grid_h, self.grid_w
-        g = np.zeros((5, gh, gw), dtype=np.float32)
-        for x, y, w, h in self.engine.platforms:
-            c0, c1 = max(0, int(x // cell)), min(gw, int((x+w) // cell))
-            r0, r1 = max(0, int(y // cell)), min(gh, max(int((y+h) // cell), int(y // cell)+1))
-            g[0, r0:r1, c0:c1] = 1
-        for i, c in enumerate(self.engine.characters):
-            if c.alive:
-                channel = 1 if i == 0 else 2
-                y = c.y - self.cfg.player_size / 2
-            else:
-                channel = 4
-                y = self.cfg.height - 5
-            col, row = int(c.x // cell), int(y // cell)
-            col = 0 if col < 0 else (gw - 1 if col >= gw else col)
-            row = 0 if row < 0 else (gh - 1 if row >= gh else row)
-            g[channel, row, col] = 1.0
-        for coin in self.engine.coins:
-            col, row = int(coin.x // cell), int(coin.y // cell)
-            col = 0 if col < 0 else (gw - 1 if col >= gw else col)
-            row = 0 if row < 0 else (gh - 1 if row >= gh else row)
-            g[3, row, col] = 1.0
-        return g
+        return render_grid(self.engine, self.cfg)
 
     def _stacked(self):
         """Observação do agente: pilha de frames (5 * frame_stack, H, W), do mais antigo ao mais novo."""
