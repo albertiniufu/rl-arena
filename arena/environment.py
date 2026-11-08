@@ -127,7 +127,7 @@ class ArenaEnv(gym.Env):
                 event["collected"][0] * self.cfg.coin_reward
                 + event["deaths_delta"][0] * self.cfg.death_penalty
                 # Transferência assinada: ganha quem empurra, perde o alvo.
-                + event["coins_transferred"][0] * self.cfg.coin_reward
+                + event["coins_transferred"][0] * self.cfg.push_coin_reward
             )
             collected += event["collected"][0]
             deaths += event["deaths_delta"][0]

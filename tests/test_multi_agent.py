@@ -203,6 +203,24 @@ def test_multi_env_rewards_push_transfer_signed():
     env.close()
 
 
+def test_push_coin_reward_scales_reward_but_not_the_transfer():
+    env, _ = make_env(2, frame_skip=1, push_coin_transfer=5,
+                      push_coin_reward=0.2)
+    env.reset(seed=3)
+    actor, target = env.engine.characters
+    actor.x, actor.y = 100.0, 320.0
+    target.x, target.y = 128.0, 320.0
+    target.coins = 8
+    env.engine.coins.clear()
+
+    _, rewards, _, _, info = env.step([PUSH_RIGHT, JUMP])
+    # A mecânica continua movendo 5 moedas; só o peso da recompensa muda.
+    assert (actor.coins, target.coins) == (5, 3)
+    assert rewards[0] == pytest.approx(1.0)
+    assert rewards[1] == pytest.approx(-1.0)
+    env.close()
+
+
 def test_coin_potential_uses_team_margin():
     engine = ArenaEngine(ArenaConfig())
     engine.reset(seed=0, n_characters=4,

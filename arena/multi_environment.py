@@ -178,7 +178,7 @@ class ArenaMultiEnv:
             step_transferred = np.asarray(event["coins_transferred"], dtype=np.int64)
             raw += (step_collected * self.cfg.coin_reward
                     + step_deaths * self.cfg.death_penalty
-                    + step_transferred * self.cfg.coin_reward)
+                    + step_transferred * self.cfg.push_coin_reward)
             collected += step_collected
             deaths += step_deaths
             transferred += step_transferred

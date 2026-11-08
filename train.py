@@ -331,6 +331,10 @@ def parse_args(argv=None):
                     help="moedas que um empurrão transfere do alvo para quem "
                          "empurrou (0 desliga; omitido usa o default do "
                          "ArenaConfig, 5)")
+    ap.add_argument("--push-coin-reward", type=float, default=None,
+                    help="peso de recompensa por moeda transferida no empurrão "
+                         "(a mecânica de transferência não muda; omitido usa "
+                         "o ArenaConfig, 1.0)")
     ap.add_argument("--pbrs-coef", type=float, default=None,
                     help="coeficiente do PBRS sobre a diferença de moedas "
                          "(0 desliga; omitido usa o ArenaConfig, 0)")
@@ -477,6 +481,9 @@ def validate_train_args(args):
     pbrs_coef = getattr(args, "pbrs_coef", None)
     if pbrs_coef is not None and pbrs_coef < 0:
         raise SystemExit("--pbrs-coef deve ser >= 0")
+    push_coin_reward = getattr(args, "push_coin_reward", None)
+    if push_coin_reward is not None and push_coin_reward < 0:
+        raise SystemExit("--push-coin-reward deve ser >= 0")
     overlap = getattr(args, "overlap", False)
     if overlap and not getattr(load_algorithm(args.alg).Agent, "on_policy", False):
         raise SystemExit(
@@ -1358,6 +1365,8 @@ def main():
     cfg.frame_stack, cfg.frame_skip = args.frame_stack, args.frame_skip
     if args.push_coin_transfer is not None:
         cfg.push_coin_transfer = args.push_coin_transfer
+    if args.push_coin_reward is not None:
+        cfg.push_coin_reward = args.push_coin_reward
     if args.pbrs_coef is not None:
         cfg.pbrs_coef = args.pbrs_coef
     ckpt_dir = Path(args.checkpoint_dir)
