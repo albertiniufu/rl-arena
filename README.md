@@ -48,13 +48,14 @@ python train.py --alg ippo --agents 4 --scenario all-vs-all --checkpoint-dir che
 python train.py --alg mappo --agents 4 --scenario teams --teams 2 --checkpoint-dir checkpoints/mappo_teams4
 python evaluate.py --checkpoint checkpoints/teams4/best.pt --episodes 10
 python play.py --checkpoint checkpoints/teams4/best.pt --render   # modo espectador
+python play.py --checkpoint checkpoints/teams4/best.pt --player human --human-agent 0  # você + agente no time
 python scripts/duel_multiagent.py \
   --mappo-checkpoint checkpoints/mappo_teams4_3h/best.pt \
   --ippo-checkpoint checkpoints/ippo_teams4_3h/best.pt \
   --record duelo.mp4   # MAPPO × IPPO, um checkpoint por time
 ```
 
-O padrão de `--agents` é 4 com um algoritmo multiagente (1 nos demais algoritmos).
+Com `--player human` num checkpoint multiagente, o agente `--human-agent N` (padrão 0) é controlado pelo teclado; o colega de time e os adversários usam o checkpoint. É preciso um cenário `teams` em que esse agente tenha colega. Cada render avança `frame_skip` substeps, então o render roda em `fps/frame_skip` para o humano jogar em tempo real. O padrão de `--agents` é 4 com um algoritmo multiagente (1 nos demais algoritmos).
 Na primeira versão, multiagente não combina com `--envs`, `--overlap` nem
 `--opponent` baseline.
 
