@@ -1,4 +1,4 @@
-# RL Arena — plataforma 2D mínima para DQN
+# RL Arena — plataforma 2D mínima para aprendizagem por reforço (multi-agentes)
 
 Projeto didático para estudar Reinforcement Learning na prática: um agente DQN (PyTorch + Gymnasium + NumPy + Pygame) treina num mapa 2D fixo para coletar moedas e empurrar um adversário de política simples. Há quatro implementações prontas — um DQN enxuto, um Double DQN com replay priorizado e rede dueling, e os algoritmos on-policy PPO e A2C — e este guia leva você do zero até plugar o seu próprio modelo e o seu próprio algoritmo de RL.
 
