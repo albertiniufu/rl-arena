@@ -135,15 +135,20 @@ class A2CAgent:
             self.buffer.as_arrays()
         s = torch.as_tensor(states, dtype=torch.float32, device=self.device)
         a = torch.as_tensor(actions, dtype=torch.int64, device=self.device)
-        r = torch.as_tensor(rewards, dtype=torch.float32, device=self.device)
         ns = torch.as_tensor(next_states, dtype=torch.float32, device=self.device)
-        term = torch.as_tensor(terminated, dtype=torch.float32, device=self.device)
-        ends = torch.as_tensor(episode_ends, dtype=torch.float32, device=self.device)
+        # Os retornos n-step são dois laços aninhados com `.item()` por passo.
+        # Em CUDA isso vira uma sincronização por iteração (~41 ms por rollout
+        # de 64); em CPU o mesmo cálculo leva ~10 ms. Só o resultado volta ao
+        # device, para a vantagem e a perda.
+        r = torch.as_tensor(rewards, dtype=torch.float32)
+        term = torch.as_tensor(terminated, dtype=torch.float32)
+        ends = torch.as_tensor(episode_ends, dtype=torch.float32)
         with torch.no_grad():
             _, values = self.online(s)
             _, next_values = self.online(ns)
             returns = n_step_returns(
-                r, values, next_values, term, ends, self.gamma, self.n_steps)
+                r, values.cpu(), next_values.cpu(), term, ends,
+                self.gamma, self.n_steps).to(self.device)
             advantages = returns - values
             advantages = (advantages - advantages.mean()) / (
                 advantages.std(unbiased=False) + 1e-8)

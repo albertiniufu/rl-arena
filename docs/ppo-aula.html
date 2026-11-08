@@ -1,0 +1,2325 @@
+<title>PPO no rl-arena</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,600;12..96,700&family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
+<style>
+  /* ---------------------------------------------------------------
+     Plano de design
+     Cor: papel frio esverdeado, tinta quase preta, verde de política,
+          azul de valor, âmbar de recompensa, vermelho de perda.
+     Tipo: Bricolage Grotesque (títulos), IBM Plex Sans (corpo),
+           IBM Plex Mono (dados, fórmulas, código).
+     Layout: palco único de slides; trilha de progresso; grade de 20 px
+             lembrando a célula do mapa.
+     --------------------------------------------------------------- */
+  :root {
+    --bg: #f1f4ef;
+    --grid: rgba(21, 33, 26, 0.045);
+    --surface: #fbfcf9;
+    --surface-2: #e6ece4;
+    --ink: #15211a;
+    --muted: #5d6c63;
+    --line: #d2dbd3;
+    --accent: #0e7c5a;
+    --accent-strong: #0a5c43;
+    --accent-soft: #d7eee4;
+    --value: #2f5fa8;
+    --value-soft: #dde8f8;
+    --reward: #a96518;
+    --reward-soft: #f6e7d1;
+    --loss: #b23b32;
+    --loss-soft: #f6dfdc;
+    --code-bg: #101b15;
+    --code-fg: #dce8e0;
+    --code-dim: #7e9788;
+    --code-key: #6fd6a8;
+    --code-str: #e8b271;
+    --code-num: #9bc2f0;
+    --font-display: "Bricolage Grotesque", "IBM Plex Sans", system-ui, sans-serif;
+    --font-body: "IBM Plex Sans", system-ui, -apple-system, sans-serif;
+    --font-mono: "IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+  }
+
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #0d1612;
+      --grid: rgba(232, 239, 233, 0.05);
+      --surface: #14211b;
+      --surface-2: #1d2d25;
+      --ink: #e8efe9;
+      --muted: #9aaEA3;
+      --line: #2a3b32;
+      --accent: #57d3a3;
+      --accent-strong: #8be8c4;
+      --accent-soft: #163a2c;
+      --value: #8db4f5;
+      --value-soft: #1b2d4c;
+      --reward: #e9a45b;
+      --reward-soft: #3c2a16;
+      --loss: #f08379;
+      --loss-soft: #3b1d1a;
+      --code-bg: #08110c;
+      color-scheme: dark;
+    }
+  }
+
+  :root[data-theme="dark"] {
+    --bg: #0d1612;
+    --grid: rgba(232, 239, 233, 0.05);
+    --surface: #14211b;
+    --surface-2: #1d2d25;
+    --ink: #e8efe9;
+    --muted: #9aaEA3;
+    --line: #2a3b32;
+    --accent: #57d3a3;
+    --accent-strong: #8be8c4;
+    --accent-soft: #163a2c;
+    --value: #8db4f5;
+    --value-soft: #1b2d4c;
+    --reward: #e9a45b;
+    --reward-soft: #3c2a16;
+    --loss: #f08379;
+    --loss-soft: #3b1d1a;
+    --code-bg: #08110c;
+    color-scheme: dark;
+  }
+
+  * { box-sizing: border-box; }
+  html, body { height: 100%; }
+  body {
+    margin: 0;
+    overflow: hidden;
+    background-color: var(--bg);
+    background-image:
+      linear-gradient(to right, var(--grid) 1px, transparent 1px),
+      linear-gradient(to bottom, var(--grid) 1px, transparent 1px);
+    background-size: 20px 20px;
+    color: var(--ink);
+    font-family: var(--font-body);
+    font-size: 15px;
+    line-height: 1.5;
+    -webkit-font-smoothing: antialiased;
+  }
+  button, input, select { font: inherit; color: inherit; }
+  button { cursor: pointer; }
+  p { margin: 0; }
+  h1, h2, h3 { margin: 0; text-wrap: balance; }
+  a { color: var(--accent); }
+  button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible, [tabindex]:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 3px;
+    border-radius: 4px;
+  }
+  .slide:focus, .slide:focus-visible, .stage:focus, .stage:focus-visible { outline: none; }
+  ::selection { background: var(--accent-soft); color: var(--ink); }
+
+  .app {
+    height: 100%;
+    display: grid;
+    grid-template-rows: 3px auto minmax(0, 1fr) auto;
+    padding-left: max(18px, env(safe-area-inset-left, 0px));
+    padding-right: max(18px, env(safe-area-inset-right, 0px));
+  }
+  .progress { background: var(--line); border-radius: 99px; overflow: hidden; }
+  .progress span { display: block; height: 100%; width: 0; background: var(--accent); transition: width .35s ease; }
+
+  .topbar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+    padding-block: 11px 9px;
+    border-bottom: 1px solid var(--line);
+  }
+  .brand {
+    display: flex;
+    align-items: center;
+    gap: 9px;
+    min-width: 0;
+    font-family: var(--font-mono);
+    font-size: 11px;
+    letter-spacing: .13em;
+    text-transform: uppercase;
+    color: var(--muted);
+    white-space: nowrap;
+  }
+  .brand b { color: var(--ink); font-weight: 600; }
+  .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--accent); flex: none; }
+  .sec-label { color: var(--accent); padding-left: 4px; }
+  .top-actions { display: flex; align-items: center; gap: 8px; }
+  .tb {
+    background: transparent;
+    border: 1px solid var(--line);
+    color: var(--muted);
+    border-radius: 7px;
+    padding: 5px 9px;
+    font-family: var(--font-mono);
+    font-size: 10.5px;
+    letter-spacing: .05em;
+    text-transform: uppercase;
+    white-space: nowrap;
+    transition: color .15s ease, border-color .15s ease;
+  }
+  .tb:hover { color: var(--ink); border-color: var(--accent); }
+  .counter {
+    font-family: var(--font-mono);
+    font-size: 11px;
+    color: var(--muted);
+    font-variant-numeric: tabular-nums;
+    min-width: 66px;
+    text-align: right;
+  }
+
+  .stage { position: relative; min-height: 0; }
+  .slide {
+    position: absolute;
+    inset: 0;
+    overflow-y: auto;
+    overflow-x: hidden;
+    padding-block: clamp(18px, 3.4vh, 34px) clamp(16px, 3vh, 30px);
+    scrollbar-width: thin;
+  }
+  .slide[hidden] { display: none !important; }
+  .slide.active { animation: enter .32s ease both; }
+  @keyframes enter { from { opacity: 0; transform: translateY(7px); } to { opacity: 1; transform: none; } }
+  .slide-inner {
+    width: 100%;
+    max-width: 1180px;
+    min-height: 100%;
+    margin: 0 auto;
+    display: flex;
+    flex-direction: column;
+    gap: clamp(14px, 2.4vh, 26px);
+  }
+  .slide-inner > * { min-width: 0; }
+
+  .eyebrow {
+    font-family: var(--font-mono);
+    font-size: 10.5px;
+    letter-spacing: .16em;
+    text-transform: uppercase;
+    color: var(--accent);
+  }
+  .title {
+    font-family: var(--font-display);
+    font-weight: 640;
+    font-size: clamp(28px, 3.6vw, 47px);
+    line-height: 1.04;
+    letter-spacing: -.022em;
+    max-width: 25ch;
+  }
+  .lede {
+    color: var(--muted);
+    font-size: clamp(14px, 1.2vw, 16.5px);
+    line-height: 1.55;
+    max-width: 68ch;
+  }
+  .display {
+    font-family: var(--font-display);
+    font-weight: 650;
+    font-size: clamp(46px, 8vw, 106px);
+    line-height: .93;
+    letter-spacing: -.04em;
+  }
+  .display .thin { color: var(--accent); font-weight: 500; }
+  .mono { font-family: var(--font-mono); }
+  .muted { color: var(--muted); }
+  .accent { color: var(--accent); }
+
+  .cover-wrap {
+    flex: 1;
+    display: grid;
+    grid-template-columns: minmax(0, 1.25fr) minmax(0, .75fr);
+    gap: clamp(20px, 4vw, 56px);
+    align-items: center;
+    padding-block: 8px 20px;
+  }
+  .cover-copy { display: flex; flex-direction: column; gap: 18px; min-width: 0; }
+  .cover-copy .lede { font-size: clamp(15px, 1.5vw, 19px); max-width: 46ch; }
+  .chips { display: flex; flex-wrap: wrap; gap: 7px; }
+  .chip {
+    font-family: var(--font-mono);
+    font-size: 10.5px;
+    letter-spacing: .04em;
+    color: var(--muted);
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-radius: 999px;
+    padding: 5px 10px;
+    white-space: nowrap;
+  }
+  .chip.green { color: var(--accent-strong); border-color: var(--accent); background: var(--accent-soft); }
+  .cover-foot {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 14px;
+    flex-wrap: wrap;
+    padding-top: 16px;
+    border-top: 1px solid var(--line);
+    font-size: 12px;
+    color: var(--muted);
+  }
+  .cover-refs {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    padding-top: 10px;
+    border-top: 1px dashed var(--line);
+  }
+  .cover-refs .ref {
+    display: flex;
+    align-items: baseline;
+    gap: 8px;
+    font-size: 11.5px;
+    line-height: 1.45;
+    color: var(--muted);
+  }
+  .cover-refs .ref-tag {
+    flex: none;
+    font-family: var(--font-mono);
+    font-size: 8.5px;
+    letter-spacing: .1em;
+    text-transform: uppercase;
+    color: var(--accent-strong);
+    background: var(--accent-soft);
+    border: 1px solid var(--accent);
+    border-radius: 3px;
+    padding: 1px 5px;
+  }
+  .cover-refs a {
+    color: var(--ink);
+    text-decoration: none;
+    border-bottom: 1px solid var(--line);
+    overflow-wrap: anywhere;
+  }
+  .cover-refs a:hover { color: var(--accent-strong); border-bottom-color: var(--accent); }
+  .cover-refs .src {
+    font-family: var(--font-mono);
+    font-size: 10px;
+    color: var(--muted);
+  }
+  kbd {
+    font-family: var(--font-mono);
+    font-size: 10px;
+    color: var(--ink);
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-bottom-width: 2px;
+    border-radius: 4px;
+    padding: 1px 5px;
+  }
+  .cover-art { display: flex; flex-direction: column; gap: 10px; min-width: 0; }
+  .mini-map {
+    position: relative;
+    width: 100%;
+    max-width: 390px;
+    aspect-ratio: 16 / 10;
+    margin-left: auto;
+    border: 1px solid var(--line);
+    border-radius: 14px;
+    background-color: var(--surface);
+    background-image:
+      linear-gradient(to right, var(--grid) 1px, transparent 1px),
+      linear-gradient(to bottom, var(--grid) 1px, transparent 1px);
+    background-size: 20px 20px;
+    overflow: hidden;
+    box-shadow: 0 18px 40px -30px rgba(10, 25, 18, .45);
+  }
+  .mini-map .platform {
+    position: absolute;
+    height: 7px;
+    border-radius: 2px;
+    background: var(--ink);
+    opacity: .22;
+  }
+  .mini-map .unit { position: absolute; border-radius: 50%; transform: translate(-50%, -50%); }
+  .mini-map .unit.player { width: 13px; height: 13px; background: var(--accent); box-shadow: 0 0 0 4px var(--accent-soft); }
+  .mini-map .unit.opponent { width: 12px; height: 12px; background: var(--value); box-shadow: 0 0 0 4px var(--value-soft); }
+  .mini-map .unit.coin { width: 8px; height: 8px; background: var(--reward); box-shadow: 0 0 0 3px var(--reward-soft); }
+  .mini-caption {
+    margin-left: auto;
+    font-family: var(--font-mono);
+    font-size: 10.5px;
+    color: var(--muted);
+    text-align: right;
+  }
+
+  .grid-2 { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: clamp(14px, 2.2vw, 26px); align-items: start; }
+  .grid-3 { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: clamp(12px, 1.6vw, 18px); }
+  .grid-2 > *, .grid-3 > * { min-width: 0; }
+  .stack { display: flex; flex-direction: column; gap: 14px; min-width: 0; }
+  .stack.tight { gap: 9px; }
+  .split { display: grid; grid-template-columns: minmax(0, 1.15fr) minmax(0, .85fr); gap: clamp(14px, 2.2vw, 26px); align-items: start; }
+  .split > * { min-width: 0; }
+  .gae-layout { grid-template-columns: minmax(260px, .78fr) minmax(0, 1.22fr); }
+
+  .card {
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-radius: 13px;
+    padding: clamp(14px, 1.8vw, 20px);
+    min-width: 0;
+  }
+  .card h3 {
+    font-family: var(--font-display);
+    font-weight: 600;
+    font-size: 17px;
+    letter-spacing: -.01em;
+    line-height: 1.2;
+    margin-bottom: 7px;
+  }
+  .card p { font-size: 13.5px; line-height: 1.5; color: var(--muted); }
+  .file-card { display: flex; flex-direction: column; gap: 8px; }
+  .file-top { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; }
+  .file-name { font-family: var(--font-mono); font-size: 13px; color: var(--ink); font-weight: 500; word-break: break-word; }
+  .file-lines { font-family: var(--font-mono); font-size: 10.5px; color: var(--muted); white-space: nowrap; }
+  .file-card .role { font-size: 13px; color: var(--muted); line-height: 1.5; }
+  .file-card .symbol { font-family: var(--font-mono); font-size: 10.5px; color: var(--accent); }
+
+  .note {
+    display: flex;
+    gap: 11px;
+    align-items: flex-start;
+    padding: 10px 14px;
+    background: var(--accent-soft);
+    border-radius: 9px;
+    font-size: 13px;
+    line-height: 1.5;
+    color: var(--ink);
+  }
+  .note .mark { font-family: var(--font-mono); color: var(--accent-strong); font-weight: 600; flex: none; }
+  .note.warn { background: var(--reward-soft); }
+  .note.warn .mark { color: var(--reward); }
+  .note.loss { background: var(--loss-soft); }
+  .note.loss .mark { color: var(--loss); }
+  .note code { font-family: var(--font-mono); font-size: .94em; }
+
+  .list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 9px; }
+  .list li { display: flex; gap: 10px; align-items: flex-start; font-size: 13.5px; line-height: 1.5; }
+  .list .bullet { flex: none; width: 7px; height: 7px; border-radius: 50%; background: var(--accent); margin-top: 7px; }
+  .list .bullet.blue { background: var(--value); }
+  .list .bullet.amber { background: var(--reward); }
+  .list .bullet.red { background: var(--loss); }
+  .list b, .card b { font-weight: 600; }
+
+  .formula {
+    font-family: var(--font-mono);
+    font-size: clamp(12.5px, 1.35vw, 15.5px);
+    line-height: 1.85;
+    background: var(--surface-2);
+    border-left: 3px solid var(--accent);
+    border-radius: 0 10px 10px 0;
+    padding: 11px 15px;
+    overflow-x: auto;
+    white-space: nowrap;
+    color: var(--ink);
+  }
+  .formula .dim { color: var(--muted); }
+  .formula .blue { color: var(--value); }
+  .formula .amber { color: var(--reward); }
+  .formula sub, .formula sup { font-size: .74em; }
+  .formula-wrap { overflow-x: auto; }
+
+  .code {
+    margin: 0;
+    background: var(--code-bg);
+    color: var(--code-fg);
+    border: 1px solid #223229;
+    border-radius: 11px;
+    padding: 14px 16px;
+    overflow-x: auto;
+    font-family: var(--font-mono);
+    font-size: clamp(11px, 1.02vw, 12.8px);
+    line-height: 1.72;
+    tab-size: 2;
+  }
+  .code .c { color: var(--code-dim); }
+  .code .k { color: var(--code-key); }
+  .code .s { color: var(--code-str); }
+  .code .n { color: var(--code-num); }
+  .code .hl { background: rgba(111, 214, 168, .13); border-radius: 3px; padding: 0 2px; }
+  .code-label {
+    font-family: var(--font-mono);
+    font-size: 10px;
+    letter-spacing: .1em;
+    text-transform: uppercase;
+    color: var(--muted);
+    margin-bottom: 6px;
+  }
+
+  .table-wrap {
+    overflow-x: auto;
+    border: 1px solid var(--line);
+    border-radius: 12px;
+    background: var(--surface);
+  }
+  table { border-collapse: collapse; width: 100%; min-width: 560px; font-size: 13px; }
+  th {
+    text-align: left;
+    font-family: var(--font-mono);
+    font-size: 10px;
+    letter-spacing: .08em;
+    text-transform: uppercase;
+    color: var(--muted);
+    font-weight: 500;
+    padding: 10px 14px;
+    border-bottom: 1px solid var(--line);
+    white-space: nowrap;
+  }
+  td { padding: 10px 14px; border-bottom: 1px solid var(--line); vertical-align: top; line-height: 1.45; }
+  tr:last-child td { border-bottom: 0; }
+  td.mono, th.mono { font-family: var(--font-mono); font-size: 12px; }
+  td .yes { color: var(--accent); font-weight: 600; }
+  td .no { color: var(--loss); font-weight: 600; }
+
+  .spec { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; }
+  .spec .num { font-family: var(--font-mono); font-size: clamp(24px, 3vw, 36px); letter-spacing: -.04em; line-height: 1; }
+  .spec .unit { font-family: var(--font-mono); font-size: 10.5px; color: var(--muted); letter-spacing: .06em; text-transform: uppercase; }
+  .stats { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 8px; }
+  .stat {
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-radius: 9px;
+    padding: 9px 11px;
+    min-width: 0;
+  }
+  .stat b { display: block; font-family: var(--font-mono); font-size: 17px; font-weight: 500; letter-spacing: -.02em; font-variant-numeric: tabular-nums; }
+  .stat span { display: block; margin-top: 2px; font-family: var(--font-mono); font-size: 9.5px; color: var(--muted); letter-spacing: .05em; text-transform: uppercase; }
+
+  .channels { display: flex; flex-direction: column; gap: 0; border: 1px solid var(--line); border-radius: 12px; overflow: hidden; background: var(--surface); }
+  .channel { display: grid; grid-template-columns: 20px 18px 105px minmax(0, 1fr); align-items: center; gap: 10px; padding: 9px 13px; border-bottom: 1px solid var(--line); font-size: 13px; }
+  .channel:last-child { border-bottom: 0; }
+  .channel .idx { font-family: var(--font-mono); font-size: 10.5px; color: var(--muted); }
+  .channel .swatch { width: 15px; height: 15px; border-radius: 4px; }
+  .channel .name { font-family: var(--font-mono); font-size: 11.5px; }
+  .channel .desc { color: var(--muted); font-size: 12px; }
+  .actions { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; }
+  .action {
+    display: flex;
+    align-items: baseline;
+    gap: 7px;
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    padding: 7px 9px;
+    min-width: 0;
+  }
+  .action .code-act { font-family: var(--font-mono); font-size: 10px; color: var(--accent); }
+  .action .name-act { font-size: 11.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+  .figure { margin: 0; display: flex; flex-direction: column; gap: 9px; min-width: 0; }
+  .figure figcaption { font-size: 12px; color: var(--muted); line-height: 1.45; max-width: 85ch; }
+  .diagram-scroll, .chart-scroll { overflow-x: auto; overflow-y: hidden; }
+  .diagram { display: block; width: 100%; height: auto; }
+  .net { min-width: 760px; }
+
+  .diagram .box { fill: var(--surface); stroke: var(--line); stroke-width: 1.4; }
+  .diagram .conv { fill: var(--surface-2); }
+  .diagram .box-actor { fill: var(--accent-soft); stroke: var(--accent); }
+  .diagram .box-critic { fill: var(--value-soft); stroke: var(--value); }
+  .diagram .in-rect { fill: var(--surface-2); stroke: var(--line); stroke-width: 1.2; }
+  .diagram .wire { fill: none; stroke: var(--muted); stroke-width: 1.5; }
+  .diagram .arrowhead { fill: var(--muted); }
+  .diagram .box-title { fill: var(--ink); font-family: var(--font-mono); font-size: 12px; font-weight: 500; }
+  .diagram .box-sub { fill: var(--muted); font-family: var(--font-mono); font-size: 10px; }
+  .diagram .edge-label { fill: var(--muted); font-family: var(--font-mono); font-size: 9.5px; letter-spacing: .04em; }
+  .diagram .out-chip { fill: var(--bg); stroke: var(--line); stroke-width: 1.2; }
+
+  .timeline-svg .lane { fill: var(--accent-soft); stroke: var(--accent); stroke-width: 1.2; }
+  .timeline-svg .dead { fill: var(--loss-soft); stroke: var(--loss); stroke-width: 1.2; }
+  .timeline-svg .axis { stroke: var(--line); stroke-width: 1.4; }
+  .timeline-svg .wire { stroke: var(--accent); stroke-width: 1.5; stroke-dasharray: 4 3; }
+  .timeline-svg .tick { fill: var(--muted); font-family: var(--font-mono); font-size: 10px; }
+  .timeline-svg .label { fill: var(--ink); font-family: var(--font-mono); font-size: 10.5px; }
+  .timeline-svg .note-text { fill: var(--muted); font-family: var(--font-mono); font-size: 10px; }
+  .timeline-svg .marker { fill: var(--loss); }
+  .timeline-svg .arrowhead-a { fill: var(--accent); }
+
+  .tape { display: flex; gap: 3px; height: 20px; margin-top: 10px; }
+  .seg {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 0;
+    overflow: hidden;
+    white-space: nowrap;
+    font-family: var(--font-mono);
+    font-size: 8.5px;
+    border-radius: 4px;
+  }
+  .seg.collect { background: var(--accent-soft); color: var(--accent-strong); border: 1px solid var(--accent); }
+  .seg.update { background: var(--value-soft); color: var(--value); border: 1px solid var(--value); }
+  .lanes { display: flex; flex-direction: column; gap: 4px; margin-top: 10px; }
+  .lane { display: grid; grid-template-columns: 30px minmax(0, 1fr); gap: 6px; align-items: center; }
+  .lane .tape { margin-top: 0; }
+  .lane-label { font-family: var(--font-mono); font-size: 8px; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); }
+
+  .pipeline { display: flex; align-items: stretch; gap: 6px; flex-wrap: wrap; }
+  .pipe-step {
+    flex: 1 1 120px;
+    min-width: 0;
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-radius: 9px;
+    padding: 9px 10px;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+  }
+  .pipe-step .step-n { font-family: var(--font-mono); font-size: 9px; color: var(--accent); letter-spacing: .08em; }
+  .pipe-step b { font-family: var(--font-mono); font-size: 11.5px; font-weight: 500; overflow-wrap: anywhere; }
+  .pipe-step small { font-size: 10.5px; color: var(--muted); line-height: 1.35; }
+  .pipe-arrow { align-self: center; color: var(--muted); font-family: var(--font-mono); font-size: 13px; flex: none; }
+
+  .lab {
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-radius: 13px;
+    padding: clamp(13px, 1.6vw, 18px);
+    display: flex;
+    flex-direction: column;
+    gap: 11px;
+    min-width: 0;
+  }
+  .lab-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    font-family: var(--font-mono);
+    font-size: 9.5px;
+    letter-spacing: .09em;
+    text-transform: uppercase;
+    color: var(--muted);
+  }
+  .lab-head b { color: var(--accent); font-weight: 500; }
+  .control {
+    display: grid;
+    grid-template-columns: 86px minmax(0, 1fr) 58px;
+    align-items: center;
+    gap: 10px;
+    font-family: var(--font-mono);
+    font-size: 11.5px;
+  }
+  .control label { color: var(--muted); }
+  .control output { text-align: right; font-variant-numeric: tabular-nums; color: var(--ink); }
+  .control select {
+    grid-column: 2 / 4;
+    width: 100%;
+    min-width: 0;
+    background: var(--surface-2);
+    border: 1px solid var(--line);
+    border-radius: 6px;
+    padding: 4px 6px;
+    font-family: var(--font-mono);
+    font-size: 11px;
+    color: var(--ink);
+  }
+  input[type="range"] {
+    -webkit-appearance: none;
+    appearance: none;
+    width: 100%;
+    height: 18px;
+    background: transparent;
+    cursor: pointer;
+  }
+  input[type="range"]::-webkit-slider-runnable-track {
+    height: 4px;
+    border-radius: 99px;
+    background: var(--surface-2);
+    border: 1px solid var(--line);
+  }
+  input[type="range"]::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    appearance: none;
+    width: 13px;
+    height: 13px;
+    margin-top: -5px;
+    border-radius: 50%;
+    background: var(--accent);
+    border: 2px solid var(--surface);
+    box-shadow: 0 0 0 1px var(--accent);
+  }
+  input[type="range"]::-moz-range-track {
+    height: 4px;
+    border-radius: 99px;
+    background: var(--surface-2);
+    border: 1px solid var(--line);
+  }
+  input[type="range"]::-moz-range-thumb {
+    width: 11px;
+    height: 11px;
+    border-radius: 50%;
+    background: var(--accent);
+    border: 2px solid var(--surface);
+  }
+
+  .btn, .btn-accent, .btn-ghost {
+    border-radius: 7px;
+    padding: 7px 11px;
+    font-family: var(--font-mono);
+    font-size: 11px;
+    letter-spacing: .02em;
+    border: 1px solid var(--line);
+    background: var(--surface);
+    color: var(--ink);
+    transition: border-color .15s ease, background .15s ease;
+    min-width: 0;
+  }
+  .btn:hover, .btn-ghost:hover { border-color: var(--accent); }
+  .btn-accent { background: var(--accent); border-color: var(--accent); color: var(--bg); font-weight: 500; }
+  .btn-accent:hover { background: var(--accent-strong); border-color: var(--accent-strong); }
+  .btn-ghost { background: transparent; }
+  .btn-row { display: flex; flex-wrap: wrap; gap: 7px; }
+  .status { font-size: 12px; line-height: 1.45; color: var(--muted); min-height: 2.9em; }
+  .status strong { color: var(--ink); font-weight: 600; }
+  .status.ok { color: var(--accent-strong); }
+  .status.wait { color: var(--reward); }
+
+  .policy-rows { display: flex; flex-direction: column; gap: 6px; }
+  .policy-row {
+    display: grid;
+    grid-template-columns: 82px minmax(0, 1fr) 44px;
+    align-items: center;
+    gap: 9px;
+    font-family: var(--font-mono);
+    font-size: 11px;
+  }
+  .policy-row .name { color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .policy-row .pct { text-align: right; font-variant-numeric: tabular-nums; color: var(--ink); }
+  .policy-row.sampled .name { color: var(--reward); font-weight: 500; }
+  .policy-row.sampled input[type="range"]::-webkit-slider-thumb { background: var(--reward); box-shadow: 0 0 0 1px var(--reward); }
+  .policy-row.sampled input[type="range"]::-moz-range-thumb { background: var(--reward); }
+  .policy-result {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 7px;
+    padding-top: 9px;
+    border-top: 1px solid var(--line);
+  }
+  .policy-result div { display: flex; flex-direction: column; gap: 1px; min-width: 0; }
+  .policy-result .k { font-family: var(--font-mono); font-size: 9px; letter-spacing: .07em; text-transform: uppercase; color: var(--muted); }
+  .policy-result b { font-family: var(--font-mono); font-size: 12px; font-weight: 500; color: var(--ink); overflow-wrap: anywhere; }
+
+  .step-strip { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 4px; min-width: 520px; }
+  .step-cell {
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-radius: 7px;
+    padding: 5px 6px;
+    display: flex;
+    flex-direction: column;
+    gap: 1px;
+    font-family: var(--font-mono);
+    font-size: 10px;
+    min-width: 0;
+  }
+  .step-cell .t { color: var(--accent); font-size: 9px; letter-spacing: .06em; }
+  .step-cell .r { color: var(--reward); }
+  .step-cell .v { color: var(--value); }
+  .chart-scroll { overflow-x: auto; overflow-y: hidden; }
+  .chart { display: block; width: 100%; height: auto; min-width: 0; }
+  .chart .axis { stroke: var(--line); stroke-width: 1.2; }
+  .chart .tick { fill: var(--muted); font-family: var(--font-mono); font-size: 10px; }
+  .chart .val { fill: var(--ink); font-family: var(--font-mono); font-size: 10px; font-variant-numeric: tabular-nums; }
+  .chart .bar-pos { fill: var(--accent); }
+  .chart .bar-neg { fill: var(--loss); }
+  .chart .curve { fill: none; stroke: var(--accent); stroke-width: 2.4; }
+  .chart .flat { stroke: var(--reward); stroke-width: 2.4; }
+  .chart .guide { stroke: var(--line); stroke-width: 1; stroke-dasharray: 3 3; }
+  .chart .region { fill: var(--surface-2); }
+  .chart .region-warn { fill: var(--loss-soft); }
+  .chart .dot { fill: var(--accent); }
+  .chart .lbl { fill: var(--muted); font-family: var(--font-mono); font-size: 10px; }
+  .chart .lbl-strong { fill: var(--ink); font-family: var(--font-mono); font-size: 10.5px; }
+  .caption { font-size: 11.5px; line-height: 1.45; color: var(--muted); }
+
+  .buffer-bar {
+    height: 16px;
+    border-radius: 99px;
+    background: var(--surface-2);
+    border: 1px solid var(--line);
+    overflow: hidden;
+  }
+  .buffer-bar span { display: block; height: 100%; width: 0; background: var(--accent); border-radius: 99px; transition: width .25s ease; }
+  .buffer-meta { display: flex; justify-content: space-between; gap: 10px; font-family: var(--font-mono); font-size: 10.5px; color: var(--muted); flex-wrap: wrap; }
+
+  .quiz-list { display: flex; flex-direction: column; gap: 12px; }
+  .quiz { background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: 14px 16px; display: flex; flex-direction: column; gap: 9px; }
+  .q { font-size: 14.5px; font-weight: 600; line-height: 1.4; display: flex; gap: 10px; align-items: baseline; }
+  .q .qnum { font-family: var(--font-mono); font-size: 10px; color: var(--accent); letter-spacing: .08em; flex: none; }
+  .options { display: grid; gap: 6px; }
+  .opt {
+    text-align: left;
+    background: var(--bg);
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    padding: 8px 11px;
+    font-size: 12.5px;
+    line-height: 1.4;
+    color: var(--ink);
+    transition: border-color .15s ease, background .15s ease;
+  }
+  .opt:hover { border-color: var(--accent); }
+  .opt.correct { border-color: var(--accent); background: var(--accent-soft); }
+  .opt.wrong { border-color: var(--loss); background: var(--loss-soft); }
+  .feedback { font-size: 12px; line-height: 1.5; color: var(--muted); }
+  .feedback.correct { color: var(--accent-strong); }
+  .feedback.wrong { color: var(--loss); }
+
+  .takeaways { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+  .takeaway { background: var(--surface); border: 1px solid var(--line); border-radius: 11px; padding: 13px 15px; display: flex; flex-direction: column; gap: 4px; }
+  .takeaway .k { font-family: var(--font-mono); font-size: 9.5px; letter-spacing: .09em; text-transform: uppercase; color: var(--accent); }
+  .takeaway b { font-size: 14.5px; line-height: 1.3; font-weight: 600; }
+  .takeaway p { font-size: 12px; color: var(--muted); line-height: 1.45; }
+
+  .foot {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 14px;
+    padding-block: 8px 10px;
+    border-top: 1px solid var(--line);
+    font-size: 11px;
+    color: var(--muted);
+    min-height: 38px;
+  }
+  .hint { display: flex; align-items: center; gap: 5px; flex-wrap: wrap; }
+  .hint .sep { opacity: .5; padding: 0 2px; }
+  .foot-title {
+    font-family: var(--font-mono);
+    font-size: 10px;
+    letter-spacing: .05em;
+    color: var(--muted);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    text-align: center;
+    flex: 1;
+  }
+  .navbtns { display: flex; gap: 6px; }
+  .navbtn {
+    width: 32px;
+    height: 28px;
+    display: grid;
+    place-items: center;
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-radius: 7px;
+    color: var(--ink);
+    font-family: var(--font-mono);
+    font-size: 14px;
+    line-height: 1;
+  }
+  .navbtn:hover { border-color: var(--accent); }
+  .navbtn:disabled { opacity: .35; cursor: default; border-color: var(--line); }
+
+  .overlay {
+    position: fixed;
+    inset: 0;
+    z-index: 50;
+    background: var(--bg);
+    overflow-y: auto;
+    padding:
+      max(18px, env(safe-area-inset-top, 0px))
+      max(18px, env(safe-area-inset-right, 0px))
+      max(18px, env(safe-area-inset-bottom, 0px))
+      max(18px, env(safe-area-inset-left, 0px));
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+  }
+  .overlay[hidden] { display: none !important; }
+  .overlay-head { display: flex; align-items: center; justify-content: space-between; gap: 14px; max-width: 1100px; width: 100%; margin: 0 auto; }
+  .overlay-head h2 { font-family: var(--font-display); font-size: 24px; font-weight: 600; letter-spacing: -.02em; }
+  .overlay-head .eyebrow { margin-bottom: 3px; }
+  .index-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 8px; max-width: 1100px; width: 100%; margin: 0 auto; }
+  .index-item {
+    display: grid;
+    grid-template-columns: 30px minmax(0, 1fr);
+    grid-template-rows: auto auto;
+    gap: 1px 8px;
+    text-align: left;
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-radius: 9px;
+    padding: 9px 10px;
+    color: var(--ink);
+    transition: border-color .15s ease;
+  }
+  .index-item:hover { border-color: var(--accent); }
+  .index-item.current { border-color: var(--accent); background: var(--accent-soft); }
+  .idx-num { grid-row: 1 / 3; font-family: var(--font-mono); font-size: 11px; color: var(--accent); padding-top: 2px; font-variant-numeric: tabular-nums; }
+  .idx-sec { font-family: var(--font-mono); font-size: 8.5px; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); }
+  .idx-title { font-size: 12.5px; line-height: 1.3; font-weight: 500; }
+
+  @media (max-width: 980px) {
+    .grid-3 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .stats { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+    .cover-wrap { grid-template-columns: 1fr; }
+    .cover-art { display: none; }
+    .split { grid-template-columns: 1fr; }
+  }
+  @media (max-width: 760px) {
+    body { font-size: 14px; }
+    .grid-2, .grid-3 { grid-template-columns: 1fr; }
+    .sec-label { display: none; }
+    .foot-title { display: none; }
+    .hint { display: none; }
+    .title { max-width: none; }
+    .slide { padding-block: 16px 20px; }
+    .takeaways { grid-template-columns: 1fr; }
+    .stats { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .display { font-size: clamp(42px, 13vw, 68px); }
+    .topbar { gap: 10px; }
+    .counter { min-width: 58px; }
+    .tb { padding: 5px 7px; font-size: 9.5px; }
+    #btn-full { display: none; }
+  }
+  @media (max-width: 600px) {
+    .chart { min-width: 520px; }
+  }
+  @media (max-width: 480px) {
+    .app { padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); }
+    .actions { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .channel { grid-template-columns: 18px 16px 84px minmax(0, 1fr); padding: 8px 10px; }
+    .channel .desc { font-size: 11px; }
+    .control { grid-template-columns: 72px minmax(0, 1fr) 52px; gap: 7px; }
+    .policy-row { grid-template-columns: 70px minmax(0, 1fr) 40px; }
+    .btn { padding: 7px 9px; }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after { animation: none !important; transition: none !important; scroll-behavior: auto !important; }
+  }
+</style>
+
+<div class="app">
+  <div class="progress" aria-hidden="true"><span id="progress-fill"></span></div>
+
+  <header class="topbar">
+    <div class="brand">
+      <span class="dot"></span>
+      <span><b>PPO</b> // rl-arena</span>
+      <span class="sec-label" id="sec-label">fundamentos</span>
+    </div>
+    <div class="top-actions">
+      <button class="tb" id="btn-index" type="button">Índice</button>
+      <button class="tb" id="btn-full" type="button">Tela cheia</button>
+      <span class="counter" id="counter">01 / 20</span>
+    </div>
+  </header>
+
+  <main class="stage" id="stage">
+
+    <!-- 1 ---------------------------------------------------------->
+    <section class="slide" id="slide-1" data-section="abertura" data-title="PPO no rl-arena">
+      <div class="slide-inner">
+        <div class="cover-wrap">
+          <div class="cover-copy">
+            <div class="eyebrow">aula · aprendizado por reforço</div>
+            <h1 class="display">PPO no<br><span class="thin">rl-arena</span></h1>
+            <p class="lede">Como uma CNN com duas cabeças aprende a coletar moedas, e por que o recorte do PPO mantém o treino estável.</p>
+            <div class="chips">
+              <span class="chip green">on-policy</span>
+              <span class="chip">GAE λ = 0,95</span>
+              <span class="chip">rollout de 1024 passos</span>
+              <span class="chip">291 linhas de código</span>
+            </div>
+            <div class="cover-foot">
+              <span class="mono">algs/alg_ppo/</span>
+              <span>Use <kbd>→</kbd> para começar</span>
+            </div>
+            <div class="cover-refs">
+              <div class="ref">
+                <span class="ref-tag">paper</span>
+                <a href="https://arxiv.org/abs/1707.06347" target="_blank" rel="noopener">Schulman et al., “Proximal Policy Optimization Algorithms” (2017) <span class="src">arXiv:1707.06347</span></a>
+              </div>
+              <div class="ref">
+                <span class="ref-tag">código</span>
+                <a href="https://github.com/vwxyzjn/cleanrl" target="_blank" rel="noopener">CleanRL — implementação de PPO em arquivo único <span class="src">github.com/vwxyzjn/cleanrl</span></a>
+              </div>
+            </div>
+          </div>
+          <div class="cover-art" aria-hidden="true">
+            <div class="mini-map">
+              <span class="platform" style="left:0;top:82%;width:100%"></span>
+              <span class="platform" style="left:8%;top:62%;width:27%"></span>
+              <span class="platform" style="left:56%;top:47%;width:31%"></span>
+              <span class="platform" style="left:30%;top:33%;width:19%"></span>
+              <span class="unit player" style="left:38%;top:42%"></span>
+              <span class="unit opponent" style="left:71%;top:62%"></span>
+              <span class="unit coin" style="left:58%;top:28%"></span>
+              <span class="unit coin" style="left:22%;top:58%"></span>
+              <span class="unit coin" style="left:83%;top:44%"></span>
+            </div>
+            <span class="mini-caption">mapa 640×400 · célula 20 px<br>obs (5, 20, 32)</span>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- 2 ---------------------------------------------------------->
+    <section class="slide" id="slide-2" data-section="fundamentos" data-title="O algoritmo em três arquivos">
+      <div class="slide-inner">
+        <div>
+          <div class="eyebrow">fundamentos · estrutura</div>
+          <h2 class="title">O algoritmo inteiro cabe em três arquivos</h2>
+        </div>
+        <p class="lede">O pacote <span class="mono">algs/alg_ppo/</span> implementa o contrato de agente do repositório. O <span class="mono">train.py</span> não sabe o que é PPO: ele só chama <span class="mono">act</span>, <span class="mono">learn</span> e os ganchos de episódio.</p>
+
+        <div class="grid-3">
+          <div class="card file-card">
+            <div class="file-top"><span class="file-name">model.py</span><span class="file-lines">37 linhas</span></div>
+            <p class="role"><b>A rede.</b> A CNN compartilhada e as duas cabeças: ator com um logit por ação, crítico com V(s).</p>
+            <span class="symbol">ActorCriticNetwork.forward → (logits, value)</span>
+          </div>
+          <div class="card file-card">
+            <div class="file-top"><span class="file-name">rollout_buffer.py</span><span class="file-lines">68 linhas</span></div>
+            <p class="role"><b>A memória curta.</b> Fila de transições na ordem da coleta, com marca de fim de episódio. Sem amostragem.</p>
+            <span class="symbol">add · mark_episode_end · as_arrays</span>
+          </div>
+          <div class="card file-card">
+            <div class="file-top"><span class="file-name">agent.py</span><span class="file-lines">186 linhas</span></div>
+            <p class="role"><b>O algoritmo.</b> Amostragem da política, GAE, recorte, perda e atualização.</p>
+            <span class="symbol">PPOAgent · compute_gae · _update</span>
+          </div>
+        </div>
+
+        <div class="split">
+          <div class="stack">
+            <div class="code-label">algs/alg_ppo/agent.py</div>
+            <pre class="code"><span class="c"># o contrato que o train.py espera</span>
+class <span class="k">PPOAgent</span>:
+    algorithm = <span class="s">"ppo"</span>
+    arch_version = <span class="s">"alg-ppo-v1"</span>
+    on_policy = <span class="k">True</span>
+    epsilon = <span class="n">0.0</span>
+    target = online  <span class="c"># alias: não há rede-alvo</span></pre>
+          </div>
+          <div class="stack">
+            <div class="note"><span class="mark">→</span><span><b>Descoberta automática.</b> <span class="mono">--alg ppo</span> carrega o pacote <span class="mono">algs.alg_ppo</span>; criar <span class="mono">alg_&lt;nome&gt;/agent.py</span> basta para entrar no registro.</span></div>
+            <div class="note warn"><span class="mark">!</span><span><b>Mesmo checkpoint dos outros.</b> <span class="mono">algorithm</span>, <span class="mono">arch_version</span>, <span class="mono">obs_shape</span>, pesos, otimizador e config. O campo <span class="mono">target</span> recebe o mesmo estado da rede online.</span></div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- 3 ---------------------------------------------------------->
+    <section class="slide" id="slide-3" data-section="fundamentos" data-title="O que a rede recebe">
+      <div class="slide-inner">
+        <div>
+          <div class="eyebrow">fundamentos · observação e ações</div>
+          <h2 class="title">O que a rede recebe</h2>
+        </div>
+        <p class="lede">Nada de pixels crus. A observação é uma grade semântica com um canal por tipo de objeto, montada por <span class="mono">arena/observations.py</span>.</p>
+
+        <div class="split">
+          <div class="stack">
+            <div class="spec"><span class="num">5 × 20 × 32</span><span class="unit">canais × altura × largura</span></div>
+            <div class="channels">
+              <div class="channel"><span class="idx">0</span><span class="swatch" style="background:var(--ink);opacity:.28"></span><span class="name">plataformas</span><span class="desc">o chão e os degraus</span></div>
+              <div class="channel"><span class="idx">1</span><span class="swatch" style="background:var(--accent)"></span><span class="name">jogador</span><span class="desc">a posição do agente</span></div>
+              <div class="channel"><span class="idx">2</span><span class="swatch" style="background:var(--value)"></span><span class="name">oponentes</span><span class="desc">o adversário controlado</span></div>
+              <div class="channel"><span class="idx">3</span><span class="swatch" style="background:var(--reward)"></span><span class="name">moedas</span><span class="desc">os alvos de +1</span></div>
+              <div class="channel"><span class="idx">4</span><span class="swatch" style="background:var(--loss)"></span><span class="name">mortos / respawn</span><span class="desc">quem está fora por 5 s</span></div>
+            </div>
+            <p class="caption">Mapa de 640×400 px dividido em células de 20 px. Com <span class="mono">frame_stack &gt; 1</span>, os frames são concatenados do mais antigo ao mais novo: <span class="mono">(5·stack, 20, 32)</span>.</p>
+          </div>
+          <div class="stack">
+            <div class="card">
+              <h3>Seis ações discretas</h3>
+              <p>O ator devolve um logit por ação. Não há intensidade contínua: pular e empurrar usam sempre o valor máximo.</p>
+              <div class="actions" style="margin-top:10px">
+                <div class="action"><span class="code-act">0</span><span class="name-act">STOP</span></div>
+                <div class="action"><span class="code-act">1</span><span class="name-act">LEFT</span></div>
+                <div class="action"><span class="code-act">2</span><span class="name-act">RIGHT</span></div>
+                <div class="action"><span class="code-act">3</span><span class="name-act">JUMP</span></div>
+                <div class="action"><span class="code-act">4</span><span class="name-act">PUSH_LEFT</span></div>
+                <div class="action"><span class="code-act">5</span><span class="name-act">PUSH_RIGHT</span></div>
+              </div>
+            </div>
+            <div class="note warn"><span class="mark">!</span><span><b>A grade não é Markoviana.</b> Velocidades e timers de respawn não aparecem nela. É uma simplificação didática; o <span class="mono">frame_stack</span> devolve um pouco de história.</span></div>
+            <div class="note"><span class="mark">+</span><span><b>Recompensa.</b> +1 por moeda, −2 por morte, −0,1 por escolher <span class="mono">STOP</span> e −0,1 por empurrar sem contato. Episódio de 45 s, truncado por tempo.</span></div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- 4 ---------------------------------------------------------->
+    <section class="slide" id="slide-4" data-section="fundamentos" data-title="Uma CNN, duas cabeças">
+      <div class="slide-inner">
+        <div>
+          <div class="eyebrow">fundamentos · rede</div>
+          <h2 class="title">Uma CNN, duas cabeças</h2>
+        </div>
+        <p class="lede">A mesma pilha de convoluções alimenta o ator, que escolhe, e o crítico, que avalia o estado. Compartilhar as features é o que faz o actor-critic aprender mais rápido.</p>
+
+        <figure class="figure">
+          <div class="diagram-scroll">
+            <svg class="diagram net" viewBox="0 0 980 330" role="img" aria-label="Fluxo da rede: observação entra na pilha de três convoluções, vira 1280 features e se divide nas cabeças do ator, que produz seis logits, e do crítico, que produz V de s.">
+              <defs>
+                <marker id="arr" viewBox="0 0 10 10" refX="8.5" refY="5" markerWidth="6.5" markerHeight="6.5" orient="auto-start-reverse">
+                  <path d="M 0 0 L 10 5 L 0 10 z" class="arrowhead"></path>
+                </marker>
+              </defs>
+
+              <rect class="in-rect" x="28" y="84" width="76" height="142" rx="6"></rect>
+              <rect class="in-rect" x="40" y="96" width="76" height="142" rx="6"></rect>
+              <rect class="in-rect" x="52" y="108" width="76" height="142" rx="6"></rect>
+              <text class="box-title" x="78" y="68" text-anchor="middle">obs</text>
+              <text class="box-sub" x="78" y="272" text-anchor="middle">(B, 5, 20, 32)</text>
+              <text class="box-sub" x="78" y="288" text-anchor="middle">5 canais</text>
+
+              <line class="wire" x1="132" y1="179" x2="172" y2="179" marker-end="url(#arr)"></line>
+
+              <rect class="box conv" x="178" y="104" width="112" height="150" rx="8"></rect>
+              <text class="box-title" x="234" y="160" text-anchor="middle">Conv 16</text>
+              <text class="box-sub" x="234" y="180" text-anchor="middle">5×5 · s2 · p2</text>
+              <text class="box-sub" x="234" y="200" text-anchor="middle">(B, 16, 10, 16)</text>
+
+              <line class="wire" x1="292" y1="179" x2="328" y2="179" marker-end="url(#arr)"></line>
+
+              <rect class="box conv" x="334" y="119" width="100" height="120" rx="8"></rect>
+              <text class="box-title" x="384" y="164" text-anchor="middle">Conv 32</text>
+              <text class="box-sub" x="384" y="184" text-anchor="middle">3×3 · s2 · p1</text>
+              <text class="box-sub" x="384" y="204" text-anchor="middle">(B, 32, 5, 8)</text>
+
+              <line class="wire" x1="436" y1="179" x2="472" y2="179" marker-end="url(#arr)"></line>
+
+              <rect class="box conv" x="478" y="119" width="100" height="120" rx="8"></rect>
+              <text class="box-title" x="528" y="164" text-anchor="middle">Conv 32</text>
+              <text class="box-sub" x="528" y="184" text-anchor="middle">3×3 · s1 · p1</text>
+              <text class="box-sub" x="528" y="204" text-anchor="middle">(B, 32, 5, 8)</text>
+
+              <line class="wire" x1="580" y1="179" x2="614" y2="179" marker-end="url(#arr)"></line>
+
+              <rect class="box" x="620" y="84" width="58" height="190" rx="8"></rect>
+              <text class="box-title" x="649" y="70" text-anchor="middle">flatten</text>
+              <text class="box-title" x="649" y="184" text-anchor="middle">1280</text>
+              <text class="box-sub" x="649" y="202" text-anchor="middle">features</text>
+
+              <line class="wire" x1="678" y1="179" x2="702" y2="179"></line>
+              <path class="wire" d="M702 179 H722 V99 H742" marker-end="url(#arr)"></path>
+              <path class="wire" d="M702 179 H722 V249 H742" marker-end="url(#arr)"></path>
+
+              <rect class="box box-actor" x="746" y="54" width="120" height="90" rx="9"></rect>
+              <text class="box-title" x="806" y="92" text-anchor="middle">ator</text>
+              <text class="box-sub" x="806" y="112" text-anchor="middle">128 → 6 logits</text>
+
+              <rect class="box box-critic" x="746" y="204" width="120" height="90" rx="9"></rect>
+              <text class="box-title" x="806" y="242" text-anchor="middle">crítico</text>
+              <text class="box-sub" x="806" y="262" text-anchor="middle">128 → 1 valor</text>
+
+              <line class="wire" x1="866" y1="99" x2="888" y2="99" marker-end="url(#arr)"></line>
+              <line class="wire" x1="866" y1="249" x2="888" y2="249" marker-end="url(#arr)"></line>
+
+              <rect class="out-chip" x="892" y="81" width="78" height="38" rx="8"></rect>
+              <text class="box-title" x="931" y="98" text-anchor="middle">π(a|s)</text>
+              <text class="box-sub" x="931" y="112" text-anchor="middle">6 logits</text>
+
+              <rect class="out-chip" x="892" y="231" width="78" height="38" rx="8"></rect>
+              <text class="box-title" x="931" y="248" text-anchor="middle">V(s)</text>
+              <text class="box-sub" x="931" y="262" text-anchor="middle">1 escalar</text>
+            </svg>
+          </div>
+          <figcaption>As três convoluções reduzem a grade para 5×8 com 32 canais; o flatten dá 1280 features. As duas cabeças são MLPs separados de 128 unidades. Com 5 canais, o total é 344.743 parâmetros; com frame stack 4 (20 canais), 350.743.</figcaption>
+        </figure>
+
+        <div class="grid-2">
+          <div class="card">
+            <h3>Ator: logits, não ações</h3>
+            <p>A saída é um vetor de 6 números reais. A softmax transforma esses logits em probabilidades. O ator nunca vê a recompensa diretamente; ele aprende pelo gradiente da vantagem.</p>
+          </div>
+          <div class="card">
+            <h3>Crítico: um número</h3>
+            <p>V(s) estima o retorno esperado a partir do estado. O GAE usa essa estimativa para calcular o delta de cada passo e reduzir a variância do gradiente.</p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- 5 ---------------------------------------------------------->
+    <section class="slide" id="slide-5" data-section="fundamentos" data-title="A política é uma distribuição">
+      <div class="slide-inner">
+        <div>
+          <div class="eyebrow">fundamentos · política</div>
+          <h2 class="title">A política é uma distribuição, não um número</h2>
+        </div>
+        <p class="lede">No treino, o PPO <b>amostra</b> uma ação da categórica. Na avaliação, usa o argmax. Mova os logits e veja a distribuição mudar.</p>
+
+        <div class="split">
+          <div class="stack">
+            <div class="formula-wrap">
+              <div class="formula">π(a|s) = softmax(z)<sub>a</sub> = exp(z<sub>a</sub>) / Σ<sub>j</sub> exp(z<sub>j</sub>)</div>
+            </div>
+            <pre class="code"><span class="c"># coleta: ação estocástica</span>
+dist = Categorical(logits=logits)
+action = dist.sample()
+
+<span class="c"># avaliação: política gulosa</span>
+action = logits.argmax(dim=<span class="n">1</span>)</pre>
+            <div class="note"><span class="mark">∅</span><span><b>Sem epsilon.</b> Não existe ε-greedy no PPO. A exploração vem da amostragem da categórica e do bônus de entropia na perda.</span></div>
+            <div class="note warn"><span class="mark">H</span><span><b>Entropia.</b> H = −Σ p·log p, em nats. Máxima em ln 6 ≈ 1,79 quando as seis ações são equiprováveis; zero quando uma concentra tudo.</span></div>
+          </div>
+          <div class="lab" id="policy-lab">
+            <div class="lab-head"><span>política categórica</span><b>π(a|s) = softmax(z)</b></div>
+            <div class="policy-rows" id="policy-rows"></div>
+            <div class="policy-result">
+              <div><span class="k">amostra</span><b id="policy-sample">—</b></div>
+              <div><span class="k">guloso</span><b id="policy-greedy">—</b></div>
+              <div><span class="k">entropia</span><b id="policy-entropy">—</b></div>
+            </div>
+            <button class="btn-accent" id="policy-roll" type="button">Sortear ação</button>
+          </div>
+        </div>
+        <p class="caption">Os controles mostram os logits z; os números à direita, a probabilidade após a softmax. O botão sorteia uma ação como <span class="mono">Categorical.sample()</span> faria.</p>
+      </div>
+    </section>
+
+    <!-- 6 ---------------------------------------------------------->
+    <section class="slide" id="slide-6" data-section="coleta" data-title="Coleta primeiro, update depois">
+      <div class="slide-inner">
+        <div>
+          <div class="eyebrow">coleta · contrato on-policy</div>
+          <h2 class="title">Coleta primeiro, update depois</h2>
+        </div>
+        <p class="lede">O PPO não aprende a cada transição. Ele junta 1024 passos com a política congelada, usa o rollout inteiro por 4 épocas e joga tudo fora.</p>
+
+        <div class="split">
+          <div class="stack">
+            <pre class="code"><span class="c"># agent.py: o gatilho do update</span>
+def <span class="k">learn</span>(self):
+    if len(self.buffer) &lt; self.rollout_steps:
+        return <span class="k">None</span>
+    return self._update()
+
+def <span class="k">end_episode</span>(self, info=<span class="k">None</span>):
+    self.buffer.mark_episode_end()</pre>
+            <ul class="list">
+              <li><span class="bullet"></span><span><b>Fila, não replay.</b> O buffer guarda na ordem da coleta, sem capacidade circular e sem amostragem aleatória.</span></li>
+              <li><span class="bullet"></span><span><b>Fronteira de episódio.</b> <span class="mono">end_episode</span> marca a última transição para o GAE não atravessar o reset.</span></li>
+              <li><span class="bullet"></span><span><b>Rabo do treino.</b> <span class="mono">finish_training()</span> consome o rollout parcial que sobrou no fim.</span></li>
+            </ul>
+          </div>
+          <div class="lab" id="rollout-lab">
+            <div class="lab-head"><span>RolloutBuffer</span><b id="rollout-updates">0 updates</b></div>
+            <div class="buffer-bar"><span id="rollout-fill"></span></div>
+            <div class="buffer-meta"><span id="rollout-count">0 / 1024 transições</span><span>rollout_steps = 1024</span></div>
+            <div class="btn-row">
+              <button class="btn" id="rollout-add" type="button">+ 256 transições</button>
+              <button class="btn-accent" id="rollout-learn" type="button">Chamar learn()</button>
+              <button class="btn-ghost" id="rollout-reset" type="button">Zerar</button>
+            </div>
+            <p class="status" id="rollout-status" aria-live="polite">Buffer vazio. Enquanto não encher, <b>learn()</b> devolve None.</p>
+          </div>
+        </div>
+        <div class="note warn"><span class="mark">!</span><span>O <span class="mono">train.py</span> chama <span class="mono">learn()</span> a cada passo (ou a cada <span class="mono">--learn-every K</span>), mas o update só dispara quando o buffer chega a 1024. O agente está coletando, não aprendendo.</span></div>
+      </div>
+    </section>
+
+    <!-- 7 ---------------------------------------------------------->
+    <section class="slide" id="slide-7" data-section="coleta" data-title="O buffer por dentro">
+      <div class="slide-inner">
+        <div>
+          <div class="eyebrow">coleta · rollout_buffer.py</div>
+          <h2 class="title">O buffer é uma fila, não um replay</h2>
+        </div>
+        <p class="lede">Cada transição guarda o estado, a ação amostrada, a recompensa, o próximo estado, o sinal de terminal e a marca de fim de episódio.</p>
+
+        <div class="split">
+          <div class="stack">
+            <div class="table-wrap">
+              <table>
+                <thead><tr><th>campo</th><th>tipo</th><th>para que serve</th></tr></thead>
+                <tbody>
+                  <tr><td class="mono">state</td><td class="mono">float32 (C, H, W)</td><td>entrada do ator e do crítico no update</td></tr>
+                  <tr><td class="mono">action</td><td class="mono">int64</td><td>a ação que foi amostrada</td></tr>
+                  <tr><td class="mono">reward</td><td class="mono">float32</td><td>sinal do ambiente naquele passo</td></tr>
+                  <tr><td class="mono">next_state</td><td class="mono">float32 (C, H, W)</td><td>bootstrap do GAE com V(s′)</td></tr>
+                  <tr><td class="mono">terminated</td><td class="mono">bool</td><td>zera o bootstrap em terminais verdadeiros</td></tr>
+                  <tr><td class="mono">episode_end</td><td class="mono">bool</td><td>impede a vantagem de cruzar o reset</td></tr>
+                  <tr><td class="mono">log_prob</td><td class="mono">float ou None</td><td>só no modo <span class="mono">--overlap</span>; senão é recalculado</td></tr>
+                </tbody>
+              </table>
+            </div>
+            <p class="caption">Não há <span class="mono">truncated</span> no buffer. O truncamento por tempo continua valendo bootstrap; o que separa episódios é a marca <span class="mono">episode_end</span>.</p>
+          </div>
+          <div class="stack">
+            <div class="code-label">rollout_buffer.py</div>
+            <pre class="code">def <span class="k">add</span>(self, state, action, reward, next_state,
+        terminated, log_prob=<span class="k">None</span>):
+    self.data.append((
+        np.array(state, copy=<span class="k">True</span>),
+        int(action), float(reward),
+        np.array(next_state, copy=<span class="k">True</span>),
+        bool(terminated), <span class="k">False</span>, log_prob,
+    ))</pre>
+            <div class="card">
+              <h3>Quanto ocupa</h3>
+              <p>1024 transições com 5 canais de 20×32 em float32 dão cerca de 13 MB para <span class="mono">state</span> e outros 13 MB para <span class="mono">next_state</span>. O rollout inteiro fica perto de 26 MB, independente do tamanho do histórico de treino.</p>
+            </div>
+            <div class="note loss"><span class="mark">×</span><span><b>Depois do update, <span class="mono">clear()</span>.</b> As transições não voltam. É o preço e a garantia do on-policy: o gradiente sempre usa dados da política atual.</span></div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- 8 ---------------------------------------------------------->
+    <section class="slide" id="slide-8" data-section="coleta" data-title="GAE ao vivo">
+      <div class="slide-inner">
+        <div>
+          <div class="eyebrow">coleta · vantagens</div>
+          <h2 class="title">GAE: o crédito que atravessa o tempo</h2>
+        </div>
+        <p class="lede">O retorno bruto tem muita variância. O GAE mistura o delta de um passo com a vantagem do passo seguinte, descontada por λ.</p>
+
+        <div class="formula-wrap">
+          <div class="formula">δ<sub>t</sub> = r<sub>t</sub> + γ(1−term<sub>t</sub>)V(s<sub>t+1</sub>) − V(s<sub>t</sub>)<span class="dim">      </span>A<sub>t</sub> = δ<sub>t</sub> + γλ(1−end<sub>t</sub>)(1−term<sub>t</sub>)A<sub>t+1</sub></div>
+        </div>
+
+        <div class="split gae-layout">
+          <div class="lab" id="gae-lab">
+            <div class="lab-head"><span>calculadora GAE</span><b>γ e λ ao vivo</b></div>
+            <div class="control"><label for="gae-gamma">γ</label><input id="gae-gamma" type="range" min="0.8" max="0.999" step="0.001" value="0.99"><output id="gae-gamma-out">0,990</output></div>
+            <div class="control"><label for="gae-lambda">λ</label><input id="gae-lambda" type="range" min="0" max="1" step="0.01" value="0.95"><output id="gae-lambda-out">0,950</output></div>
+            <div class="control">
+              <label for="gae-boundary">passo 3</label>
+              <select id="gae-boundary">
+                <option value="0">sem fronteira</option>
+                <option value="1">truncamento (fim por tempo)</option>
+                <option value="2">terminal (terminated)</option>
+              </select>
+            </div>
+            <div class="btn-row">
+              <button class="btn" type="button" data-gae-preset="coleta">coleta</button>
+              <button class="btn" type="button" data-gae-preset="morte">morte</button>
+              <button class="btn" type="button" data-gae-preset="perda">empurrão perdido</button>
+            </div>
+            <p class="caption" id="gae-caption">Sem fronteira: a vantagem atravessa todos os passos.</p>
+          </div>
+          <div class="stack">
+            <div class="chart-scroll"><div class="step-strip" id="gae-steps"></div></div>
+            <div class="chart-scroll">
+              <svg class="chart" id="gae-chart" viewBox="0 0 680 250" role="img" aria-label="Gráfico de barras das vantagens GAE por passo."></svg>
+            </div>
+            <p class="caption">Barras verdes são vantagens positivas; vermelhas, negativas. A recorrência é calculada de trás para frente, por isso o último passo ancora a conta.</p>
+          </div>
+        </div>
+        <div class="note"><span class="mark">λ</span><span><b>λ = 0,95 no código.</b> λ → 0 vira TD(0), curto e enviesado; λ → 1 vira Monte Carlo, longo e ruidoso. O GAE roda em CPU porque a recorrência escalar em CUDA sincroniza a cada passo.</span></div>
+      </div>
+    </section>
+
+    <!-- 9 ---------------------------------------------------------->
+    <section class="slide" id="slide-9" data-section="coleta" data-title="Terminar não é truncar">
+      <div class="slide-inner">
+        <div>
+          <div class="eyebrow">coleta · fronteiras</div>
+          <h2 class="title">Terminar não é o mesmo que truncar</h2>
+        </div>
+        <p class="lede">Neste mapa, o episódio só acaba por tempo. Morrer custa moedas e 5 segundos, mas não encerra o episódio. Isso muda o alvo do GAE.</p>
+
+        <figure class="figure">
+          <div class="diagram-scroll">
+            <svg class="timeline-svg" viewBox="0 0 860 210" role="img" aria-label="Linha do tempo de um episódio de 45 segundos: morte em 12 s, respawn em 17 s, truncamento em 45 s. O bootstrap continua no truncamento e a vantagem não cruza a fronteira." style="display:block;width:100%;height:auto;min-width:620px">
+              <line class="axis" x1="40" y1="120" x2="812" y2="120"></line>
+
+              <rect class="lane" x="40" y="92" width="202" height="28" rx="4"></rect>
+              <rect class="dead" x="242" y="92" width="85" height="28" rx="4"></rect>
+              <rect class="lane" x="327" y="92" width="485" height="28" rx="4"></rect>
+
+              <text class="label" x="141" y="110" text-anchor="middle">vivo</text>
+              <text class="label" x="284" y="110" text-anchor="middle">morto</text>
+              <text class="label" x="570" y="110" text-anchor="middle">vivo</text>
+
+              <line class="axis" x1="40" y1="136" x2="40" y2="148"></line>
+              <line class="axis" x1="293" y1="136" x2="293" y2="148"></line>
+              <line class="axis" x1="547" y1="136" x2="547" y2="148"></line>
+              <line class="axis" x1="812" y1="136" x2="812" y2="148"></line>
+              <text class="tick" x="40" y="164" text-anchor="middle">0 s</text>
+              <text class="tick" x="293" y="164" text-anchor="middle">15 s</text>
+              <text class="tick" x="547" y="164" text-anchor="middle">30 s</text>
+              <text class="tick" x="812" y="164" text-anchor="middle">45 s</text>
+
+              <line class="wire" x1="242" y1="92" x2="242" y2="66"></line>
+              <polygon class="marker" points="242,66 236,58 248,58"></polygon>
+              <text class="note-text" x="242" y="48" text-anchor="middle">morte · −2 · respawn 5 s</text>
+
+              <line class="wire" x1="812" y1="92" x2="812" y2="66"></line>
+              <text class="note-text" x="812" y="54" text-anchor="end">truncated = True</text>
+              <text class="note-text" x="812" y="40" text-anchor="end">o alvo ainda usa γV(s′)</text>
+
+              <text class="note-text" x="40" y="188" text-anchor="start">episode_end = True nesta transição: a vantagem não atravessa o reset</text>
+              <text class="note-text" x="40" y="74" text-anchor="start">terminated nunca vira True neste mapa</text>
+            </svg>
+          </div>
+          <figcaption>O tempo simulado corre em 30 fps; com frame_skip 3, cada step do agente avança 0,1 s. A morte respawna, não termina. O GAE só corta a propagação na fronteira marcada pelo train.py.</figcaption>
+        </figure>
+
+        <div class="grid-3">
+          <div class="card">
+            <h3><span class="mono" style="color:var(--loss)">terminated</span></h3>
+            <p>Fim verdadeiro: zera o futuro no delta, <span class="mono">nonterminal = 0</span>. Neste jogo não acontece.</p>
+          </div>
+          <div class="card">
+            <h3><span class="mono" style="color:var(--reward)">truncated</span></h3>
+            <p>Fim por tempo: o agente continua vivo. O alvo bootstrapa com <span class="mono">γV(s′)</span>; só a vantagem não cruza.</p>
+          </div>
+          <div class="card">
+            <h3><span class="mono" style="color:var(--accent)">episode_end</span></h3>
+            <p>Marca no buffer que a última transição fechou um episódio. A recorrência para ali, mesmo com truncamento.</p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- 10 --------------------------------------------------------->
+    <section class="slide" id="slide-10" data-section="atualização" data-title="Update 1: congelar a política antiga">
+      <div class="slide-inner">
+        <div>
+          <div class="eyebrow">atualização · preparação</div>
+          <h2 class="title">Update 1: congelar a política antiga</h2>
+        </div>
+        <p class="lede">Como nenhum peso mudou durante a coleta, a política que gerou o rollout é exatamente a política online no início do update. O PPO tira proveito disso.</p>
+
+        <div class="split">
+          <div class="stack">
+            <pre class="code"><span class="k">with</span> torch.no_grad():
+    logits_old, values = self.online(s)
+    _, next_values = self.online(ns)
+
+    old_log_probs = torch.log_softmax(
+        logits_old, dim=<span class="n">1</span>).gather(
+        <span class="n">1</span>, a.unsqueeze(<span class="n">1</span>)).squeeze(<span class="n">1</span>)
+
+    advantages, returns = compute_gae(
+        r, values.cpu(), next_values.cpu(),
+        term, ends, self.gamma, self.gae_lambda)
+
+    advantages = (advantages - advantages.mean()) / (
+        advantages.std(unbiased=<span class="k">False</span>) + <span class="n">1e-8</span>)</pre>
+          </div>
+          <div class="stack">
+            <ul class="list">
+              <li><span class="bullet"></span><span><b>Recalcular é exato.</b> O log-prob antigo vem da mesma rede que coletou, sem guardar metadados por transição.</span></li>
+              <li><span class="bullet"></span><span><b>Vantagens normalizadas.</b> Média zero e desvio um no rollout inteiro, não por minibatch.</span></li>
+              <li><span class="bullet blue"></span><span><b>GAE em CPU.</b> A recorrência é sequencial; mandar os valores para a CPU evita milhares de sincronizações com a GPU.</span></li>
+              <li><span class="bullet amber"></span><span><b>Modo <span class="mono">--overlap</span>.</b> Se a coleta usou uma cópia defasada, o log-prob de comportamento vem do buffer e o ratio compara com a política certa.</span></li>
+            </ul>
+            <div class="note"><span class="mark">↺</span><span>Os <b>returns</b> são <span class="mono">A + V</span>, calculados no mesmo laço do GAE. Eles viram o alvo do crítico na perda de valor.</span></div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- 11 --------------------------------------------------------->
+    <section class="slide" id="slide-11" data-section="atualização" data-title="O recorte do PPO">
+      <div class="slide-inner">
+        <div>
+          <div class="eyebrow">atualização · objetivo</div>
+          <h2 class="title">O recorte que dá nome ao PPO</h2>
+        </div>
+        <p class="lede">A razão mede o quanto a política nova ficou mais provável do que a antiga para a ação tomada. O clip impede que um passo grande explore essa razão sem limite.</p>
+
+        <div class="formula-wrap">
+          <div class="formula">r<sub>t</sub>(θ) = π<sub>θ</sub>(a<sub>t</sub>|s<sub>t</sub>) / π<sub>old</sub>(a<sub>t</sub>|s<sub>t</sub>)<span class="dim">        </span>L<sup>clip</sup> = E[ min( r<sub>t</sub>A<sub>t</sub>, clip(r<sub>t</sub>, 1−ε, 1+ε)A<sub>t</sub> ) ]</div>
+        </div>
+
+        <div class="split">
+          <div class="lab" id="clip-lab">
+            <div class="lab-head"><span>objetivo recortado</span><b>ε = 0,20</b></div>
+            <div class="control"><label for="clip-adv">vantagem A</label><input id="clip-adv" type="range" min="-2" max="2" step="0.05" value="1"><output id="clip-adv-out">+1,00</output></div>
+            <div class="control"><label for="clip-eps">ε</label><input id="clip-eps" type="range" min="0.05" max="0.5" step="0.01" value="0.2"><output id="clip-eps-out">0,20</output></div>
+            <div class="chart-scroll">
+              <svg class="chart" id="clip-chart" viewBox="0 0 680 300" role="img" aria-label="Gráfico do objetivo recortado em função da razão r, com regiões de recorte destacadas."></svg>
+            </div>
+            <p class="caption" id="clip-caption"></p>
+          </div>
+          <div class="stack">
+            <ul class="list">
+              <li><span class="bullet"></span><span><b>A &gt; 0:</b> aumentar r além de 1+ε não melhora o objetivo. A curva fica plana e o gradiente zera.</span></li>
+              <li><span class="bullet red"></span><span><b>A &lt; 0:</b> reduzir r abaixo de 1−ε também não ajuda. A política para de ser empurrada ainda mais para longe da ação.</span></li>
+              <li><span class="bullet amber"></span><span><b>Dentro da faixa:</b> o objetivo é o produto normal <span class="mono">r·A</span>, e o gradiente age.</span></li>
+            </ul>
+            <div class="note warn"><span class="mark">!</span><span><b>O clip não é um freio no otimizador.</b> É o próprio objetivo que fica plano fora da faixa. O Adam continua dando passos; o gradiente é que desaparece.</span></div>
+            <div class="note"><span class="mark">4×16</span><span>1024 transições em minibatches de 64 dão 16 passos por época. Com 4 épocas, são 64 passos de Adam por rollout.</span></div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- 12 --------------------------------------------------------->
+    <section class="slide" id="slide-12" data-section="atualização" data-title="A perda completa">
+      <div class="slide-inner">
+        <div>
+          <div class="eyebrow">atualização · perda</div>
+          <h2 class="title">A perda completa, em quatro linhas</h2>
+        </div>
+        <p class="lede">Três termos puxam em direções diferentes: o ator maximiza a vantagem recortada, o crítico reduz o erro de valor e a entropia impede que a política feche cedo demais.</p>
+
+        <div class="split">
+          <div class="stack">
+            <pre class="code">ratio = torch.exp(log_probs - old_log_probs[idx])
+unclipped = ratio * adv
+clipped = torch.clamp(ratio, <span class="n">1.0</span> - self.clip,
+                      <span class="n">1.0</span> + self.clip) * adv
+policy_loss = -torch.min(unclipped, clipped).mean()
+value_loss = nn.functional.mse_loss(values, returns[idx])
+entropy = dist.entropy().mean()
+loss = (policy_loss + self.value_coef * value_loss
+        - self.entropy_coef * entropy)
+loss.backward()
+clip_grad_norm_(self.online.parameters(), <span class="n">10.0</span>)
+optimizer.step()</pre>
+          </div>
+          <div class="stack">
+            <div class="grid-3">
+              <div class="card"><h3 style="color:var(--accent)">política</h3><p>O termo recortado. Peso 1.</p></div>
+              <div class="card"><h3 style="color:var(--value)">valor</h3><p>MSE entre V e o retorno. Peso 0,5.</p></div>
+              <div class="card"><h3 style="color:var(--reward)">entropia</h3><p>Bônus de diversidade. Peso 0,01; entra subtraindo.</p></div>
+            </div>
+            <div class="stats">
+              <div class="stat"><b>2,5e−4</b><span>Adam lr</span></div>
+              <div class="stat"><b>4</b><span>épocas</span></div>
+              <div class="stat"><b>64</b><span>minibatch</span></div>
+              <div class="stat"><b>0,2</b><span>clip</span></div>
+              <div class="stat"><b>10</b><span>grad clip</span></div>
+            </div>
+            <div class="note"><span class="mark">1</span><span><b>Um passo por minibatch.</b> <span class="mono">optimizer.step()</span> roda 64 vezes por rollout. Só depois das 4 épocas o buffer é limpo e <span class="mono">steps</span> aumenta.</span></div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- 13 --------------------------------------------------------->
+    <section class="slide" id="slide-13" data-section="atualização" data-title="Sem epsilon, sem rede-alvo">
+      <div class="slide-inner">
+        <div>
+          <div class="eyebrow">atualização · escolhas de projeto</div>
+          <h2 class="title">Sem epsilon, sem rede-alvo, sem replay</h2>
+        </div>
+        <p class="lede">O PPO troca peças conhecidas do DQN por um contrato on-policy mais simples. Vale saber o que sumiu e o que ocupou o lugar.</p>
+
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>peça</th><th>DQN / Double DQN</th><th>PPO</th></tr></thead>
+            <tbody>
+              <tr><td>Dados</td><td>Replay buffer, amostragem aleatória, reutilização longa</td><td>Rollout em ordem, 4 épocas e descarte</td></tr>
+              <tr><td>Gatilho do update</td><td>A cada transição (ou <span class="mono">--learn-every K</span>)</td><td>Quando o buffer chega a 1024</td></tr>
+              <tr><td>Exploração</td><td>ε-greedy com rampa por episódio</td><td>Amostragem da categórica + bônus de entropia</td></tr>
+              <tr><td>Rede-alvo</td><td>Sim, sincronizada a cada 1000 updates</td><td>Não: <span class="mono">target = online</span></td></tr>
+              <tr><td>Política</td><td>Implícita, derivada dos Q-valores</td><td>Explícita: uma distribuição por estado</td></tr>
+              <tr><td>Avaliação</td><td>Argmax dos Q</td><td>Argmax dos logits</td></tr>
+            </tbody>
+          </table>
+        </div>
+
+        <div class="grid-3">
+          <div class="card"><h3><span class="mono">epsilon = 0.0</span></h3><p>O campo existe para cumprir o contrato, mas não é usado na exploração.</p></div>
+          <div class="card"><h3><span class="mono">target = online</span></h3><p>O mesmo módulo, sem duplicar parâmetros. O checkpoint grava os mesmos pesos nos dois campos.</p></div>
+          <div class="card"><h3><span class="mono">q_stats()</span></h3><p>Devolve a média e o máximo de V(s). Os logs chamam isso de “Q” por compatibilidade.</p></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- 14 --------------------------------------------------------->
+    <section class="slide" id="slide-14" data-section="integração" data-title="O train.py amarra tudo">
+      <div class="slide-inner">
+        <div>
+          <div class="eyebrow">integração · loop de treino</div>
+          <h2 class="title">O train.py amarra tudo</h2>
+        </div>
+        <p class="lede">O agente não conhece o ambiente. O loop chama cinco coisas em ordem, e o rollout pode atravessar vários episódios.</p>
+
+        <div class="pipeline">
+          <div class="pipe-step"><span class="step-n">01</span><b>reset</b><small>env.reset(seed + ep)</small></div>
+          <span class="pipe-arrow" aria-hidden="true">→</span>
+          <div class="pipe-step"><span class="step-n">02</span><b>act</b><small>amostra da categórica</small></div>
+          <span class="pipe-arrow" aria-hidden="true">→</span>
+          <div class="pipe-step"><span class="step-n">03</span><b>step</b><small>ambiente devolve obs, r, term, trunc</small></div>
+          <span class="pipe-arrow" aria-hidden="true">→</span>
+          <div class="pipe-step"><span class="step-n">04</span><b>buffer.add</b><small>terminated entra; truncated não</small></div>
+          <span class="pipe-arrow" aria-hidden="true">→</span>
+          <div class="pipe-step"><span class="step-n">05</span><b>learn</b><small>None até 1024; então update</small></div>
+        </div>
+
+        <div class="split">
+          <div class="stack">
+            <pre class="code"><span class="k">while</span> <span class="k">True</span>:
+    action = agent.act(obs)
+    next_obs, r, term, trunc, info = env.step(action)
+    agent.buffer.add(obs, action, r, next_obs, term)
+
+    loss = agent.learn()   <span class="c"># None até 1024</span>
+    obs = next_obs
+    <span class="k">if</span> term <span class="k">or</span> trunc:
+        <span class="k">break</span>
+
+agent.end_episode(info)    <span class="c"># marca a fronteira</span></pre>
+          </div>
+          <div class="stack">
+            <ul class="list">
+              <li><span class="bullet"></span><span><b>Um rollout, vários episódios.</b> Com <span class="mono">frame_skip=1</span>, um episódio tem 1350 passos; com <span class="mono">frame_skip=3</span>, 450. O rollout de 1024 não respeita a fronteira do episódio, só a marca.</span></li>
+              <li><span class="bullet"></span><span><b><span class="mono">end_episode</span> vem depois do laço.</b> Ele marca a última transição, não inicia um update.</span></li>
+              <li><span class="bullet amber"></span><span><b><span class="mono">finish_training</span> consome o rabo.</b> No fim do treino, o que sobrou no rollout vira um update parcial.</span></li>
+            </ul>
+            <div class="note warn"><span class="mark">K</span><span><b><span class="mono">--learn-every</span> não muda o tamanho do rollout.</b> O default 4 no modo de um ambiente só faz o loop <i>verificar</i> o buffer com mais frequência. O update continua em 1024.</span></div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- 15 --------------------------------------------------------->
+    <section class="slide" id="slide-15" data-section="integração" data-title="Três modos de coleta">
+      <div class="slide-inner">
+        <div>
+          <div class="eyebrow">integração · escala</div>
+          <h2 class="title">Três jeitos de gastar o relógio</h2>
+        </div>
+        <p class="lede">O caminho de um ambiente é o mais simples. Os outros dois atacam o gargalo do on-policy: a coleta precisa acompanhar a GPU.</p>
+
+        <div class="grid-3">
+          <div class="card">
+            <h3>1 ambiente</h3>
+            <p>O loop histórico: <span class="mono">act</span>, <span class="mono">step</span>, <span class="mono">add</span>, update ao encher. Reprodutível e fácil de depurar.</p>
+            <div class="tape" aria-hidden="true">
+              <span class="seg collect" style="flex:4">coleta</span>
+              <span class="seg update" style="flex:1">upd</span>
+              <span class="seg collect" style="flex:4">coleta</span>
+              <span class="seg update" style="flex:1">upd</span>
+            </div>
+            <p class="caption">Uma coisa por vez.</p>
+          </div>
+          <div class="card">
+            <h3><span class="mono">--envs N</span></h3>
+            <p>N workers coletam em paralelo; <span class="mono">act_batch</span> age no lote. Os blocos são montados worker-major e cada bloco fecha uma fronteira.</p>
+            <div class="tape" aria-hidden="true">
+              <span class="seg collect" style="flex:2">w0</span>
+              <span class="seg collect" style="flex:2">w1</span>
+              <span class="seg collect" style="flex:2">w2</span>
+              <span class="seg update" style="flex:2">update</span>
+            </div>
+            <p class="caption">Exige adversário fixo e <span class="mono">--learn-every 1</span>.</p>
+          </div>
+          <div class="card">
+            <h3><span class="mono">--overlap</span></h3>
+            <p>Uma thread coleta o próximo rollout com uma cópia CPU da política enquanto a principal faz o update na GPU. Fila de 1 rollout.</p>
+            <div class="lanes" aria-hidden="true">
+              <div class="lane"><span class="lane-label">CPU</span><div class="tape"><span class="seg collect" style="flex:3">coleta n+1</span><span class="seg collect" style="flex:3">coleta n+2</span></div></div>
+              <div class="lane"><span class="lane-label">GPU</span><div class="tape"><span class="seg update" style="flex:2">update n</span><span class="seg update" style="flex:2">update n+1</span></div></div>
+            </div>
+            <p class="caption">Defasagem de um rollout; não é bit a bit reprodutível.</p>
+          </div>
+        </div>
+
+        <div class="note"><span class="mark">π</span><span><b>No overlap, o ratio precisa da política de comportamento.</b> O buffer grava o log-prob da coleta; usar o log-prob recalculado da online compararia com a política errada.</span></div>
+        <div class="note warn"><span class="mark">!</span><span><b>Restrições.</b> Os modos vetorizados exigem adversário fixo. O PPO recusa <span class="mono">--learn-every &gt; 1</span> com <span class="mono">--envs &gt; 1</span>.</span></div>
+      </div>
+    </section>
+
+    <!-- 16 --------------------------------------------------------->
+    <section class="slide" id="slide-16" data-section="integração" data-title="Checkpoint e avaliação">
+      <div class="slide-inner">
+        <div>
+          <div class="eyebrow">integração · ciclo de vida</div>
+          <h2 class="title">Checkpoint e avaliação</h2>
+        </div>
+        <p class="lede">O PPO usa o mesmo formato pesos-only dos outros algoritmos. O campo <span class="mono">algorithm</span> permite que avaliar e assistir não exijam <span class="mono">--alg</span>.</p>
+
+        <div class="split">
+          <div class="stack">
+            <div class="card">
+              <h3>O que vai para o disco</h3>
+              <ul class="list" style="margin-top:8px">
+                <li><span class="bullet"></span><span>Pesos de <span class="mono">online</span> e <span class="mono">target</span> (os mesmos, no PPO).</span></li>
+                <li><span class="bullet"></span><span>Estado do otimizador Adam e contadores: <span class="mono">steps</span>, <span class="mono">epsilon</span>, <span class="mono">episodes</span>.</span></li>
+                <li><span class="bullet"></span><span>Configuração: <span class="mono">obs_shape</span>, <span class="mono">frame_stack</span>, <span class="mono">frame_skip</span>, cenário.</span></li>
+                <li><span class="bullet red"></span><span>Não vão: buffer, RNGs e estado do ambiente. Retomar não é bit a bit.</span></li>
+              </ul>
+            </div>
+            <div class="note"><span class="mark">✓</span><span><b>Avaliação gulosa.</b> <span class="mono">evaluate.py</span> e <span class="mono">play.py</span> chamam <span class="mono">act(..., greedy=True)</span>: argmax dos logits, sem amostragem.</span></div>
+          </div>
+          <div class="stack">
+            <div class="code-label">o algoritmo vem do checkpoint</div>
+            <pre class="code"><span class="c"># evaluate.py / play.py</span>
+agent_cls = load_algorithm(
+    algorithm_from_checkpoint(path))
+agent = agent_cls(obs_shape, n_actions)
+load_checkpoint(path, agent, resume=<span class="k">False</span>)</pre>
+            <div class="note warn"><span class="mark">↔</span><span><b>Formatos precisam bater.</b> O checkpoint valida <span class="mono">algorithm</span>, <span class="mono">arch_version</span>, <span class="mono">n_actions</span> e <span class="mono">obs_shape</span> antes de copiar pesos. No <span class="mono">play.py</span>, jogador e adversário checkpoint precisam do mesmo <span class="mono">frame_stack</span>/<span class="mono">frame_skip</span>.</span></div>
+            <div class="note loss"><span class="mark">×</span><span><b>Retomada.</b> O treino continua a numeração de episódios e o currículo, mas o buffer e os RNGs recomeçam. A garantia é de continuidade, não de reprodutibilidade.</span></div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- 17 --------------------------------------------------------->
+    <section class="slide" id="slide-17" data-section="integração" data-title="Rodando">
+      <div class="slide-inner">
+        <div>
+          <div class="eyebrow">integração · comandos</div>
+          <h2 class="title">Rodando na prática</h2>
+        </div>
+        <p class="lede">Todos os caminhos abaixo usam o venv do projeto. Prefixe com <span class="mono">TORCH_CPP_LOG_LEVEL=ERROR</span> se os avisos do NNPACK incomodarem.</p>
+
+        <div class="split">
+          <div class="stack">
+            <div class="code-label">treinar</div>
+            <pre class="code">python train.py --episodes 300 --alg ppo
+python train.py --episodes 300 --alg ppo --envs 8 --opponent rule
+python train.py --episodes 300 --alg ppo --envs 8 --overlap --opponent rule
+python train.py --episodes 300 --alg ppo --tensorboard --eval-every 10</pre>
+            <div class="code-label">avaliar e assistir</div>
+            <pre class="code">python evaluate.py --checkpoint checkpoints/best.pt --episodes 20
+python play.py --checkpoint checkpoints/best.pt --render</pre>
+            <div class="code-label">comparação reprodutível</div>
+            <pre class="code">bash scripts/compare_onpolicy.sh</pre>
+          </div>
+          <div class="stack">
+            <div class="card">
+              <h3>O que olhar</h3>
+              <ul class="list" style="margin-top:8px">
+                <li><span class="bullet"></span><span><span class="mono">logs/training.csv</span>: recompensa, moedas, mortes e perda média por episódio.</span></li>
+                <li><span class="bullet blue"></span><span><span class="mono">--stats</span>: perda mín/máx, norma do gradiente e valor do crítico por episódio.</span></li>
+                <li><span class="bullet amber"></span><span><span class="mono">--tensorboard</span>: curvas, histogramas de pesos e a observação como imagem.</span></li>
+                <li><span class="bullet"></span><span><span class="mono">--eval-every N</span>: avaliação gulosa periódica com seeds fixas, sem consumir RNG do treino.</span></li>
+              </ul>
+            </div>
+            <div class="note"><span class="mark">3h</span><span><span class="mono">scripts/train_long.sh</span> roda os quatro algoritmos em sequência com <span class="mono">--max-hours</span> e avalia <span class="mono">best.pt</span> e <span class="mono">latest.pt</span> ao fim de cada trecho.</span></div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- 18 --------------------------------------------------------->
+    <section class="slide" id="slide-18" data-section="prática" data-title="O que o PPO ganha e custa">
+      <div class="slide-inner">
+        <div>
+          <div class="eyebrow">prática · trade-offs</div>
+          <h2 class="title">O que o PPO ganha e o que custa</h2>
+        </div>
+        <p class="lede">O recorte compra estabilidade; o contrato on-policy cobra em amostras. A escolha depende do seu orçamento: passos de ambiente ou horas de parede.</p>
+
+        <div class="grid-2">
+          <div class="card">
+            <h3 style="color:var(--accent)">Ganha</h3>
+            <ul class="list" style="margin-top:9px">
+              <li><span class="bullet"></span><span><b>Passos limitados.</b> O clip impede que uma vantagem ruidosa destrua a política em uma atualização.</span></li>
+              <li><span class="bullet"></span><span><b>Menos peças móveis.</b> Sem rede-alvo, sem capacidade de replay, sem rampa de ε.</span></li>
+              <li><span class="bullet"></span><span><b>Coleta paralela.</b> <span class="mono">--envs</span> e <span class="mono">--overlap</span> mantêm a GPU ocupada enquanto os workers jogam.</span></li>
+              <li><span class="bullet"></span><span><b>Mesma base.</b> A CNN e a observação são as dos algoritmos de valor; a comparação fica justa.</span></li>
+            </ul>
+          </div>
+          <div class="card">
+            <h3 style="color:var(--loss)">Custa</h3>
+            <ul class="list" style="margin-top:9px">
+              <li><span class="bullet red"></span><span><b>Dados descartáveis.</b> Cada transição é usada por 4 épocas e nunca mais.</span></li>
+              <li><span class="bullet red"></span><span><b>Muitos passos de ambiente.</b> O gargalo vira a coleta, não o update.</span></li>
+              <li><span class="bullet red"></span><span><b>Modos vetorizados rígidos.</b> Exigem adversário fixo e <span class="mono">--learn-every 1</span>.</span></li>
+              <li><span class="bullet red"></span><span><b>GAE sequencial.</b> A recorrência é feita em CPU para não sincronizar a GPU a cada passo.</span></li>
+            </ul>
+          </div>
+        </div>
+
+        <div class="note warn"><span class="mark">↔</span><span><b>Compare com o mesmo protocolo.</b> <span class="mono">scripts/compare_onpolicy.sh</span> fixa seed, episódios, oponente, frame stack, frame skip e batch; <span class="mono">scripts/summarize_all.py</span> gera deltas pareados contra o DQN. Sem isso, a diferença pode ser só de orçamento.</span></div>
+      </div>
+    </section>
+
+    <!-- 19 --------------------------------------------------------->
+    <section class="slide" id="slide-19" data-section="prática" data-title="Quiz">
+      <div class="slide-inner">
+        <div>
+          <div class="eyebrow">prática · checagem</div>
+          <h2 class="title">Três perguntas para fechar</h2>
+        </div>
+        <p class="lede">Clique em uma opção. O feedback explica o mecanismo, não só o gabarito.</p>
+
+        <div class="quiz-list">
+          <div class="quiz" data-explain="learn() retorna None enquanto len(buffer) < rollout_steps. finish_training() é a exceção que consome o rabo no fim do treino.">
+            <p class="q"><span class="qnum">01</span><span>Quando o <span class="mono">_update()</span> do PPO roda?</span></p>
+            <div class="options">
+              <button class="opt" type="button" data-correct="false">A cada passo, como no DQN.</button>
+              <button class="opt" type="button" data-correct="true">Quando o rollout chega a 1024 transições.</button>
+              <button class="opt" type="button" data-correct="false">Somente quando o episódio termina.</button>
+            </div>
+            <p class="feedback" hidden></p>
+          </div>
+
+          <div class="quiz" data-explain="Em compute_gae, propagates = (1−episode_end)(1−terminated). O episode_end corta a vantagem entre episódios, mas o delta ainda bootstrapa no truncamento.">
+            <p class="q"><span class="qnum">02</span><span>O que <span class="mono">episode_ends</span> faz no GAE?</span></p>
+            <div class="options">
+              <button class="opt" type="button" data-correct="false">Zera a recompensa do último passo.</button>
+              <button class="opt" type="button" data-correct="true">Impede a vantagem de atravessar o episódio, mantendo o bootstrap no truncamento.</button>
+              <button class="opt" type="button" data-correct="false">Encerra o treino mais cedo.</button>
+            </div>
+            <p class="feedback" hidden></p>
+          </div>
+
+          <div class="quiz" data-explain="act() amostra de Categorical(logits). A exploração vem dessa amostragem e do entropy_coef = 0.01; epsilon fica 0.0 só para cumprir o contrato.">
+            <p class="q"><span class="qnum">03</span><span>Por que o PPO não usa epsilon-greedy?</span></p>
+            <div class="options">
+              <button class="opt" type="button" data-correct="false">Porque o valor de epsilon é sempre 0,1 no repositório.</button>
+              <button class="opt" type="button" data-correct="false">Porque não há recompensa para explorar.</button>
+              <button class="opt" type="button" data-correct="true">Porque a política categórica já amostra, e a entropia controla a exploração.</button>
+            </div>
+            <p class="feedback" hidden></p>
+          </div>
+        </div>
+        <div class="btn-row"><button class="btn-ghost" id="quiz-reset" type="button">Recomeçar o quiz</button></div>
+      </div>
+    </section>
+
+    <!-- 20 --------------------------------------------------------->
+    <section class="slide" id="slide-20" data-section="prática" data-title="Para levar">
+      <div class="slide-inner">
+        <div>
+          <div class="eyebrow">prática · fechamento</div>
+          <h2 class="title">Para levar</h2>
+        </div>
+
+        <div class="takeaways">
+          <div class="takeaway"><span class="k">01 · coleta</span><b>O rollout é a unidade de treino</b><p>1024 passos com a política congelada; update, 4 épocas, descarte.</p></div>
+          <div class="takeaway"><span class="k">02 · crédito</span><b>GAE corta, mas não zera no truncamento</b><p>episode_end separa episódios; terminated zera o bootstrap.</p></div>
+          <div class="takeaway"><span class="k">03 · estabilidade</span><b>O clip limita, a entropia explora</b><p>Fora da faixa [1−ε, 1+ε] o objetivo fica plano e o gradiente desaparece.</p></div>
+          <div class="takeaway"><span class="k">04 · código</span><b>Três arquivos e um --alg ppo</b><p>model.py, rollout_buffer.py e agent.py cumprem o contrato do repositório.</p></div>
+        </div>
+
+        <div class="split">
+          <div class="stack">
+            <div class="code-label">para abrir depois da aula</div>
+            <pre class="code">algs/alg_ppo/model.py
+algs/alg_ppo/rollout_buffer.py
+algs/alg_ppo/agent.py
+
+python train.py --episodes 300 --alg ppo --tensorboard</pre>
+          </div>
+          <div class="stack">
+            <div class="note"><span class="mark">→</span><span><b>Próximo passo.</b> Coloque um breakpoint em <span class="mono">compute_gae</span>, rode um rollout de 1024 passos e olhe a vantagem do último passo: ela é só o delta, porque não existe t+1.</span></div>
+            <div class="note warn"><span class="mark">?</span><span><b>Pergunta para levar.</b> Por que o PPO normaliza as vantagens no rollout inteiro em vez de normalizar por minibatch? O que mudaria no sinal do gradiente?</span></div>
+          </div>
+        </div>
+
+        <div class="cover-foot">
+          <span class="mono">PPO no rl-arena · aula</span>
+          <button class="btn" id="restart" type="button">Voltar ao início</button>
+        </div>
+      </div>
+    </section>
+
+  </main>
+
+  <footer class="foot">
+    <div class="hint"><kbd>←</kbd><kbd>→</kbd> navegar <span class="sep">·</span> <kbd>O</kbd> índice <span class="sep">·</span> <kbd>F</kbd> tela cheia</div>
+    <div class="foot-title" id="foot-title"></div>
+    <div class="navbtns">
+      <button class="navbtn" id="prev" type="button" aria-label="Slide anterior">←</button>
+      <button class="navbtn" id="next" type="button" aria-label="Próximo slide">→</button>
+    </div>
+  </footer>
+</div>
+
+<div class="overlay" id="overlay" role="dialog" aria-modal="true" aria-labelledby="overlay-title" hidden>
+  <div class="overlay-head">
+    <div>
+      <div class="eyebrow">navegação</div>
+      <h2 id="overlay-title">Índice da aula</h2>
+    </div>
+    <button class="btn" id="overlay-close" type="button">Fechar</button>
+  </div>
+  <div class="index-grid" id="index-grid"></div>
+</div>
+
+<script>
+(function () {
+  "use strict";
+
+  var slides = Array.prototype.slice.call(document.querySelectorAll(".slide"));
+  var total = slides.length;
+  var current = 0;
+  var overlay = document.getElementById("overlay");
+  var indexGrid = document.getElementById("index-grid");
+  var overlayBuilt = false;
+  var sampleTimer = null;
+
+  function pad(n) { return String(n).padStart(2, "0"); }
+
+  function setHash(i) {
+    var h = "slide-" + (i + 1);
+    if (location.hash !== "#" + h) location.hash = h;
+  }
+
+  function show(i, opts) {
+    opts = opts || {};
+    i = Math.max(0, Math.min(total - 1, i));
+    current = i;
+    slides.forEach(function (slide, j) {
+      var on = j === i;
+      slide.hidden = !on;
+      slide.classList.toggle("active", on);
+      if (on) slide.scrollTop = 0;
+    });
+    document.getElementById("counter").textContent = pad(i + 1) + " / " + pad(total);
+    document.getElementById("progress-fill").style.width = (i / Math.max(1, total - 1) * 100) + "%";
+    document.getElementById("sec-label").textContent = slides[i].dataset.section || "";
+    document.getElementById("foot-title").textContent = slides[i].dataset.title || "";
+    document.getElementById("prev").disabled = i === 0;
+    document.getElementById("next").disabled = i === total - 1;
+    if (opts.hash !== false) setHash(i);
+    if (!overlay.hidden) markCurrentIndex();
+  }
+
+  function markCurrentIndex() {
+    Array.prototype.forEach.call(indexGrid.children, function (btn) {
+      btn.classList.toggle("current", Number(btn.dataset.goto) === current);
+    });
+  }
+
+  function buildIndex() {
+    if (overlayBuilt) return;
+    indexGrid.innerHTML = slides.map(function (slide, i) {
+      return '<button class="index-item" type="button" data-goto="' + i + '">' +
+        '<span class="idx-num">' + pad(i + 1) + '</span>' +
+        '<span class="idx-sec">' + (slide.dataset.section || "") + '</span>' +
+        '<span class="idx-title">' + (slide.dataset.title || "Slide") + '</span>' +
+        '</button>';
+    }).join("");
+    overlayBuilt = true;
+  }
+
+  function openIndex() {
+    buildIndex();
+    markCurrentIndex();
+    overlay.hidden = false;
+    document.getElementById("overlay-close").focus();
+  }
+
+  function closeIndex() {
+    overlay.hidden = true;
+    document.getElementById("btn-index").focus();
+  }
+
+  function toggleIndex() {
+    if (overlay.hidden) openIndex(); else closeIndex();
+  }
+
+  function toggleFullscreen() {
+    var root = document.documentElement;
+    if (!document.fullscreenElement) {
+      if (root.requestFullscreen) root.requestFullscreen().catch(function () {});
+    } else if (document.exitFullscreen) {
+      document.exitFullscreen().catch(function () {});
+    }
+  }
+
+  function fromHash() {
+    var m = /^#slide-(\d+)$/.exec(location.hash);
+    if (!m) return 0;
+    return Math.max(0, Math.min(total - 1, parseInt(m[1], 10) - 1));
+  }
+
+  // Navegação base
+  document.getElementById("prev").addEventListener("click", function () { show(current - 1); });
+  document.getElementById("next").addEventListener("click", function () { show(current + 1); });
+  document.getElementById("btn-index").addEventListener("click", openIndex);
+  document.getElementById("btn-full").addEventListener("click", toggleFullscreen);
+  document.getElementById("overlay-close").addEventListener("click", closeIndex);
+  document.getElementById("restart").addEventListener("click", function () { show(0); });
+  overlay.addEventListener("click", function (e) {
+    if (e.target === overlay) closeIndex();
+  });
+  indexGrid.addEventListener("click", function (e) {
+    var btn = e.target.closest(".index-item");
+    if (!btn) return;
+    closeIndex();
+    show(Number(btn.dataset.goto));
+  });
+
+  document.addEventListener("fullscreenchange", function () {
+    document.getElementById("btn-full").textContent = document.fullscreenElement ? "Sair" : "Tela cheia";
+  });
+
+  window.addEventListener("hashchange", function () {
+    show(fromHash(), { hash: false });
+  });
+
+  document.addEventListener("keydown", function (e) {
+    var t = e.target;
+    var tag = t && t.tagName ? t.tagName : "";
+    if (e.key === "Escape") { if (!overlay.hidden) closeIndex(); return; }
+    if ((e.key === "o" || e.key === "O") && tag !== "INPUT" && tag !== "SELECT" && tag !== "TEXTAREA") {
+      e.preventDefault(); toggleIndex(); return;
+    }
+    if ((e.key === "f" || e.key === "F") && tag !== "INPUT" && tag !== "SELECT" && tag !== "TEXTAREA") {
+      e.preventDefault(); toggleFullscreen(); return;
+    }
+    if (tag === "INPUT" || tag === "SELECT" || tag === "TEXTAREA") return;
+    if (tag === "BUTTON" && (e.key === " " || e.key === "Enter")) return;
+    if (e.key === "ArrowRight" || e.key === "PageDown" || e.key === " ") {
+      e.preventDefault(); show(current + 1);
+    } else if (e.key === "ArrowLeft" || e.key === "PageUp") {
+      e.preventDefault(); show(current - 1);
+    } else if (e.key === "Home") {
+      e.preventDefault(); show(0);
+    } else if (e.key === "End") {
+      e.preventDefault(); show(total - 1);
+    }
+  });
+
+  // Swipe horizontal no palco
+  var touchX = null, touchY = null;
+  var stage = document.getElementById("stage");
+  stage.addEventListener("touchstart", function (e) {
+    if (e.touches.length !== 1) return;
+    var t = e.target;
+    if (t.closest("input, select, button, .chart-scroll, .diagram-scroll")) return;
+    touchX = e.touches[0].clientX;
+    touchY = e.touches[0].clientY;
+  }, { passive: true });
+  stage.addEventListener("touchend", function (e) {
+    if (touchX === null) return;
+    var dx = e.changedTouches[0].clientX - touchX;
+    var dy = e.changedTouches[0].clientY - touchY;
+    touchX = null; touchY = null;
+    if (Math.abs(dx) > 64 && Math.abs(dy) < 52 && Math.abs(dx) > Math.abs(dy) * 1.4) {
+      show(current + (dx < 0 ? 1 : -1));
+    }
+  }, { passive: true });
+
+  // ---------------------------------------------------------------
+  // Política categórica
+  // ---------------------------------------------------------------
+  var POLICY_NAMES = ["STOP", "LEFT", "RIGHT", "JUMP", "PUSH ←", "PUSH →"];
+  var policyLogits = [0.1, -0.3, 0.7, -0.4, 1.2, -0.8];
+  var policyRows = document.getElementById("policy-rows");
+  var policyInputs = [];
+  var policyPcts = [];
+
+  POLICY_NAMES.forEach(function (name, i) {
+    var row = document.createElement("div");
+    row.className = "policy-row";
+    var id = "lg-" + i;
+    row.innerHTML = '<label class="name" for="' + id + '">' + name + '</label>' +
+      '<input type="range" id="' + id + '" min="-2" max="2" step="0.1" value="' + policyLogits[i] + '" aria-label="logit de ' + name + '">' +
+      '<output class="pct" for="' + id + '">0%</output>';
+    policyRows.appendChild(row);
+    policyInputs.push(row.querySelector("input"));
+    policyPcts.push(row.querySelector(".pct"));
+  });
+
+  function softmax(z) {
+    var max = Math.max.apply(null, z);
+    var ex = z.map(function (v) { return Math.exp(v - max); });
+    var sum = ex.reduce(function (a, b) { return a + b; }, 0);
+    return ex.map(function (v) { return v / sum; });
+  }
+
+  function updatePolicy() {
+    var z = policyInputs.map(function (inp) { return parseFloat(inp.value); });
+    var p = softmax(z);
+    p.forEach(function (pi, i) {
+      policyPcts[i].textContent = Math.round(pi * 100) + "%";
+    });
+    var greedy = z.indexOf(Math.max.apply(null, z));
+    document.getElementById("policy-greedy").textContent = POLICY_NAMES[greedy];
+    var h = -p.reduce(function (a, pi) { return a + (pi > 0 ? pi * Math.log(pi) : 0); }, 0);
+    document.getElementById("policy-entropy").textContent = h.toFixed(2).replace(".", ",") + " nats";
+    return p;
+  }
+
+  policyInputs.forEach(function (inp) {
+    inp.addEventListener("input", function () {
+      Array.prototype.forEach.call(policyRows.children, function (row) { row.classList.remove("sampled"); });
+      updatePolicy();
+    });
+  });
+
+  document.getElementById("policy-roll").addEventListener("click", function () {
+    var p = updatePolicy();
+    var u = Math.random(), acc = 0, pick = p.length - 1;
+    for (var i = 0; i < p.length; i++) {
+      acc += p[i];
+      if (u < acc) { pick = i; break; }
+    }
+    Array.prototype.forEach.call(policyRows.children, function (row, i) {
+      row.classList.toggle("sampled", i === pick);
+    });
+    document.getElementById("policy-sample").textContent = POLICY_NAMES[pick];
+    if (sampleTimer) clearTimeout(sampleTimer);
+    sampleTimer = setTimeout(function () {
+      Array.prototype.forEach.call(policyRows.children, function (row) { row.classList.remove("sampled"); });
+    }, 1500);
+  });
+
+  // ---------------------------------------------------------------
+  // GAE
+  // ---------------------------------------------------------------
+  var gaePresets = {
+    coleta: { rewards: [1, 1, 1, 1, 1, 1], values: [4.9, 4.0, 3.1, 2.1, 1.1, 0.0] },
+    morte: { rewards: [1, 1, 1, -2, 1, 1], values: [1.5, 1.3, 1.1, 0.6, 1.0, 0.0] },
+    perda: { rewards: [1, -0.1, -0.1, 1, 1, 1], values: [2.8, 2.5, 2.0, 1.6, 0.9, 0.0] }
+  };
+  var gaeState = {
+    rewards: gaePresets.morte.rewards.slice(),
+    values: gaePresets.morte.values.slice(),
+    boundary: 0
+  };
+
+  var gammaEl = document.getElementById("gae-gamma");
+  var lambdaEl = document.getElementById("gae-lambda");
+  var boundaryEl = document.getElementById("gae-boundary");
+  var gaeStepsEl = document.getElementById("gae-steps");
+  var gaeChart = document.getElementById("gae-chart");
+  var gaeCaption = document.getElementById("gae-caption");
+
+  function fmtNum(x) {
+    return (x > 0 ? "+" : "") + x.toFixed(2).replace(".", ",");
+  }
+
+  function computeGae(rewards, values, boundary, gamma, lambda) {
+    var n = rewards.length;
+    var nextValues = values.slice(1).concat([0]);
+    var adv = new Array(n).fill(0);
+    var gae = 0;
+    for (var t = n - 1; t >= 0; t--) {
+      var terminal = (boundary === 2 && t === 3) ? 1 : 0;
+      var end = (boundary !== 0 && t === 3) ? 1 : 0;
+      var nonterminal = 1 - terminal;
+      var delta = rewards[t] + gamma * nonterminal * nextValues[t] - values[t];
+      var propagates = (1 - end) * nonterminal;
+      gae = delta + gamma * lambda * propagates * gae;
+      adv[t] = gae;
+    }
+    return { adv: adv, nextValues: nextValues };
+  }
+
+  function renderGaeSteps(rewards, values) {
+    gaeStepsEl.innerHTML = rewards.map(function (r, i) {
+      return '<div class="step-cell"><span class="t">t' + i + '</span>' +
+        '<span class="r">r ' + fmtNum(r) + '</span>' +
+        '<span class="v">V ' + fmtNum(values[i]) + '</span></div>';
+    }).join("");
+  }
+
+  function drawGae(adv) {
+    var CH_W = 680, CH_H = 250, BASE = 125, SIDE = 18;
+    var maxAbs = Math.max.apply(null, adv.map(Math.abs).concat([0.5]));
+    var half = 82;
+    var scale = half / maxAbs;
+    var slot = (CH_W - SIDE * 2) / adv.length;
+    var bw = Math.min(56, slot * 0.6);
+    var out = '<line class="axis" x1="' + SIDE + '" y1="' + BASE + '" x2="' + (CH_W - SIDE) + '" y2="' + BASE + '"></line>';
+    out += '<text class="tick" x="' + SIDE + '" y="' + (BASE + 16) + '">0</text>';
+    adv.forEach(function (a, i) {
+      var cx = SIDE + slot * (i + 0.5);
+      var h = Math.abs(a) * scale;
+      var y = a >= 0 ? BASE - h : BASE;
+      var cls = a >= 0 ? "bar-pos" : "bar-neg";
+      out += '<rect class="' + cls + '" x="' + (cx - bw / 2).toFixed(1) + '" y="' + y.toFixed(1) + '" width="' + bw.toFixed(1) + '" height="' + Math.max(h, 1.6).toFixed(1) + '" rx="3"></rect>';
+      var ly = a >= 0 ? y - 7 : y + h + 15;
+      out += '<text class="val" x="' + cx.toFixed(1) + '" y="' + ly.toFixed(1) + '" text-anchor="middle">' + fmtNum(a) + '</text>';
+      out += '<text class="tick" x="' + cx.toFixed(1) + '" y="' + (CH_H - 12) + '" text-anchor="middle">t' + i + '</text>';
+    });
+    gaeChart.innerHTML = out;
+  }
+
+  function updateGae() {
+    var gamma = parseFloat(gammaEl.value);
+    var lambda = parseFloat(lambdaEl.value);
+    boundaryEl.value = String(gaeState.boundary);
+    document.getElementById("gae-gamma-out").textContent = gamma.toFixed(3).replace(".", ",");
+    document.getElementById("gae-lambda-out").textContent = lambda.toFixed(2).replace(".", ",");
+    var res = computeGae(gaeState.rewards, gaeState.values, gaeState.boundary, gamma, lambda);
+    renderGaeSteps(gaeState.rewards, gaeState.values);
+    drawGae(res.adv);
+    var msg;
+    if (gaeState.boundary === 1) {
+      msg = "Truncamento no passo 3: o delta ainda usa γV(t4), mas a vantagem não atravessa para t4.";
+    } else if (gaeState.boundary === 2) {
+      msg = "Terminal no passo 3: o bootstrap é zerado (nonterminal = 0) e a vantagem também não atravessa.";
+    } else {
+      msg = "Sem fronteira: a vantagem atravessa todos os passos.";
+    }
+    gaeCaption.textContent = msg + " No último passo, A = δ, porque não existe t+1.";
+  }
+
+  gammaEl.addEventListener("input", updateGae);
+  lambdaEl.addEventListener("input", updateGae);
+  boundaryEl.addEventListener("change", function () {
+    gaeState.boundary = Number(boundaryEl.value);
+    updateGae();
+  });
+  Array.prototype.forEach.call(document.querySelectorAll("[data-gae-preset]"), function (btn) {
+    btn.addEventListener("click", function () {
+      var preset = gaePresets[btn.dataset.gaePreset];
+      gaeState.rewards = preset.rewards.slice();
+      gaeState.values = preset.values.slice();
+      updateGae();
+    });
+  });
+
+  // ---------------------------------------------------------------
+  // Recorte do PPO
+  // ---------------------------------------------------------------
+  var clipAdv = document.getElementById("clip-adv");
+  var clipEps = document.getElementById("clip-eps");
+  var clipChart = document.getElementById("clip-chart");
+  var clipCaption = document.getElementById("clip-caption");
+
+  function drawClip() {
+    var A = parseFloat(clipAdv.value);
+    var eps = parseFloat(clipEps.value);
+    document.getElementById("clip-adv-out").textContent = fmtNum(A);
+    document.getElementById("clip-eps-out").textContent = eps.toFixed(2).replace(".", ",");
+
+    var W = 680, H = 300, L = 52, R = 18, T = 20, B = 44;
+    var ymax = Math.max(1.1, Math.abs(A) * 1.25);
+    function xOf(r) { return L + (r / 2) * (W - L - R); }
+    function yOf(v) { return T + (ymax - v) / (2 * ymax) * (H - T - B); }
+
+    var out = "";
+    // regiões de recorte
+    out += '<rect class="region-warn" x="' + xOf(0).toFixed(1) + '" y="' + T + '" width="' + (xOf(1 - eps) - xOf(0)).toFixed(1) + '" height="' + (H - T - B) + '"></rect>';
+    out += '<rect class="region-warn" x="' + xOf(1 + eps).toFixed(1) + '" y="' + T + '" width="' + (xOf(2) - xOf(1 + eps)).toFixed(1) + '" height="' + (H - T - B) + '"></rect>';
+    // grade horizontal
+    [-ymax, -ymax / 2, 0, ymax / 2, ymax].forEach(function (v) {
+      out += '<line class="guide" x1="' + L + '" y1="' + yOf(v).toFixed(1) + '" x2="' + (W - R) + '" y2="' + yOf(v).toFixed(1) + '"></line>';
+      out += '<text class="tick" x="' + (L - 8) + '" y="' + (yOf(v) + 3).toFixed(1) + '" text-anchor="end">' + v.toFixed(1) + '</text>';
+    });
+    // eixos
+    out += '<line class="axis" x1="' + L + '" y1="' + yOf(0).toFixed(1) + '" x2="' + (W - R) + '" y2="' + yOf(0).toFixed(1) + '"></line>';
+    out += '<line class="axis" x1="' + L + '" y1="' + T + '" x2="' + L + '" y2="' + (H - B) + '"></line>';
+    // marcas de r
+    [0, 0.5, 1, 1.5, 2].forEach(function (r) {
+      out += '<text class="tick" x="' + xOf(r).toFixed(1) + '" y="' + (H - B + 16) + '" text-anchor="middle">' + r + '</text>';
+    });
+    // guias 1-eps, 1, 1+eps
+    [1 - eps, 1, 1 + eps].forEach(function (r, i) {
+      out += '<line class="' + (i === 1 ? 'guide' : 'guide') + '" x1="' + xOf(r).toFixed(1) + '" y1="' + T + '" x2="' + xOf(r).toFixed(1) + '" y2="' + (H - B) + '"></line>';
+      out += '<text class="tick" x="' + xOf(r).toFixed(1) + '" y="' + (T - 6) + '" text-anchor="middle">' + (i === 1 ? '1' : (i === 0 ? '1−ε' : '1+ε')) + '</text>';
+    });
+    // curva
+    var d = "";
+    for (var s = 0; s <= 180; s++) {
+      var r = (s / 180) * 2;
+      var val = Math.min(r * A, Math.max(1 - eps, Math.min(1 + eps, r)) * A);
+      d += (s === 0 ? "M" : "L") + xOf(r).toFixed(1) + "," + yOf(val).toFixed(1);
+    }
+    out += '<path class="curve" d="' + d + '"></path>';
+    // ponto em r = 1
+    out += '<circle class="dot" cx="' + xOf(1).toFixed(1) + '" cy="' + yOf(A).toFixed(1) + '" r="4"></circle>';
+    // rótulos
+    out += '<text class="lbl-strong" x="' + (W - R) + '" y="' + (H - 8) + '" text-anchor="end">razão r = π_θ / π_old</text>';
+    out += '<text class="lbl" x="' + (L + 6) + '" y="' + (T + 14) + '">objetivo</text>';
+    out += '<text class="lbl" x="' + (L + 6) + '" y="' + (T + 28) + '">min(rA, clip(r)A)</text>';
+    clipChart.innerHTML = out;
+
+    if (Math.abs(A) < 0.001) {
+      clipCaption.textContent = "Com A = 0, o objetivo é plano em zero: a ação não tem vantagem, então não há direção de atualização.";
+    } else if (A > 0) {
+      clipCaption.textContent = "Com A > 0, a curva sobe até r = 1+ε e fica plana. Subir mais a probabilidade da ação não melhora o objetivo, então o gradiente zera.";
+    } else {
+      clipCaption.textContent = "Com A < 0, a curva é plana para r < 1−ε. Reduzir mais a probabilidade da ação não melhora o objetivo, então o gradiente zera.";
+    }
+  }
+
+  clipAdv.addEventListener("input", drawClip);
+  clipEps.addEventListener("input", drawClip);
+
+  // ---------------------------------------------------------------
+  // Rollout interativo
+  // ---------------------------------------------------------------
+  var CAP = 1024, CHUNK = 256;
+  var rolloutLen = 0, rolloutUpdates = 0;
+  var rolloutFill = document.getElementById("rollout-fill");
+  var rolloutCount = document.getElementById("rollout-count");
+  var rolloutStatus = document.getElementById("rollout-status");
+  var rolloutUpdatesEl = document.getElementById("rollout-updates");
+
+  function renderRollout() {
+    var pct = rolloutLen / CAP * 100;
+    rolloutFill.style.width = pct.toFixed(1) + "%";
+    rolloutCount.textContent = rolloutLen + " / " + CAP + " transições";
+    rolloutUpdatesEl.textContent = rolloutUpdates + (rolloutUpdates === 1 ? " update" : " updates");
+  }
+
+  document.getElementById("rollout-add").addEventListener("click", function () {
+    if (rolloutLen >= CAP) {
+      rolloutStatus.className = "status wait";
+      rolloutStatus.innerHTML = "<strong>Buffer cheio.</strong> Chame <b>learn()</b> para disparar o update.";
+      return;
+    }
+    rolloutLen = Math.min(CAP, rolloutLen + CHUNK);
+    renderRollout();
+    if (rolloutLen >= CAP) {
+      rolloutStatus.className = "status wait";
+      rolloutStatus.innerHTML = "<strong>1024 / 1024.</strong> O rollout encheu; <b>learn()</b> agora executa 4 épocas.";
+    } else {
+      rolloutStatus.className = "status";
+      rolloutStatus.innerHTML = "Faltam <strong>" + (CAP - rolloutLen) + "</strong> transições. <b>learn()</b> ainda devolveria None.";
+    }
+  });
+
+  document.getElementById("rollout-learn").addEventListener("click", function () {
+    if (rolloutLen < CAP) {
+      rolloutStatus.className = "status wait";
+      rolloutStatus.innerHTML = "<b>learn() → None.</b> O buffer tem " + rolloutLen + " transições; o limite é " + CAP + ".";
+      return;
+    }
+    rolloutUpdates += 1;
+    rolloutLen = 0;
+    renderRollout();
+    rolloutStatus.className = "status ok";
+    rolloutStatus.innerHTML = "<strong>Update executado.</strong> 4 épocas × 16 minibatches, depois <span class='mono'>buffer.clear()</span>.";
+  });
+
+  document.getElementById("rollout-reset").addEventListener("click", function () {
+    rolloutLen = 0;
+    rolloutUpdates = 0;
+    renderRollout();
+    rolloutStatus.className = "status";
+    rolloutStatus.innerHTML = "Buffer vazio. Enquanto não encher, <b>learn()</b> devolve None.";
+  });
+
+  // ---------------------------------------------------------------
+  // Quiz
+  // ---------------------------------------------------------------
+  Array.prototype.forEach.call(document.querySelectorAll(".quiz"), function (quiz) {
+    var feedback = quiz.querySelector(".feedback");
+    Array.prototype.forEach.call(quiz.querySelectorAll(".opt"), function (btn) {
+      btn.addEventListener("click", function () {
+        var ok = btn.dataset.correct === "true";
+        Array.prototype.forEach.call(quiz.querySelectorAll(".opt"), function (b) {
+          b.classList.remove("correct", "wrong");
+          if (b.dataset.correct === "true") b.classList.add("correct");
+        });
+        if (!ok) btn.classList.add("wrong");
+        feedback.hidden = false;
+        feedback.className = "feedback " + (ok ? "correct" : "wrong");
+        feedback.textContent = (ok ? "Correto. " : "Ainda não. ") + quiz.dataset.explain;
+      });
+    });
+  });
+
+  document.getElementById("quiz-reset").addEventListener("click", function () {
+    Array.prototype.forEach.call(document.querySelectorAll(".quiz"), function (quiz) {
+      Array.prototype.forEach.call(quiz.querySelectorAll(".opt"), function (b) {
+        b.classList.remove("correct", "wrong");
+      });
+      var feedback = quiz.querySelector(".feedback");
+      feedback.hidden = true;
+      feedback.textContent = "";
+    });
+  });
+
+  // ---------------------------------------------------------------
+  // Inicialização
+  // ---------------------------------------------------------------
+  show(fromHash(), { hash: false });
+  updatePolicy();
+  updateGae();
+  drawClip();
+  renderRollout();
+})();
+</script>

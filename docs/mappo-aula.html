@@ -1,0 +1,2437 @@
+<title>MAPPO no rl-arena</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,600;12..96,700&family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
+<style>
+  /* ---------------------------------------------------------------
+     Plano de design
+     Cor: papel frio esverdeado, tinta quase preta, verde de política,
+          azul de valor, âmbar de recompensa, vermelho de perda.
+     Tipo: Bricolage Grotesque (títulos), IBM Plex Sans (corpo),
+           IBM Plex Mono (dados, fórmulas, código).
+     Layout: palco único de slides; trilha de progresso; grade de 20 px
+             lembrando a célula do mapa.
+     --------------------------------------------------------------- */
+  :root {
+    --bg: #f1f4ef;
+    --grid: rgba(21, 33, 26, 0.045);
+    --surface: #fbfcf9;
+    --surface-2: #e6ece4;
+    --ink: #15211a;
+    --muted: #5d6c63;
+    --line: #d2dbd3;
+    --accent: #0e7c5a;
+    --accent-strong: #0a5c43;
+    --accent-soft: #d7eee4;
+    --value: #2f5fa8;
+    --value-soft: #dde8f8;
+    --reward: #a96518;
+    --reward-soft: #f6e7d1;
+    --loss: #b23b32;
+    --loss-soft: #f6dfdc;
+    --code-bg: #101b15;
+    --code-fg: #dce8e0;
+    --code-dim: #7e9788;
+    --code-key: #6fd6a8;
+    --code-str: #e8b271;
+    --code-num: #9bc2f0;
+    --font-display: "Bricolage Grotesque", "IBM Plex Sans", system-ui, sans-serif;
+    --font-body: "IBM Plex Sans", system-ui, -apple-system, sans-serif;
+    --font-mono: "IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+  }
+
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #0d1612;
+      --grid: rgba(232, 239, 233, 0.05);
+      --surface: #14211b;
+      --surface-2: #1d2d25;
+      --ink: #e8efe9;
+      --muted: #9aaEA3;
+      --line: #2a3b32;
+      --accent: #57d3a3;
+      --accent-strong: #8be8c4;
+      --accent-soft: #163a2c;
+      --value: #8db4f5;
+      --value-soft: #1b2d4c;
+      --reward: #e9a45b;
+      --reward-soft: #3c2a16;
+      --loss: #f08379;
+      --loss-soft: #3b1d1a;
+      --code-bg: #08110c;
+      color-scheme: dark;
+    }
+  }
+
+  :root[data-theme="dark"] {
+    --bg: #0d1612;
+    --grid: rgba(232, 239, 233, 0.05);
+    --surface: #14211b;
+    --surface-2: #1d2d25;
+    --ink: #e8efe9;
+    --muted: #9aaEA3;
+    --line: #2a3b32;
+    --accent: #57d3a3;
+    --accent-strong: #8be8c4;
+    --accent-soft: #163a2c;
+    --value: #8db4f5;
+    --value-soft: #1b2d4c;
+    --reward: #e9a45b;
+    --reward-soft: #3c2a16;
+    --loss: #f08379;
+    --loss-soft: #3b1d1a;
+    --code-bg: #08110c;
+    color-scheme: dark;
+  }
+
+  * { box-sizing: border-box; }
+  html, body { height: 100%; }
+  body {
+    margin: 0;
+    overflow: hidden;
+    background-color: var(--bg);
+    background-image:
+      linear-gradient(to right, var(--grid) 1px, transparent 1px),
+      linear-gradient(to bottom, var(--grid) 1px, transparent 1px);
+    background-size: 20px 20px;
+    color: var(--ink);
+    font-family: var(--font-body);
+    font-size: 15px;
+    line-height: 1.5;
+    -webkit-font-smoothing: antialiased;
+  }
+  button, input, select { font: inherit; color: inherit; }
+  button { cursor: pointer; }
+  p { margin: 0; }
+  h1, h2, h3 { margin: 0; text-wrap: balance; }
+  a { color: var(--accent); }
+  button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible, [tabindex]:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 3px;
+    border-radius: 4px;
+  }
+  .slide:focus, .slide:focus-visible, .stage:focus, .stage:focus-visible { outline: none; }
+  ::selection { background: var(--accent-soft); color: var(--ink); }
+
+  .app {
+    height: 100%;
+    display: grid;
+    grid-template-rows: 3px auto minmax(0, 1fr) auto;
+    padding-left: max(18px, env(safe-area-inset-left, 0px));
+    padding-right: max(18px, env(safe-area-inset-right, 0px));
+  }
+  .progress { background: var(--line); border-radius: 99px; overflow: hidden; }
+  .progress span { display: block; height: 100%; width: 0; background: var(--accent); transition: width .35s ease; }
+
+  .topbar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+    padding-block: 11px 9px;
+    border-bottom: 1px solid var(--line);
+  }
+  .brand {
+    display: flex;
+    align-items: center;
+    gap: 9px;
+    min-width: 0;
+    font-family: var(--font-mono);
+    font-size: 11px;
+    letter-spacing: .13em;
+    text-transform: uppercase;
+    color: var(--muted);
+    white-space: nowrap;
+  }
+  .brand b { color: var(--ink); font-weight: 600; }
+  .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--accent); flex: none; }
+  .sec-label { color: var(--accent); padding-left: 4px; }
+  .top-actions { display: flex; align-items: center; gap: 8px; }
+  .tb {
+    background: transparent;
+    border: 1px solid var(--line);
+    color: var(--muted);
+    border-radius: 7px;
+    padding: 5px 9px;
+    font-family: var(--font-mono);
+    font-size: 10.5px;
+    letter-spacing: .05em;
+    text-transform: uppercase;
+    white-space: nowrap;
+    transition: color .15s ease, border-color .15s ease;
+  }
+  .tb:hover { color: var(--ink); border-color: var(--accent); }
+  .counter {
+    font-family: var(--font-mono);
+    font-size: 11px;
+    color: var(--muted);
+    font-variant-numeric: tabular-nums;
+    min-width: 66px;
+    text-align: right;
+  }
+
+  .stage { position: relative; min-height: 0; }
+  .slide {
+    position: absolute;
+    inset: 0;
+    overflow-y: auto;
+    overflow-x: hidden;
+    padding-block: clamp(18px, 3.4vh, 34px) clamp(16px, 3vh, 30px);
+    scrollbar-width: thin;
+  }
+  .slide[hidden] { display: none !important; }
+  .slide.active { animation: enter .32s ease both; }
+  @keyframes enter { from { opacity: 0; transform: translateY(7px); } to { opacity: 1; transform: none; } }
+  .slide-inner {
+    width: 100%;
+    max-width: 1180px;
+    min-height: 100%;
+    margin: 0 auto;
+    display: flex;
+    flex-direction: column;
+    gap: clamp(14px, 2.4vh, 26px);
+  }
+  .slide-inner > * { min-width: 0; }
+
+  .eyebrow {
+    font-family: var(--font-mono);
+    font-size: 10.5px;
+    letter-spacing: .16em;
+    text-transform: uppercase;
+    color: var(--accent);
+  }
+  .title {
+    font-family: var(--font-display);
+    font-weight: 640;
+    font-size: clamp(28px, 3.6vw, 47px);
+    line-height: 1.04;
+    letter-spacing: -.022em;
+    max-width: 25ch;
+  }
+  .lede {
+    color: var(--muted);
+    font-size: clamp(14px, 1.2vw, 16.5px);
+    line-height: 1.55;
+    max-width: 68ch;
+  }
+  .display {
+    font-family: var(--font-display);
+    font-weight: 650;
+    font-size: clamp(46px, 8vw, 106px);
+    line-height: .93;
+    letter-spacing: -.04em;
+  }
+  .display .thin { color: var(--accent); font-weight: 500; }
+  .mono { font-family: var(--font-mono); }
+  .muted { color: var(--muted); }
+  .accent { color: var(--accent); }
+
+  .cover-wrap {
+    flex: 1;
+    display: grid;
+    grid-template-columns: minmax(0, 1.25fr) minmax(0, .75fr);
+    gap: clamp(20px, 4vw, 56px);
+    align-items: center;
+    padding-block: 8px 20px;
+  }
+  .cover-copy { display: flex; flex-direction: column; gap: 18px; min-width: 0; }
+  .cover-copy .lede { font-size: clamp(15px, 1.5vw, 19px); max-width: 46ch; }
+  .chips { display: flex; flex-wrap: wrap; gap: 7px; }
+  .chip {
+    font-family: var(--font-mono);
+    font-size: 10.5px;
+    letter-spacing: .04em;
+    color: var(--muted);
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-radius: 999px;
+    padding: 5px 10px;
+    white-space: nowrap;
+  }
+  .chip.green { color: var(--accent-strong); border-color: var(--accent); background: var(--accent-soft); }
+  .cover-foot {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 14px;
+    flex-wrap: wrap;
+    padding-top: 16px;
+    border-top: 1px solid var(--line);
+    font-size: 12px;
+    color: var(--muted);
+  }
+  .cover-refs {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    padding-top: 10px;
+    border-top: 1px dashed var(--line);
+  }
+  .cover-refs .ref {
+    display: flex;
+    align-items: baseline;
+    gap: 8px;
+    font-size: 11.5px;
+    line-height: 1.45;
+    color: var(--muted);
+  }
+  .cover-refs .ref-tag {
+    flex: none;
+    font-family: var(--font-mono);
+    font-size: 8.5px;
+    letter-spacing: .1em;
+    text-transform: uppercase;
+    color: var(--accent-strong);
+    background: var(--accent-soft);
+    border: 1px solid var(--accent);
+    border-radius: 3px;
+    padding: 1px 5px;
+  }
+  .cover-refs a {
+    color: var(--ink);
+    text-decoration: none;
+    border-bottom: 1px solid var(--line);
+    overflow-wrap: anywhere;
+  }
+  .cover-refs a:hover { color: var(--accent-strong); border-bottom-color: var(--accent); }
+  .cover-refs .src {
+    font-family: var(--font-mono);
+    font-size: 10px;
+    color: var(--muted);
+  }
+  kbd {
+    font-family: var(--font-mono);
+    font-size: 10px;
+    color: var(--ink);
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-bottom-width: 2px;
+    border-radius: 4px;
+    padding: 1px 5px;
+  }
+  .cover-art { display: flex; flex-direction: column; gap: 10px; min-width: 0; }
+  .mini-map {
+    position: relative;
+    width: 100%;
+    max-width: 390px;
+    aspect-ratio: 16 / 10;
+    margin-left: auto;
+    border: 1px solid var(--line);
+    border-radius: 14px;
+    background-color: var(--surface);
+    background-image:
+      linear-gradient(to right, var(--grid) 1px, transparent 1px),
+      linear-gradient(to bottom, var(--grid) 1px, transparent 1px);
+    background-size: 20px 20px;
+    overflow: hidden;
+    box-shadow: 0 18px 40px -30px rgba(10, 25, 18, .45);
+  }
+  .mini-map .platform {
+    position: absolute;
+    height: 7px;
+    border-radius: 2px;
+    background: var(--ink);
+    opacity: .22;
+  }
+  .mini-map .unit { position: absolute; border-radius: 50%; transform: translate(-50%, -50%); }
+  .mini-map .unit.player { width: 13px; height: 13px; background: var(--accent); box-shadow: 0 0 0 4px var(--accent-soft); }
+  .mini-map .unit.opponent { width: 12px; height: 12px; background: var(--value); box-shadow: 0 0 0 4px var(--value-soft); }
+  .mini-map .unit.coin { width: 8px; height: 8px; background: var(--reward); box-shadow: 0 0 0 3px var(--reward-soft); }
+  .mini-caption {
+    margin-left: auto;
+    font-family: var(--font-mono);
+    font-size: 10.5px;
+    color: var(--muted);
+    text-align: right;
+  }
+
+  .grid-2 { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: clamp(14px, 2.2vw, 26px); align-items: start; }
+  .grid-3 { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: clamp(12px, 1.6vw, 18px); }
+  .grid-2 > *, .grid-3 > * { min-width: 0; }
+  .stack { display: flex; flex-direction: column; gap: 14px; min-width: 0; }
+  .stack.tight { gap: 9px; }
+  .split { display: grid; grid-template-columns: minmax(0, 1.15fr) minmax(0, .85fr); gap: clamp(14px, 2.2vw, 26px); align-items: start; }
+  .split > * { min-width: 0; }
+  .gae-layout { grid-template-columns: minmax(260px, .78fr) minmax(0, 1.22fr); }
+
+  .card {
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-radius: 13px;
+    padding: clamp(14px, 1.8vw, 20px);
+    min-width: 0;
+  }
+  .card h3 {
+    font-family: var(--font-display);
+    font-weight: 600;
+    font-size: 17px;
+    letter-spacing: -.01em;
+    line-height: 1.2;
+    margin-bottom: 7px;
+  }
+  .card p { font-size: 13.5px; line-height: 1.5; color: var(--muted); }
+  .file-card { display: flex; flex-direction: column; gap: 8px; }
+  .file-top { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; }
+  .file-name { font-family: var(--font-mono); font-size: 13px; color: var(--ink); font-weight: 500; word-break: break-word; }
+  .file-lines { font-family: var(--font-mono); font-size: 10.5px; color: var(--muted); white-space: nowrap; }
+  .file-card .role { font-size: 13px; color: var(--muted); line-height: 1.5; }
+  .file-card .symbol { font-family: var(--font-mono); font-size: 10.5px; color: var(--accent); }
+
+  .note {
+    display: flex;
+    gap: 11px;
+    align-items: flex-start;
+    padding: 10px 14px;
+    background: var(--accent-soft);
+    border-radius: 9px;
+    font-size: 13px;
+    line-height: 1.5;
+    color: var(--ink);
+  }
+  .note .mark { font-family: var(--font-mono); color: var(--accent-strong); font-weight: 600; flex: none; }
+  .note.warn { background: var(--reward-soft); }
+  .note.warn .mark { color: var(--reward); }
+  .note.loss { background: var(--loss-soft); }
+  .note.loss .mark { color: var(--loss); }
+  .note code { font-family: var(--font-mono); font-size: .94em; }
+
+  .list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 9px; }
+  .list li { display: flex; gap: 10px; align-items: flex-start; font-size: 13.5px; line-height: 1.5; }
+  .list .bullet { flex: none; width: 7px; height: 7px; border-radius: 50%; background: var(--accent); margin-top: 7px; }
+  .list .bullet.blue { background: var(--value); }
+  .list .bullet.amber { background: var(--reward); }
+  .list .bullet.red { background: var(--loss); }
+  .list b, .card b { font-weight: 600; }
+
+  .formula {
+    font-family: var(--font-mono);
+    font-size: clamp(12.5px, 1.35vw, 15.5px);
+    line-height: 1.85;
+    background: var(--surface-2);
+    border-left: 3px solid var(--accent);
+    border-radius: 0 10px 10px 0;
+    padding: 11px 15px;
+    overflow-x: auto;
+    white-space: nowrap;
+    color: var(--ink);
+  }
+  .formula .dim { color: var(--muted); }
+  .formula .blue { color: var(--value); }
+  .formula .amber { color: var(--reward); }
+  .formula sub, .formula sup { font-size: .74em; }
+  .formula-wrap { overflow-x: auto; }
+
+  .code {
+    margin: 0;
+    background: var(--code-bg);
+    color: var(--code-fg);
+    border: 1px solid #223229;
+    border-radius: 11px;
+    padding: 14px 16px;
+    overflow-x: auto;
+    font-family: var(--font-mono);
+    font-size: clamp(11px, 1.02vw, 12.8px);
+    line-height: 1.72;
+    tab-size: 2;
+  }
+  .code .c { color: var(--code-dim); }
+  .code .k { color: var(--code-key); }
+  .code .s { color: var(--code-str); }
+  .code .n { color: var(--code-num); }
+  .code .hl { background: rgba(111, 214, 168, .13); border-radius: 3px; padding: 0 2px; }
+  .code-label {
+    font-family: var(--font-mono);
+    font-size: 10px;
+    letter-spacing: .1em;
+    text-transform: uppercase;
+    color: var(--muted);
+    margin-bottom: 6px;
+  }
+
+  .table-wrap {
+    overflow-x: auto;
+    border: 1px solid var(--line);
+    border-radius: 12px;
+    background: var(--surface);
+  }
+  table { border-collapse: collapse; width: 100%; min-width: 560px; font-size: 13px; }
+  th {
+    text-align: left;
+    font-family: var(--font-mono);
+    font-size: 10px;
+    letter-spacing: .08em;
+    text-transform: uppercase;
+    color: var(--muted);
+    font-weight: 500;
+    padding: 10px 14px;
+    border-bottom: 1px solid var(--line);
+    white-space: nowrap;
+  }
+  td { padding: 10px 14px; border-bottom: 1px solid var(--line); vertical-align: top; line-height: 1.45; }
+  tr:last-child td { border-bottom: 0; }
+  td.mono, th.mono { font-family: var(--font-mono); font-size: 12px; }
+  td .yes { color: var(--accent); font-weight: 600; }
+  td .no { color: var(--loss); font-weight: 600; }
+
+  .spec { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; }
+  .spec .num { font-family: var(--font-mono); font-size: clamp(24px, 3vw, 36px); letter-spacing: -.04em; line-height: 1; }
+  .spec .unit { font-family: var(--font-mono); font-size: 10.5px; color: var(--muted); letter-spacing: .06em; text-transform: uppercase; }
+  .stats { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 8px; }
+  .stat {
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-radius: 9px;
+    padding: 9px 11px;
+    min-width: 0;
+  }
+  .stat b { display: block; font-family: var(--font-mono); font-size: 17px; font-weight: 500; letter-spacing: -.02em; font-variant-numeric: tabular-nums; }
+  .stat span { display: block; margin-top: 2px; font-family: var(--font-mono); font-size: 9.5px; color: var(--muted); letter-spacing: .05em; text-transform: uppercase; }
+
+  .channels { display: flex; flex-direction: column; gap: 0; border: 1px solid var(--line); border-radius: 12px; overflow: hidden; background: var(--surface); }
+  .channel { display: grid; grid-template-columns: 20px 18px 105px minmax(0, 1fr); align-items: center; gap: 10px; padding: 9px 13px; border-bottom: 1px solid var(--line); font-size: 13px; }
+  .channel:last-child { border-bottom: 0; }
+  .channel .idx { font-family: var(--font-mono); font-size: 10.5px; color: var(--muted); }
+  .channel .swatch { width: 15px; height: 15px; border-radius: 4px; }
+  .channel .name { font-family: var(--font-mono); font-size: 11.5px; }
+  .channel .desc { color: var(--muted); font-size: 12px; }
+  .actions { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; }
+  .action {
+    display: flex;
+    align-items: baseline;
+    gap: 7px;
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    padding: 7px 9px;
+    min-width: 0;
+  }
+  .action .code-act { font-family: var(--font-mono); font-size: 10px; color: var(--accent); }
+  .action .name-act { font-size: 11.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+  .figure { margin: 0; display: flex; flex-direction: column; gap: 9px; min-width: 0; }
+  .figure figcaption { font-size: 12px; color: var(--muted); line-height: 1.45; max-width: 85ch; }
+  .diagram-scroll, .chart-scroll { overflow-x: auto; overflow-y: hidden; }
+  .diagram { display: block; width: 100%; height: auto; }
+  .net { min-width: 760px; }
+
+  .diagram .box { fill: var(--surface); stroke: var(--line); stroke-width: 1.4; }
+  .diagram .conv { fill: var(--surface-2); }
+  .diagram .box-actor { fill: var(--accent-soft); stroke: var(--accent); }
+  .diagram .box-critic { fill: var(--value-soft); stroke: var(--value); }
+  .diagram .in-rect { fill: var(--surface-2); stroke: var(--line); stroke-width: 1.2; }
+  .diagram .wire { fill: none; stroke: var(--muted); stroke-width: 1.5; }
+  .diagram .arrowhead { fill: var(--muted); }
+  .diagram .box-title { fill: var(--ink); font-family: var(--font-mono); font-size: 12px; font-weight: 500; }
+  .diagram .box-sub { fill: var(--muted); font-family: var(--font-mono); font-size: 10px; }
+  .diagram .edge-label { fill: var(--muted); font-family: var(--font-mono); font-size: 9.5px; letter-spacing: .04em; }
+  .diagram .out-chip { fill: var(--bg); stroke: var(--line); stroke-width: 1.2; }
+
+  .timeline-svg .lane { fill: var(--accent-soft); stroke: var(--accent); stroke-width: 1.2; }
+  .timeline-svg .dead { fill: var(--loss-soft); stroke: var(--loss); stroke-width: 1.2; }
+  .timeline-svg .axis { stroke: var(--line); stroke-width: 1.4; }
+  .timeline-svg .wire { stroke: var(--accent); stroke-width: 1.5; stroke-dasharray: 4 3; }
+  .timeline-svg .tick { fill: var(--muted); font-family: var(--font-mono); font-size: 10px; }
+  .timeline-svg .label { fill: var(--ink); font-family: var(--font-mono); font-size: 10.5px; }
+  .timeline-svg .note-text { fill: var(--muted); font-family: var(--font-mono); font-size: 10px; }
+  .timeline-svg .marker { fill: var(--loss); }
+  .timeline-svg .arrowhead-a { fill: var(--accent); }
+
+  .tape { display: flex; gap: 3px; height: 20px; margin-top: 10px; }
+  .seg {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 0;
+    overflow: hidden;
+    white-space: nowrap;
+    font-family: var(--font-mono);
+    font-size: 8.5px;
+    border-radius: 4px;
+  }
+  .seg.collect { background: var(--accent-soft); color: var(--accent-strong); border: 1px solid var(--accent); }
+  .seg.update { background: var(--value-soft); color: var(--value); border: 1px solid var(--value); }
+  .lanes { display: flex; flex-direction: column; gap: 4px; margin-top: 10px; }
+  .lane { display: grid; grid-template-columns: 30px minmax(0, 1fr); gap: 6px; align-items: center; }
+  .lane .tape { margin-top: 0; }
+  .lane-label { font-family: var(--font-mono); font-size: 8px; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); }
+
+  .pipeline { display: flex; align-items: stretch; gap: 6px; flex-wrap: wrap; }
+  .pipe-step {
+    flex: 1 1 120px;
+    min-width: 0;
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-radius: 9px;
+    padding: 9px 10px;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+  }
+  .pipe-step .step-n { font-family: var(--font-mono); font-size: 9px; color: var(--accent); letter-spacing: .08em; }
+  .pipe-step b { font-family: var(--font-mono); font-size: 11.5px; font-weight: 500; overflow-wrap: anywhere; }
+  .pipe-step small { font-size: 10.5px; color: var(--muted); line-height: 1.35; }
+  .pipe-arrow { align-self: center; color: var(--muted); font-family: var(--font-mono); font-size: 13px; flex: none; }
+
+  .lab {
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-radius: 13px;
+    padding: clamp(13px, 1.6vw, 18px);
+    display: flex;
+    flex-direction: column;
+    gap: 11px;
+    min-width: 0;
+  }
+  .lab-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    font-family: var(--font-mono);
+    font-size: 9.5px;
+    letter-spacing: .09em;
+    text-transform: uppercase;
+    color: var(--muted);
+  }
+  .lab-head b { color: var(--accent); font-weight: 500; }
+  .control {
+    display: grid;
+    grid-template-columns: 86px minmax(0, 1fr) 58px;
+    align-items: center;
+    gap: 10px;
+    font-family: var(--font-mono);
+    font-size: 11.5px;
+  }
+  .control label { color: var(--muted); }
+  .control output { text-align: right; font-variant-numeric: tabular-nums; color: var(--ink); }
+  .control select {
+    grid-column: 2 / 4;
+    width: 100%;
+    min-width: 0;
+    background: var(--surface-2);
+    border: 1px solid var(--line);
+    border-radius: 6px;
+    padding: 4px 6px;
+    font-family: var(--font-mono);
+    font-size: 11px;
+    color: var(--ink);
+  }
+  input[type="range"] {
+    -webkit-appearance: none;
+    appearance: none;
+    width: 100%;
+    height: 18px;
+    background: transparent;
+    cursor: pointer;
+  }
+  input[type="range"]::-webkit-slider-runnable-track {
+    height: 4px;
+    border-radius: 99px;
+    background: var(--surface-2);
+    border: 1px solid var(--line);
+  }
+  input[type="range"]::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    appearance: none;
+    width: 13px;
+    height: 13px;
+    margin-top: -5px;
+    border-radius: 50%;
+    background: var(--accent);
+    border: 2px solid var(--surface);
+    box-shadow: 0 0 0 1px var(--accent);
+  }
+  input[type="range"]::-moz-range-track {
+    height: 4px;
+    border-radius: 99px;
+    background: var(--surface-2);
+    border: 1px solid var(--line);
+  }
+  input[type="range"]::-moz-range-thumb {
+    width: 11px;
+    height: 11px;
+    border-radius: 50%;
+    background: var(--accent);
+    border: 2px solid var(--surface);
+  }
+
+  .btn, .btn-accent, .btn-ghost {
+    border-radius: 7px;
+    padding: 7px 11px;
+    font-family: var(--font-mono);
+    font-size: 11px;
+    letter-spacing: .02em;
+    border: 1px solid var(--line);
+    background: var(--surface);
+    color: var(--ink);
+    transition: border-color .15s ease, background .15s ease;
+    min-width: 0;
+  }
+  .btn:hover, .btn-ghost:hover { border-color: var(--accent); }
+  .btn-accent { background: var(--accent); border-color: var(--accent); color: var(--bg); font-weight: 500; }
+  .btn-accent:hover { background: var(--accent-strong); border-color: var(--accent-strong); }
+  .btn-ghost { background: transparent; }
+  .btn-row { display: flex; flex-wrap: wrap; gap: 7px; }
+  .status { font-size: 12px; line-height: 1.45; color: var(--muted); min-height: 2.9em; }
+  .status strong { color: var(--ink); font-weight: 600; }
+  .status.ok { color: var(--accent-strong); }
+  .status.wait { color: var(--reward); }
+
+  .policy-rows { display: flex; flex-direction: column; gap: 6px; }
+  .policy-row {
+    display: grid;
+    grid-template-columns: 82px minmax(0, 1fr) 44px;
+    align-items: center;
+    gap: 9px;
+    font-family: var(--font-mono);
+    font-size: 11px;
+  }
+  .policy-row .name { color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .policy-row .pct { text-align: right; font-variant-numeric: tabular-nums; color: var(--ink); }
+  .policy-row.sampled .name { color: var(--reward); font-weight: 500; }
+  .policy-row.sampled input[type="range"]::-webkit-slider-thumb { background: var(--reward); box-shadow: 0 0 0 1px var(--reward); }
+  .policy-row.sampled input[type="range"]::-moz-range-thumb { background: var(--reward); }
+  .policy-result {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 7px;
+    padding-top: 9px;
+    border-top: 1px solid var(--line);
+  }
+  .policy-result div { display: flex; flex-direction: column; gap: 1px; min-width: 0; }
+  .policy-result .k { font-family: var(--font-mono); font-size: 9px; letter-spacing: .07em; text-transform: uppercase; color: var(--muted); }
+  .policy-result b { font-family: var(--font-mono); font-size: 12px; font-weight: 500; color: var(--ink); overflow-wrap: anywhere; }
+
+  .step-strip { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 4px; min-width: 520px; }
+  .step-cell {
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-radius: 7px;
+    padding: 5px 6px;
+    display: flex;
+    flex-direction: column;
+    gap: 1px;
+    font-family: var(--font-mono);
+    font-size: 10px;
+    min-width: 0;
+  }
+  .step-cell .t { color: var(--accent); font-size: 9px; letter-spacing: .06em; }
+  .step-cell .r { color: var(--reward); }
+  .step-cell .v { color: var(--value); }
+  .chart-scroll { overflow-x: auto; overflow-y: hidden; }
+  .chart { display: block; width: 100%; height: auto; min-width: 0; }
+  .chart .axis { stroke: var(--line); stroke-width: 1.2; }
+  .chart .tick { fill: var(--muted); font-family: var(--font-mono); font-size: 10px; }
+  .chart .val { fill: var(--ink); font-family: var(--font-mono); font-size: 10px; font-variant-numeric: tabular-nums; }
+  .chart .bar-pos { fill: var(--accent); }
+  .chart .bar-neg { fill: var(--loss); }
+  .chart .curve { fill: none; stroke: var(--accent); stroke-width: 2.4; }
+  .chart .flat { stroke: var(--reward); stroke-width: 2.4; }
+  .chart .guide { stroke: var(--line); stroke-width: 1; stroke-dasharray: 3 3; }
+  .chart .region { fill: var(--surface-2); }
+  .chart .region-warn { fill: var(--loss-soft); }
+  .chart .dot { fill: var(--accent); }
+  .chart .lbl { fill: var(--muted); font-family: var(--font-mono); font-size: 10px; }
+  .chart .lbl-strong { fill: var(--ink); font-family: var(--font-mono); font-size: 10.5px; }
+  .caption { font-size: 11.5px; line-height: 1.45; color: var(--muted); }
+
+  .buffer-bar {
+    height: 16px;
+    border-radius: 99px;
+    background: var(--surface-2);
+    border: 1px solid var(--line);
+    overflow: hidden;
+  }
+  .buffer-bar span { display: block; height: 100%; width: 0; background: var(--accent); border-radius: 99px; transition: width .25s ease; }
+  .buffer-meta { display: flex; justify-content: space-between; gap: 10px; font-family: var(--font-mono); font-size: 10.5px; color: var(--muted); flex-wrap: wrap; }
+
+  .quiz-list { display: flex; flex-direction: column; gap: 12px; }
+  .quiz { background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: 14px 16px; display: flex; flex-direction: column; gap: 9px; }
+  .q { font-size: 14.5px; font-weight: 600; line-height: 1.4; display: flex; gap: 10px; align-items: baseline; }
+  .q .qnum { font-family: var(--font-mono); font-size: 10px; color: var(--accent); letter-spacing: .08em; flex: none; }
+  .options { display: grid; gap: 6px; }
+  .opt {
+    text-align: left;
+    background: var(--bg);
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    padding: 8px 11px;
+    font-size: 12.5px;
+    line-height: 1.4;
+    color: var(--ink);
+    transition: border-color .15s ease, background .15s ease;
+  }
+  .opt:hover { border-color: var(--accent); }
+  .opt.correct { border-color: var(--accent); background: var(--accent-soft); }
+  .opt.wrong { border-color: var(--loss); background: var(--loss-soft); }
+  .feedback { font-size: 12px; line-height: 1.5; color: var(--muted); }
+  .feedback.correct { color: var(--accent-strong); }
+  .feedback.wrong { color: var(--loss); }
+
+  .takeaways { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+  .takeaway { background: var(--surface); border: 1px solid var(--line); border-radius: 11px; padding: 13px 15px; display: flex; flex-direction: column; gap: 4px; }
+  .takeaway .k { font-family: var(--font-mono); font-size: 9.5px; letter-spacing: .09em; text-transform: uppercase; color: var(--accent); }
+  .takeaway b { font-size: 14.5px; line-height: 1.3; font-weight: 600; }
+  .takeaway p { font-size: 12px; color: var(--muted); line-height: 1.45; }
+
+  .foot {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 14px;
+    padding-block: 8px 10px;
+    border-top: 1px solid var(--line);
+    font-size: 11px;
+    color: var(--muted);
+    min-height: 38px;
+  }
+  .hint { display: flex; align-items: center; gap: 5px; flex-wrap: wrap; }
+  .hint .sep { opacity: .5; padding: 0 2px; }
+  .foot-title {
+    font-family: var(--font-mono);
+    font-size: 10px;
+    letter-spacing: .05em;
+    color: var(--muted);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    text-align: center;
+    flex: 1;
+  }
+  .navbtns { display: flex; gap: 6px; }
+  .navbtn {
+    width: 32px;
+    height: 28px;
+    display: grid;
+    place-items: center;
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-radius: 7px;
+    color: var(--ink);
+    font-family: var(--font-mono);
+    font-size: 14px;
+    line-height: 1;
+  }
+  .navbtn:hover { border-color: var(--accent); }
+  .navbtn:disabled { opacity: .35; cursor: default; border-color: var(--line); }
+
+  .overlay {
+    position: fixed;
+    inset: 0;
+    z-index: 50;
+    background: var(--bg);
+    overflow-y: auto;
+    padding:
+      max(18px, env(safe-area-inset-top, 0px))
+      max(18px, env(safe-area-inset-right, 0px))
+      max(18px, env(safe-area-inset-bottom, 0px))
+      max(18px, env(safe-area-inset-left, 0px));
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+  }
+  .overlay[hidden] { display: none !important; }
+  .overlay-head { display: flex; align-items: center; justify-content: space-between; gap: 14px; max-width: 1100px; width: 100%; margin: 0 auto; }
+  .overlay-head h2 { font-family: var(--font-display); font-size: 24px; font-weight: 600; letter-spacing: -.02em; }
+  .overlay-head .eyebrow { margin-bottom: 3px; }
+  .index-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 8px; max-width: 1100px; width: 100%; margin: 0 auto; }
+  .index-item {
+    display: grid;
+    grid-template-columns: 30px minmax(0, 1fr);
+    grid-template-rows: auto auto;
+    gap: 1px 8px;
+    text-align: left;
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-radius: 9px;
+    padding: 9px 10px;
+    color: var(--ink);
+    transition: border-color .15s ease;
+  }
+  .index-item:hover { border-color: var(--accent); }
+  .index-item.current { border-color: var(--accent); background: var(--accent-soft); }
+  .idx-num { grid-row: 1 / 3; font-family: var(--font-mono); font-size: 11px; color: var(--accent); padding-top: 2px; font-variant-numeric: tabular-nums; }
+  .idx-sec { font-family: var(--font-mono); font-size: 8.5px; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); }
+  .idx-title { font-size: 12.5px; line-height: 1.3; font-weight: 500; }
+
+  @media (max-width: 980px) {
+    .grid-3 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .stats { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+    .cover-wrap { grid-template-columns: 1fr; }
+    .cover-art { display: none; }
+    .split { grid-template-columns: 1fr; }
+  }
+  @media (max-width: 760px) {
+    body { font-size: 14px; }
+    .grid-2, .grid-3 { grid-template-columns: 1fr; }
+    .sec-label { display: none; }
+    .foot-title { display: none; }
+    .hint { display: none; }
+    .title { max-width: none; }
+    .slide { padding-block: 16px 20px; }
+    .takeaways { grid-template-columns: 1fr; }
+    .stats { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .display { font-size: clamp(42px, 13vw, 68px); }
+    .topbar { gap: 10px; }
+    .counter { min-width: 58px; }
+    .tb { padding: 5px 7px; font-size: 9.5px; }
+    #btn-full { display: none; }
+  }
+  @media (max-width: 600px) {
+    .chart { min-width: 520px; }
+  }
+  @media (max-width: 480px) {
+    .app { padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); }
+    .actions { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .channel { grid-template-columns: 18px 16px 84px minmax(0, 1fr); padding: 8px 10px; }
+    .channel .desc { font-size: 11px; }
+    .control { grid-template-columns: 72px minmax(0, 1fr) 52px; gap: 7px; }
+    .policy-row { grid-template-columns: 70px minmax(0, 1fr) 40px; }
+    .btn { padding: 7px 9px; }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after { animation: none !important; transition: none !important; scroll-behavior: auto !important; }
+  }
+
+
+/* ---------------------------------------------------------------
+   Componentes das aulas de IPPO e MAPPO
+   --------------------------------------------------------------- */
+.pill-row { display: flex; flex-wrap: wrap; gap: 6px; }
+.pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: .03em;
+  padding: 4px 8px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  color: var(--muted);
+  background: var(--surface);
+  white-space: nowrap;
+}
+.pill .sw { width: 7px; height: 7px; border-radius: 2px; background: var(--accent); }
+.pill.blue .sw { background: var(--value); }
+.pill.amber .sw { background: var(--reward); }
+.pill.red .sw { background: var(--loss); }
+
+.diff-grid { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 8px; }
+.diff-card {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 10px 12px;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+.diff-card .k {
+  font-family: var(--font-mono);
+  font-size: 8.5px;
+  letter-spacing: .09em;
+  text-transform: uppercase;
+  color: var(--accent);
+}
+.diff-card b { font-size: 13px; line-height: 1.3; }
+.diff-card p { font-size: 11.5px; line-height: 1.42; color: var(--muted); }
+
+.segmented {
+  display: inline-flex;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  overflow: hidden;
+  background: var(--surface);
+  flex-wrap: wrap;
+}
+.segmented button {
+  border: 0;
+  background: transparent;
+  color: var(--muted);
+  padding: 6px 10px;
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  line-height: 1;
+}
+.segmented button + button { border-left: 1px solid var(--line); }
+.segmented button[aria-pressed="true"] {
+  background: var(--accent-soft);
+  color: var(--accent-strong);
+}
+
+.scenario-panel { display: flex; flex-direction: column; gap: 8px; }
+.scenario-readout { font-family: var(--font-mono); font-size: 10.5px; color: var(--muted); overflow-wrap: anywhere; }
+.spawn-map {
+  position: relative;
+  height: 92px;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  background-color: var(--surface);
+  background-image:
+    linear-gradient(to right, var(--grid) 1px, transparent 1px),
+    linear-gradient(to bottom, var(--grid) 1px, transparent 1px);
+  background-size: 20px 20px;
+  overflow: hidden;
+}
+.spawn-band { position: absolute; top: 0; bottom: 0; border-right: 1px dashed var(--line); }
+.spawn-band:last-child { border-right: 0; }
+.spawn-band .band-label {
+  position: absolute;
+  top: 4px;
+  left: 6px;
+  font-family: var(--font-mono);
+  font-size: 8px;
+  letter-spacing: .06em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.spawn-dot {
+  position: absolute;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  transform: translate(-50%, -50%);
+  border: 2px solid var(--surface);
+  box-shadow: 0 0 0 1px currentColor;
+}
+.spawn-dot.t0 { background: var(--accent); color: var(--accent); }
+.spawn-dot.t1 { background: var(--value); color: var(--value); }
+.spawn-dot.t2 { background: var(--reward); color: var(--reward); }
+.spawn-dot.t3 { background: var(--loss); color: var(--loss); }
+
+.team-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.team-card {
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  padding: 9px 10px;
+  background: var(--surface);
+}
+.team-card .team-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  font-family: var(--font-mono);
+  font-size: 9.5px;
+  letter-spacing: .06em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.team-card .team-head b { color: var(--accent); font-weight: 500; }
+.team-card.t1 .team-head b { color: var(--value); }
+.team-card.t2 .team-head b { color: var(--reward); }
+.team-card.t3 .team-head b { color: var(--loss); }
+.reward-row {
+  display: grid;
+  grid-template-columns: 52px minmax(0, 1fr) 48px;
+  gap: 7px;
+  align-items: center;
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+}
+.reward-row label { display: flex; align-items: center; gap: 5px; color: var(--muted); }
+.reward-row .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--accent); flex: none; }
+.reward-row.t1 .dot { background: var(--value); }
+.reward-row.t2 .dot { background: var(--reward); }
+.reward-row.t3 .dot { background: var(--loss); }
+.reward-row output { text-align: right; font-variant-numeric: tabular-nums; color: var(--ink); }
+.team-avg {
+  margin-top: 7px;
+  padding-top: 6px;
+  border-top: 1px dashed var(--line);
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  color: var(--muted);
+}
+.team-avg b { color: var(--accent); font-weight: 500; font-variant-numeric: tabular-nums; }
+.team-card.t1 .team-avg b { color: var(--value); }
+.team-card.t2 .team-avg b { color: var(--reward); }
+.team-card.t3 .team-avg b { color: var(--loss); }
+
+.agent-buffers { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 6px; }
+.agent-buffer {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 7px 8px;
+  background: var(--surface);
+  min-width: 0;
+}
+.agent-buffer .head { display: flex; justify-content: space-between; gap: 4px; font-family: var(--font-mono); font-size: 9.5px; color: var(--muted); }
+.agent-buffer .head b { color: var(--ink); font-weight: 500; }
+.agent-buffer .track { height: 7px; border-radius: 99px; background: var(--surface-2); overflow: hidden; margin: 5px 0 4px; }
+.agent-buffer .fill { display: block; height: 100%; width: 0; background: var(--value); border-radius: 99px; transition: width .2s ease; }
+.agent-buffer.full .fill { background: var(--accent); }
+.agent-buffer .count { font-family: var(--font-mono); font-size: 9px; color: var(--muted); font-variant-numeric: tabular-nums; }
+
+.clock { display: flex; gap: 4px; align-items: stretch; }
+.clock-step {
+  flex: 1;
+  min-width: 0;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 6px;
+  background: var(--surface);
+}
+.clock-step .k { font-family: var(--font-mono); font-size: 8px; letter-spacing: .07em; text-transform: uppercase; color: var(--muted); }
+.clock-step.held { background: var(--accent-soft); border-color: var(--accent); }
+.clock-step .acts { display: flex; gap: 3px; flex-wrap: wrap; margin-top: 4px; }
+.clock-step .act { font-family: var(--font-mono); font-size: 8.5px; padding: 2px 4px; border-radius: 3px; background: var(--surface-2); color: var(--ink); }
+
+.trajectory-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.trajectory {
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  padding: 8px;
+  background: var(--surface);
+  min-width: 0;
+}
+.trajectory .head { display: flex; justify-content: space-between; gap: 6px; font-family: var(--font-mono); font-size: 9.5px; color: var(--muted); }
+.trajectory .head b { color: var(--ink); font-weight: 500; }
+.trajectory .cells { display: grid; grid-template-columns: repeat(6, 1fr); gap: 3px; margin-top: 6px; }
+.trajectory .cell {
+  height: 25px;
+  border-radius: 4px;
+  background: var(--surface-2);
+  display: grid;
+  place-items: center;
+  font-family: var(--font-mono);
+  font-size: 9px;
+  color: var(--muted);
+}
+.trajectory .cell.pos { background: var(--accent-soft); color: var(--accent-strong); }
+.trajectory .cell.neg { background: var(--loss-soft); color: var(--loss); }
+.concat-bar {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 7px 10px;
+  border: 1px dashed var(--accent);
+  border-radius: 8px;
+  background: var(--accent-soft);
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--accent-strong);
+  text-align: center;
+}
+
+.ctde-toggle { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.ctde {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+  align-items: stretch;
+}
+.ctde-panel {
+  border: 1px solid var(--line);
+  border-radius: 11px;
+  padding: 12px;
+  background: var(--surface);
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+  min-width: 0;
+}
+.ctde-panel.train { border-color: var(--reward); }
+.ctde-panel.exec { border-color: var(--accent); }
+.ctde-title {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  font-family: var(--font-mono);
+  font-size: 9px;
+  letter-spacing: .09em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.ctde-title b { color: var(--ink); font-weight: 500; }
+.node-row { display: flex; gap: 5px; flex-wrap: wrap; }
+.node {
+  font-family: var(--font-mono);
+  font-size: 9.5px;
+  line-height: 1.2;
+  padding: 5px 7px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--surface-2);
+  color: var(--ink);
+}
+.node.agent { border-color: var(--value); background: var(--value-soft); color: var(--value); }
+.node.actor { border-color: var(--accent); background: var(--accent-soft); color: var(--accent-strong); }
+.node.critic { border-color: var(--reward); background: var(--reward-soft); color: var(--reward); }
+.node.out { border-color: var(--ink); }
+.ctde-arrow { text-align: center; font-family: var(--font-mono); font-size: 11px; color: var(--muted); line-height: 1; }
+.ctde-note { font-family: var(--font-mono); font-size: 9px; line-height: 1.45; color: var(--muted); }
+.ctde.exec .critic-node { opacity: .25; filter: grayscale(1); }
+.ctde.exec .critic-link { opacity: .25; text-decoration: line-through; }
+.ctde .critic-node, .ctde .critic-link { transition: opacity .2s ease; }
+
+.shape-row { display: flex; flex-direction: column; gap: 8px; }
+.shape-big {
+  font-family: var(--font-mono);
+  font-size: clamp(28px, 4vw, 44px);
+  letter-spacing: -.04em;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+}
+.shape-formula {
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  line-height: 1.6;
+  color: var(--muted);
+  overflow-wrap: anywhere;
+}
+.onehot { display: flex; gap: 3px; flex-wrap: wrap; }
+.onehot span {
+  font-family: var(--font-mono);
+  font-size: 9.5px;
+  padding: 3px 6px;
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  color: var(--muted);
+}
+.onehot span.on { background: var(--reward-soft); border-color: var(--reward); color: var(--reward); }
+
+.joint-assembly { display: flex; flex-direction: column; gap: 8px; }
+.joint-slots { display: flex; gap: 5px; flex-wrap: wrap; }
+.joint-slot {
+  width: 46px;
+  height: 34px;
+  border: 1px dashed var(--line);
+  border-radius: 6px;
+  display: grid;
+  place-items: center;
+  font-family: var(--font-mono);
+  font-size: 9px;
+  color: var(--muted);
+  background: transparent;
+}
+.joint-slot.filled {
+  border-style: solid;
+  border-color: var(--accent);
+  background: var(--accent-soft);
+  color: var(--accent-strong);
+}
+.joint-record {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+  font-family: var(--font-mono);
+  font-size: 9.5px;
+  color: var(--muted);
+  border-top: 1px dashed var(--line);
+  padding-top: 7px;
+}
+.joint-chip {
+  padding: 2px 5px;
+  border-radius: 4px;
+  background: var(--accent-soft);
+  color: var(--accent-strong);
+  font-size: 8.5px;
+}
+
+.batch-grid { display: grid; gap: 2px; margin-top: 6px; }
+.batch-cell { height: 9px; border-radius: 2px; background: var(--surface-2); }
+.batch-cell.a0 { background: var(--accent); }
+.batch-cell.a1 { background: var(--value); }
+.batch-cell.a2 { background: var(--reward); }
+.batch-cell.a3 { background: var(--loss); }
+
+.memory { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.memory-lane {
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  padding: 8px;
+  background: var(--surface);
+  min-width: 0;
+}
+.memory-lane .head {
+  display: flex;
+  justify-content: space-between;
+  gap: 6px;
+  font-family: var(--font-mono);
+  font-size: 9px;
+  letter-spacing: .06em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.memory-blocks { display: flex; gap: 3px; flex-wrap: wrap; margin-top: 6px; }
+.memory-block {
+  height: 12px;
+  flex: 1 1 12px;
+  border-radius: 2px;
+  background: var(--value-soft);
+  border: 1px solid var(--value);
+}
+.memory-block.gpu { background: var(--accent-soft); border-color: var(--accent); }
+.memory-note { font-family: var(--font-mono); font-size: 9px; line-height: 1.4; color: var(--muted); margin-top: 5px; }
+
+.small-table table { min-width: 0; font-size: 12px; }
+.compare-3 th:nth-child(2), .compare-3 td:nth-child(2) { background: color-mix(in srgb, var(--accent-soft) 45%, transparent); }
+.compare-3 th:nth-child(3), .compare-3 td:nth-child(3) { background: color-mix(in srgb, var(--reward-soft) 35%, transparent); }
+.tag {
+  display: inline-block;
+  font-family: var(--font-mono);
+  font-size: 8.5px;
+  letter-spacing: .06em;
+  text-transform: uppercase;
+  padding: 2px 5px;
+  border-radius: 3px;
+  background: var(--accent-soft);
+  color: var(--accent-strong);
+}
+.tag.amber { background: var(--reward-soft); color: var(--reward); }
+.tag.blue { background: var(--value-soft); color: var(--value); }
+
+@media (max-width: 980px) {
+  .diff-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .ctde { grid-template-columns: 1fr; }
+}
+@media (max-width: 760px) {
+  .diff-grid { grid-template-columns: 1fr; }
+  .team-grid, .trajectory-grid, .memory { grid-template-columns: 1fr; }
+  .agent-buffers { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+.joint-assembly > .btn-ghost { align-self: flex-start; }
+.onehot span { cursor: pointer; }
+</style>
+
+<div class="app">
+  <div class="progress" aria-hidden="true"><span id="progress-fill"></span></div>
+
+  <header class="topbar">
+    <div class="brand">
+      <span class="dot"></span>
+      <span><b>MAPPO</b> // rl-arena</span>
+      <span class="sec-label" id="sec-label">abertura</span>
+    </div>
+    <div class="top-actions">
+      <button class="tb" id="btn-index" type="button">Índice</button>
+      <button class="tb" id="btn-full" type="button">Tela cheia</button>
+      <span class="counter" id="counter">01 / 18</span>
+    </div>
+  </header>
+
+  <main class="stage" id="stage">
+
+    <!-- 1 -->
+    <section class="slide" id="slide-1" data-section="abertura" data-title="MAPPO no rl-arena">
+      <div class="slide-inner">
+        <div class="cover-wrap">
+          <div class="cover-copy">
+            <div class="eyebrow">aula 3 · multiagente com crítico centralizado</div>
+            <h1 class="display">MAPPO no<br><span class="thin">rl-arena</span></h1>
+            <p class="lede">O mesmo ator do IPPO com um crítico que vê todos os agentes no treino. Em execução, cada agente volta a decidir sozinho.</p>
+            <div class="chips">
+              <span class="chip green">ator compartilhado</span>
+              <span class="chip">crítico centralizado</span>
+              <span class="chip">CTDE</span>
+              <span class="chip">471 linhas de código</span>
+            </div>
+            <div class="cover-foot">
+              <span class="mono">algs/alg_mappo/ · worktree mappo-multiagent</span>
+              <span>Use <kbd>→</kbd> para começar</span>
+            </div>
+            <div class="cover-refs">
+              <div class="ref">
+                <span class="ref-tag">paper</span>
+                <a href="https://arxiv.org/abs/2103.01955" target="_blank" rel="noopener">Yu et al., “The Surprising Effectiveness of PPO in Cooperative Multi-Agent Games” (NeurIPS 2022) <span class="src">arXiv:2103.01955</span></a>
+              </div>
+              <div class="ref">
+                <span class="ref-tag">CTDE</span>
+                <a href="https://arxiv.org/abs/1706.02275" target="_blank" rel="noopener">Lowe et al., “Multi-Agent Actor-Critic for Mixed Cooperative-Competitive Environments” (2017) <span class="src">arXiv:1706.02275</span></a>
+              </div>
+              <div class="ref">
+                <span class="ref-tag">código</span>
+                <a href="https://github.com/marlbenchmark/on-policy" target="_blank" rel="noopener">marlbenchmark/on-policy — implementação oficial de MAPPO <span class="src">github.com/marlbenchmark/on-policy</span></a>
+              </div>
+            </div>
+          </div>
+          <div class="cover-art" aria-hidden="true">
+            <div class="mini-map">
+              <span class="platform" style="left:0;top:82%;width:100%"></span>
+              <span class="platform" style="left:10%;top:58%;width:26%"></span>
+              <span class="platform" style="left:56%;top:46%;width:30%"></span>
+              <span class="unit player" style="left:22%;top:68%"></span>
+              <span class="unit opponent" style="left:40%;top:68%"></span>
+              <span class="unit opponent" style="left:66%;top:68%;background:var(--reward);box-shadow:0 0 0 4px var(--reward-soft)"></span>
+              <span class="unit opponent" style="left:82%;top:68%;background:var(--loss);box-shadow:0 0 0 4px var(--loss-soft)"></span>
+              <span class="unit coin" style="left:50%;top:30%"></span>
+              <span class="unit coin" style="left:74%;top:38%"></span>
+              <span style="position:absolute;inset:18% 20% auto 20%;height:58%;border:1px dashed var(--reward);border-radius:50%;opacity:.55"></span>
+            </div>
+            <span class="mini-caption">4 atores locais<br>1 crítico central</span>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- 2 -->
+    <section class="slide" id="slide-2" data-section="visão geral" data-title="Do IPPO ao MAPPO em uma frase">
+      <div class="slide-inner">
+        <div>
+          <div class="eyebrow">visão geral · a troca</div>
+          <h2 class="title">Do IPPO ao MAPPO em uma frase</h2>
+        </div>
+        <p class="lede">O ator é o mesmo: uma política compartilhada, local, que decide com a observação egocêntrica. O que muda é o crítico: ele deixa de ser local e passa a ver o estado conjunto.</p>
+
+        <div class="grid-2">
+          <div class="card">
+            <h3 style="color:var(--accent)">IPPO · crítico local</h3>
+            <p>V(s<sub>i</sub>) é estimado só com a observação do agente <span class="mono">i</span>. Cada agente tem uma trajetória e um buffer; o GAE usa o valor local.</p>
+            <div class="pill-row" style="margin-top:9px">
+              <span class="pill"><span class="sw"></span>1 ator</span>
+              <span class="pill blue"><span class="sw"></span>V local</span>
+              <span class="pill"><span class="sw"></span>N buffers</span>
+            </div>
+          </div>
+          <div class="card" style="border-color:var(--reward)">
+            <h3 style="color:var(--reward)">MAPPO · crítico centralizado</h3>
+            <p>V(s<sub>global</sub>) vê as features de <b>todos</b> os agentes no mesmo passo, mais um one-hot que diz qual agente está sendo avaliado. O ator continua local.</p>
+            <div class="pill-row" style="margin-top:9px">
+              <span class="pill"><span class="sw"></span>1 ator</span>
+              <span class="pill amber"><span class="sw"></span>V central</span>
+              <span class="pill"><span class="sw"></span>buffer conjunto</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="note"><span class="mark">CTDE</span><span><b>Centralized Training, Decentralized Execution.</b> O crítico centralizado é uma muleta de treino: ele reduz a variância do gradiente porque vê o estado conjunto. Na execução, ele desaparece; cada agente usa só a própria observação.</span></div>
+        <div class="note warn"><span class="mark">!</span><span><b>O ator não fica centralizado.</b> Se o ator usasse o estado global, a política não poderia rodar de forma independente. O MAPPO move o privilégio de informação apenas para o crítico.</span></div>
+      </div>
+    </section>
+
+    <!-- 3 -->
+    <section class="slide" id="slide-3" data-section="ctde" data-title="CTDE: dois momentos">
+      <div class="slide-inner">
+        <div>
+          <div class="eyebrow">ctde · treino vs execução</div>
+          <h2 class="title">CTDE: dois momentos</h2>
+        </div>
+        <p class="lede">O mesmo conjunto de agentes, duas topologias de informação. Alterne para ver o que o crítico adiciona no treino e o que sobra na execução.</p>
+
+        <div class="ctde-toggle">
+          <div class="segmented" role="group" aria-label="Momento">
+            <button type="button" data-ctde="train" aria-pressed="true">treino</button>
+            <button type="button" data-ctde="exec" aria-pressed="false">execução</button>
+          </div>
+          <span class="caption" id="ctde-status">O crítico vê o estado conjunto e alimenta o GAE.</span>
+        </div>
+
+        <div class="ctde" id="ctde">
+          <div class="ctde-panel train" id="ctde-panel">
+            <div class="ctde-title"><span>fluxo</span><b id="ctde-mode">treino centralizado</b></div>
+            <div class="node-row">
+              <span class="node agent">a0</span><span class="node agent">a1</span><span class="node agent">a2</span><span class="node agent">a3</span>
+            </div>
+            <div class="ctde-arrow">↓ observações locais</div>
+            <div class="node-row">
+              <span class="node actor">ator compartilhado</span>
+              <span class="node critic critic-node">crítico central</span>
+            </div>
+            <div class="ctde-arrow critic-link">↓ V(s_global) por agente</div>
+            <div class="node-row"><span class="node out" id="ctde-out">GAE → update</span></div>
+            <p class="ctde-note" id="ctde-panel-note">O crítico consome as features de todos os agentes no mesmo passo.</p>
+          </div>
+          <div class="card">
+            <h3 id="ctde-side-title">No treino</h3>
+            <p id="ctde-side-text">O crítico centralizado vê as features de todos os agentes e devolve um V por agente. Esse V alimenta o GAE e reduz a variância do gradiente. O ator continua local.</p>
+            <div class="pill-row" style="margin-top:10px">
+              <span class="pill amber"><span class="sw"></span>estado conjunto</span>
+              <span class="pill"><span class="sw"></span>1 ator</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="note"><span class="mark">→</span><span><b>A chave é a assimetria.</b> O ator nunca vê o one-hot nem as features dos outros; o crítico vê. O gradiente da política é calculado com um valor mais informado, mas a ação continua descentralizada.</span></div>
+      </div>
+    </section>
+
+    <!-- 4 -->
+    <section class="slide" id="slide-4" data-section="crítico" data-title="O crítico centralizado por dentro">
+      <div class="slide-inner">
+        <div>
+          <div class="eyebrow">crítico · arquitetura</div>
+          <h2 class="title">O crítico centralizado por dentro</h2>
+        </div>
+        <p class="lede">A CNN é compartilhada entre ator e crítico. O ator usa 1280 features do agente consultado; o crítico concatena as 1280 features de todos e acrescenta o one-hot.</p>
+
+        <div class="split">
+          <div class="stack">
+            <pre class="code"><span class="c"># model.py: o crítico recebe o estado conjunto</span>
+joint = feats.reshape(batch, n_agents * n_features)
+shared = joint.unsqueeze(<span class="n">1</span>).expand(
+    batch, n_agents, joint.shape[<span class="n">1</span>])
+onehot = self.agent_onehot.unsqueeze(<span class="n">0</span>).expand(
+    batch, n_agents, n_agents)
+critic_in = torch.cat([shared, onehot], dim=<span class="n">2</span>)
+<span class="k">return</span> self.critic(critic_in).squeeze(-<span class="n">1</span>)</pre>
+            <div class="note"><span class="mark">1×</span><span><b>Uma CNN, duas cabeças.</b> O gradiente do crítico também atualiza a base convolucional. As features são calculadas uma vez por agente e servem ao ator e ao crítico.</span></div>
+          </div>
+          <div class="lab">
+            <div class="lab-head"><span>forma do crítico</span><b>n × 1280 + n</b></div>
+            <div class="control"><label for="mappo-agents">n agentes</label><input id="mappo-agents" type="range" min="2" max="6" step="1" value="4"><output id="mappo-agents-out">4</output></div>
+            <div class="shape-big" id="critic-input">5124</div>
+            <div class="shape-formula" id="critic-formula">4 × 1280 + 4 = 5124 entradas</div>
+            <div class="onehot" id="onehot" aria-label="one-hot do agente consultado"></div>
+            <p class="caption">O ator usa 1280 features do agente consultado; o crítico usa o vetor acima, com o one-hot do agente. A saída é um V por agente.</p>
+          </div>
+        </div>
+
+        <div class="grid-3">
+          <div class="card"><h3>Ator</h3><p>MLP 128 → 6 logits. Entrada: só a observação local do agente que age.</p></div>
+          <div class="card"><h3>Crítico</h3><p>MLP 128 → 1. Entrada: features conjuntas + one-hot; saída: V para cada agente.</p></div>
+          <div class="card"><h3>Base</h3><p>A mesma CNN de 3 convoluções do PPO/IPPO. O flatten dá 1280 features por agente.</p></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- 5 -->
+    <section class="slide" id="slide-5" data-section="crítico" data-title="O que o crítico vê que o ator não vê">
+      <div class="slide-inner">
+        <div>
+          <div class="eyebrow">crítico · dependência entre agentes</div>
+          <h2 class="title">O que o crítico vê que o ator não vê</h2>
+        </div>
+        <p class="lede">O valor de um agente depende das features dos outros. O teste do pacote verifica exatamente isso: mexa na feature do agente 1 e o V do agente 0 muda.</p>
+
+        <div class="split">
+          <div class="stack">
+            <div class="code-label">tests/test_mappo.py</div>
+            <pre class="code">feats = torch.randn(<span class="n">1</span>, <span class="n">2</span>, net.n_features)
+values = net.joint_values(feats)
+
+changed = feats.clone()
+changed[:, <span class="n">1</span>] += <span class="n">1.0</span>
+values_changed = net.joint_values(changed)
+
+<span class="c"># o V do agente 0 muda quando o agente 1 muda</span>
+assert <span class="k">not</span> torch.allclose(values[:, <span class="n">0</span>],
+                           values_changed[:, <span class="n">0</span>])</pre>
+          </div>
+          <div class="stack">
+            <div class="card">
+              <h3>Por que isso ajuda</h3>
+              <p>O GAE de cada agente usa um valor que incorpora o estado conjunto. Em times, o crítico consegue aprender que uma jogada do aliado muda o valor do agente; o crítico local só vê a própria grade.</p>
+            </div>
+            <div class="note warn"><span class="mark">!</span><span><b>Neste mapa, a grade já é global.</b> O canal de cada agente mostra todos os personagens. O ganho do MAPPO aqui não é “ver o que estava escondido”: é o vetor conjunto de features, a identidade pelo one-hot e a variância menor. Em mapas parcialmente observáveis, o ganho é maior.</span></div>
+            <div class="note loss"><span class="mark">×</span><span><b>O ator não muda.</b> <span class="mono">forward(x)</span> devolve só os logits do ator; <span class="mono">joint_values</span> é usado apenas no update. Em <span class="mono">act</span>/<span class="mono">act_batch</span>, nada global é consultado.</span></div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- 6 -->
+    <section class="slide" id="slide-6" data-section="buffer" data-title="O buffer vira passos conjuntos">
+      <div class="slide-inner">
+        <div>
+          <div class="eyebrow">buffer · MultiAgentRolloutBuffer</div>
+          <h2 class="title">O buffer vira passos conjuntos</h2>
+        </div>
+        <p class="lede">O IPPO tem um buffer por agente. O MAPPO tem um registro por passo conjunto: as observações de todos os agentes no mesmo instante, lado a lado.</p>
+
+        <div class="split">
+          <div class="lab">
+            <div class="lab-head"><span>montagem do passo conjunto</span><b id="joint-count">T = 0</b></div>
+            <div class="joint-assembly">
+              <div class="joint-slots" id="joint-slots"></div>
+              <div class="btn-row" id="joint-buttons">
+                <button class="btn" type="button" data-add-agent="0">+ agente 0</button>
+                <button class="btn" type="button" data-add-agent="1">+ agente 1</button>
+                <button class="btn" type="button" data-add-agent="2">+ agente 2</button>
+                <button class="btn" type="button" data-add-agent="3">+ agente 3</button>
+              </div>
+              <div class="status" id="joint-status" aria-live="polite">Adicione os quatro agentes para fechar um passo conjunto.</div>
+              <div class="joint-record" id="joint-records">nenhum passo conjunto completo</div>
+              <div class="buffer-meta"><span id="joint-len">len = 0 transições</span><span>n_steps = passos conjuntos</span></div>
+              <button class="btn-ghost" id="joint-reset" type="button">Zerar buffer</button>
+            </div>
+          </div>
+          <div class="stack">
+            <pre class="code">def <span class="k">add</span>(self, agent_index, state, ...):
+    <span class="k">if</span> index <span class="k">in</span> self._pending:
+        <span class="k">raise</span> ValueError(<span class="s">"agente duplicado"</span>)
+    self._pending[index] = (...)
+    <span class="k">if</span> len(self._pending) == self.n_agents:
+        self._commit()   <span class="c"># um registro conjunto</span></pre>
+            <ul class="list">
+              <li><span class="bullet"></span><span><b>Um registro, n agentes.</b> <span class="mono">states</span> tem forma <span class="mono">(T, n, C, H, W)</span>; ações, recompensas e terminadores têm <span class="mono">(T, n)</span>.</span></li>
+              <li><span class="bullet"></span><span><b>Duplicata é erro.</b> O mesmo agente não pode contribuir duas vezes no mesmo passo conjunto.</span></li>
+              <li><span class="bullet amber"></span><span><b>Duas contagens.</b> <span class="mono">n_steps</span> conta passos conjuntos; <span class="mono">len</span> conta transições (<span class="mono">T·n</span>).</span></li>
+            </ul>
+            <div class="note"><span class="mark">=</span><span>No loop real, <span class="mono">add_transition(i, ...)</span> é chamado uma vez por agente, na ordem 0..n−1. O buffer só grava quando o passo está completo; o crítico centralizado precisa exatamente disso.</span></div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- 7 -->
+    <section class="slide" id="slide-7" data-section="buffer" data-title="O gatilho é o passo conjunto">
+      <div class="slide-inner">
+        <div>
+          <div class="eyebrow">buffer · o gatilho do update</div>
+          <h2 class="title">O gatilho é o passo conjunto</h2>
+        </div>
+        <p class="lede">O IPPO espera todos os buffers por agente. O MAPPO espera o rollout ter 1024 passos conjuntos. O horizonte é o mesmo; a estrutura de dados é que muda.</p>
+
+        <div class="grid-2">
+          <div class="card">
+            <h3 style="color:var(--accent)">IPPO</h3>
+            <p><span class="mono">learn()</span> verifica <span class="mono">any(len(buffer) &lt; 1024)</span> nos n buffers. Cada buffer tem 1024 transições; o update concatena 4096 com 4 agentes.</p>
+          </div>
+          <div class="card" style="border-color:var(--reward)">
+            <h3 style="color:var(--reward)">MAPPO</h3>
+            <p><span class="mono">learn()</span> verifica <span class="mono">buffer.n_steps &lt; 1024</span>. São 1024 passos conjuntos, cada um com 4 transições; o total também é 4096.</p>
+          </div>
+        </div>
+
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>pergunta</th><th>IPPO</th><th>MAPPO</th></tr></thead>
+            <tbody>
+              <tr><td>O que conta o horizonte?</td><td>1024 transições por agente</td><td>1024 passos conjuntos</td></tr>
+              <tr><td>Quando o update dispara?</td><td>todos os n buffers cheios</td><td><span class="mono">n_steps ≥ rollout_steps</span></td></tr>
+              <tr><td>Transições no update (n=4)</td><td>4 × 1024 = 4096</td><td>1024 × 4 = 4096</td></tr>
+              <tr><td>O que o buffer guarda por passo</td><td>1 transição em cada buffer</td><td>1 registro com n transições</td></tr>
+              <tr><td>O que o crítico consome</td><td>V(s_i) local</td><td>V(s_global) por agente</td></tr>
+            </tbody>
+          </table>
+        </div>
+
+        <div class="note"><span class="mark">=</span><span><b>O total bate, a unidade muda.</b> O MAPPO não coleta mais dados que o IPPO; ele apenas organiza o mesmo passo conjunto em um registro que o crítico centralizado consegue ler.</span></div>
+      </div>
+    </section>
+
+    <!-- 8 -->
+    <section class="slide" id="slide-8" data-section="atualização" data-title="GAE por agente, valores centralizados">
+      <div class="slide-inner">
+        <div>
+          <div class="eyebrow">atualização · GAE</div>
+          <h2 class="title">GAE por agente, valores centralizados</h2>
+        </div>
+        <p class="lede">O GAE continua sendo calculado por coluna: uma trajetória por agente, sem atravessar de um agente para outro. A diferença é que cada V vem do crítico centralizado.</p>
+
+        <div class="concat-bar" style="border-color:var(--reward);background:var(--reward-soft);color:var(--reward)">crítico central → values (T, n) → V<sub>i,t</sub> para cada agente</div>
+        <div class="trajectory-grid">
+          <div class="trajectory">
+            <div class="head"><b>agente 0</b><span>GAE backward</span></div>
+            <div class="cells"><span class="cell pos">A0</span><span class="cell pos">A1</span><span class="cell neg">A2</span><span class="cell neg">A3</span><span class="cell pos">A4</span><span class="cell pos">A5</span></div>
+          </div>
+          <div class="trajectory">
+            <div class="head"><b>agente 1</b><span>GAE backward</span></div>
+            <div class="cells"><span class="cell neg">A0</span><span class="cell pos">A1</span><span class="cell pos">A2</span><span class="cell pos">A3</span><span class="cell neg">A4</span><span class="cell neg">A5</span></div>
+          </div>
+        </div>
+
+        <div class="split">
+          <div class="stack">
+            <pre class="code">n_steps, n_agents = rewards.shape
+<span class="k">for</span> agent <span class="k">in</span> range(n_agents):
+    gae = <span class="n">0</span>
+    <span class="k">for</span> t <span class="k">in</span> reversed(range(n_steps)):
+        nonterminal = <span class="n">1.0</span> - terminated[t, agent].float()
+        delta = (rewards[t, agent]
+                 + gamma * nonterminal * next_values[t, agent]
+                 - values[t, agent])
+        propagates = (<span class="n">1.0</span> - episode_ends[t, agent].float()) * nonterminal
+        gae = delta + gamma * gae_lambda * propagates * gae
+        advantages[t, agent] = gae</pre>
+          </div>
+          <div class="stack">
+            <ul class="list">
+              <li><span class="bullet"></span><span><b>Mesma recorrência do PPO.</b> A diferença é que <span class="mono">values</span> tem shape <span class="mono">(T, n)</span> e vem de <span class="mono">joint_values</span>.</span></li>
+              <li><span class="bullet amber"></span><span><b>Normalização conjunta.</b> As vantagens são normalizadas sobre todas as <span class="mono">T × n</span> entradas, não por agente.</span></li>
+              <li><span class="bullet"></span><span><b>Retornos.</b> <span class="mono">returns = advantages + values</span>; o crítico centralizado é o alvo do MSE.</span></li>
+            </ul>
+            <div class="note"><span class="mark">◎</span><span><b>O crítico não entra na ação.</b> O ator usa <span class="mono">forward(x)</span> no update; o crítico só fornece o valor para o GAE e para a perda de valor.</span></div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- 9 -->
+    <section class="slide" id="slide-9" data-section="atualização" data-title="Minibatches de passos conjuntos">
+      <div class="slide-inner">
+        <div>
+          <div class="eyebrow">atualização · minibatches</div>
+          <h2 class="title">Minibatches de passos conjuntos</h2>
+        </div>
+        <p class="lede">O MAPPO não sorteia transições soltas. Cada minibatch é um bloco de passos conjuntos: a CNN roda uma vez por agente e alimenta o ator e o crítico.</p>
+
+        <div class="split">
+          <div class="stack">
+            <pre class="code">steps_per_batch = max(<span class="n">1</span>, self.batch_size // n_agents)
+...
+mb_idx = idx.to(self.device)
+mb_states = states[idx].to(self.device)   <span class="c"># (S, n, C, H, W)</span>
+mb_feats = self._features(mb_states)       <span class="c"># (S, n, F)</span>
+mb_logits = self.online.actor(mb_feats)
+mb_values = self.online.joint_values(mb_feats)</pre>
+            <div class="note"><span class="mark">S</span><span><b>O batch_size é em transições.</b> O código arredonda para baixo em blocos de passos: <span class="mono">batch_size // n_agents</span>. Com 64 e 4 agentes, cada minibatch tem 16 passos conjuntos = 64 transições.</span></div>
+            <div class="note warn"><span class="mark">!</span><span><b>Um forward para os dois.</b> <span class="mono">_features</span> achata <span class="mono">(S, n, C, H, W)</span> em <span class="mono">(S·n, C, H, W)</span>, roda a CNN e devolve <span class="mono">(S, n, F)</span>. O ator lê a mesma feature que o crítico.</span></div>
+          </div>
+          <div class="lab">
+            <div class="lab-head"><span>composição do minibatch</span><b>batch_size // n</b></div>
+            <div class="control"><label for="batch-size">batch_size</label><input id="batch-size" type="range" min="32" max="64" step="32" value="64"><output id="batch-size-out">64</output></div>
+            <div class="control"><label for="batch-agents">n agentes</label><input id="batch-agents" type="range" min="2" max="6" step="1" value="4"><output id="batch-agents-out">4</output></div>
+            <div class="stats">
+              <div class="stat"><b id="steps-per-batch">16</b><span>passos conjuntos</span></div>
+              <div class="stat"><b id="transitions-batch">64</b><span>transições</span></div>
+              <div class="stat"><b id="batches-epoch">64</b><span>minibatches/época</span></div>
+              <div class="stat"><b id="adam-steps">256</b><span>passos de Adam</span></div>
+            </div>
+            <div class="batch-grid" id="batch-grid" aria-hidden="true"></div>
+            <p class="caption">Cada linha é um agente; cada coluna, um passo conjunto. As cores mostram as transições de cada agente no mesmo bloco.</p>
+          </div>
+        </div>
+        <div class="note"><span class="mark">4×16</span><span>Com 1024 passos conjuntos e 16 passos por minibatch, são 64 minibatches por época. Quatro épocas dão 256 passos de Adam por rollout.</span></div>
+      </div>
+    </section>
+
+    <!-- 10 -->
+    <section class="slide" id="slide-10" data-section="atualização" data-title="A perda e o valor recortado">
+      <div class="slide-inner">
+        <div>
+          <div class="eyebrow">atualização · perda</div>
+          <h2 class="title">A perda e o valor recortado</h2>
+        </div>
+        <p class="lede">A perda do ator é a mesma do PPO. A novidade opcional é o <span class="mono">value_clip</span>, que limita o passo do crítico em torno do valor antigo.</p>
+
+        <div class="split">
+          <div class="stack">
+            <pre class="code">ratio = torch.exp(log_probs - old_log_probs[idx])
+policy_loss = -torch.min(
+    ratio * adv,
+    torch.clamp(ratio, <span class="n">1.0</span> - self.clip,
+                <span class="n">1.0</span> + self.clip) * adv).mean()
+
+<span class="k">if</span> self.value_clip <span class="k">is</span> <span class="k">None</span>:
+    value_loss = mse(mb_values, mb_returns)
+<span class="k">else</span>:
+    old = values_old[mb_idx]
+    clipped = old + torch.clamp(
+        mb_values - old,
+        -self.value_clip, self.value_clip)
+    value_loss = torch.max(
+        mse(mb_values, mb_returns),
+        mse(clipped, mb_returns))
+
+loss = policy_loss + <span class="n">0.5</span> * value_loss - <span class="n">0.01</span> * entropy</pre>
+          </div>
+          <div class="stack">
+            <div class="grid-3">
+              <div class="card"><h3 style="color:var(--accent)">política</h3><p>Recorte 0,2. Peso 1.</p></div>
+              <div class="card"><h3 style="color:var(--value)">valor</h3><p>MSE com o retorno. Peso 0,5.</p></div>
+              <div class="card"><h3 style="color:var(--reward)">entropia</h3><p>Bônus de diversidade. Peso 0,01.</p></div>
+            </div>
+            <div class="stats">
+              <div class="stat"><b>2,5e−4</b><span>Adam lr</span></div>
+              <div class="stat"><b>4</b><span>épocas</span></div>
+              <div class="stat"><b>64</b><span>batch_size</span></div>
+              <div class="stat"><b>0,2</b><span>clip</span></div>
+              <div class="stat"><b>None</b><span>value_clip</span></div>
+            </div>
+            <div class="note"><span class="mark">↔</span><span><b>O gradiente do crítico também treina a CNN.</b> A base convolucional recebe sinal das duas perdas. O <span class="mono">value_clip</span> é opcional: sem ele, o crítico pode dar um passo grande quando o retorno muda muito.</span></div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- 11 -->
+    <section class="slide" id="slide-11" data-section="atualização" data-title="Memória: rollout na CPU">
+      <div class="slide-inner">
+        <div>
+          <div class="eyebrow">atualização · memória</div>
+          <h2 class="title">Memória: rollout na CPU, blocos para a GPU</h2>
+        </div>
+        <p class="lede">Um rollout de 1024 passos × 4 agentes com frame stack ocupa centenas de megabytes. Manter tudo no device junto com as ativações pode estourar uma GPU pequena.</p>
+
+        <div class="memory">
+          <div class="memory-lane">
+            <div class="head"><span>CPU</span><b>rollout inteiro</b></div>
+            <div class="memory-blocks">
+              <span class="memory-block"></span><span class="memory-block"></span><span class="memory-block"></span><span class="memory-block"></span><span class="memory-block"></span><span class="memory-block"></span><span class="memory-block"></span><span class="memory-block"></span>
+            </div>
+            <div class="memory-note">states, next_states, actions, rewards, terminated e episode_ends ficam aqui.</div>
+          </div>
+          <div class="memory-lane">
+            <div class="head"><span>GPU</span><b>um bloco por vez</b></div>
+            <div class="memory-blocks">
+              <span class="memory-block gpu"></span><span class="memory-block gpu"></span><span class="memory-block gpu"></span>
+            </div>
+            <div class="memory-note">chunks de <span class="mono">eval_chunk_steps = 64</span> para recalcular log-probs e valores.</div>
+          </div>
+        </div>
+
+        <div class="split">
+          <div class="stack">
+            <ul class="list">
+              <li><span class="bullet"></span><span><b>Recalcular em blocos.</b> O <span class="mono">_update</span> varre o rollout em chunks de 64 passos, manda cada chunk para a GPU e traz log-probs/valores de volta para a CPU.</span></li>
+              <li><span class="bullet"></span><span><b>GAE na CPU.</b> A recorrência é feita com os valores na CPU; só vantagens, retornos e os minibatches voltam ao device.</span></li>
+              <li><span class="bullet amber"></span><span><b>Um knob de memória.</b> <span class="mono">eval_chunk_steps</span> não muda o algoritmo; muda o pico de memória e o número de transfers.</span></li>
+            </ul>
+          </div>
+          <div class="stack">
+            <div class="note warn"><span class="mark">!</span><span><b>O buffer não vai inteiro para a GPU.</b> O minibatch é montado a partir do array na CPU e transferido só quando o bloco é usado. É o que permite treinar 4 agentes com frame stack em 6 GB.</span></div>
+            <div class="note"><span class="mark">→</span><span><b>O contraste com o PPO.</b> O PPO de um agente cabe no device; o MAPPO precisa desse cuidado porque o estado conjunto multiplica o rollout por <span class="mono">n_agents</span>.</span></div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- 12 -->
+    <section class="slide" id="slide-12" data-section="comparativo" data-title="MAPPO × IPPO × PPO">
+      <div class="slide-inner">
+        <div>
+          <div class="eyebrow">comparativo · o pedido da aula</div>
+          <h2 class="title">MAPPO × IPPO × PPO</h2>
+        </div>
+        <p class="lede">O mesmo PPO, três contratos de informação e de dados. A linha do crítico é a que separa o IPPO do MAPPO.</p>
+
+        <div class="table-wrap">
+          <table class="compare-3">
+            <thead><tr><th>peça</th><th>PPO</th><th>IPPO</th><th>MAPPO</th></tr></thead>
+            <tbody>
+              <tr><td>Ator</td><td>1 política para o jogador</td><td>1 política compartilhada</td><td>1 política compartilhada</td></tr>
+              <tr><td>Crítico</td><td>V(s) local</td><td>V(s_i) local por agente</td><td>V(s_global) por agente</td></tr>
+              <tr><td>Entrada do crítico</td><td>observação do jogador</td><td>observação do agente i</td><td>features de todos + one-hot</td></tr>
+              <tr><td>Buffer</td><td>1 rollout</td><td>n rollouts por agente</td><td>1 buffer de passos conjuntos</td></tr>
+              <tr><td>Gatilho</td><td>buffer ≥ 1024</td><td>todos os buffers ≥ 1024</td><td><span class="mono">n_steps ≥ 1024</span></td></tr>
+              <tr><td>GAE</td><td>1 trajetória</td><td>n trajetórias</td><td>n colunas, valores centrais</td></tr>
+              <tr><td>Minibatch</td><td>64 transições</td><td>64 transições concatenadas</td><td>bloco de passos conjuntos</td></tr>
+              <tr><td>Execução</td><td>local</td><td>local</td><td>local (crítico não usado)</td></tr>
+              <tr><td>Checkpoint</td><td><span class="mono">ppo</span></td><td><span class="mono">ippo</span></td><td><span class="mono">mappo</span></td></tr>
+              <tr><td>CLI</td><td><span class="mono">--alg ppo</span></td><td><span class="mono">--alg ippo</span></td><td><span class="mono">--alg mappo</span></td></tr>
+            </tbody>
+          </table>
+        </div>
+
+        <div class="note"><span class="mark">=</span><span><b>O que não muda:</b> a CNN, o ator categórico, o recorte 0,2, a perda de valor 0,5, a entropia 0,01, o Adam 2,5e−4, o grad clip 10 e o GAE(λ=0,95). O MAPPO troca o crítico e a estrutura do buffer.</span></div>
+      </div>
+    </section>
+
+    <!-- 13 -->
+    <section class="slide" id="slide-13" data-section="prática" data-title="O que o MAPPO ganha e custa">
+      <div class="slide-inner">
+        <div>
+          <div class="eyebrow">prática · trade-offs</div>
+          <h2 class="title">O que o MAPPO ganha e o que custa</h2>
+        </div>
+        <p class="lede">O crítico centralizado compra variância menor com informação conjunta. O preço aparece na memória, no tamanho da entrada e na dependência da coleta.</p>
+
+        <div class="grid-2">
+          <div class="card">
+            <h3 style="color:var(--accent)">Ganha</h3>
+            <ul class="list" style="margin-top:9px">
+              <li><span class="bullet"></span><span><b>Valor mais informado.</b> O crítico vê as features de todos os agentes e pode separar o efeito de uma jogada do aliado.</span></li>
+              <li><span class="bullet"></span><span><b>Identidade pelo one-hot.</b> O mesmo estado conjunto pode gerar V diferentes para papéis e times diferentes.</span></li>
+              <li><span class="bullet"></span><span><b>Ator descentralizado.</b> A política continua executável por agente, sem estado global.</span></li>
+              <li><span class="bullet"></span><span><b>Mesma estabilidade.</b> O recorte, a entropia e o grad clip do PPO continuam no lugar.</span></li>
+            </ul>
+          </div>
+          <div class="card">
+            <h3 style="color:var(--loss)">Custa</h3>
+            <ul class="list" style="margin-top:9px">
+              <li><span class="bullet red"></span><span><b>Entrada que cresce.</b> O crítico recebe <span class="mono">n × 1280 + n</span>: 5124 entradas com 4 agentes, 7686 com 6.</span></li>
+              <li><span class="bullet red"></span><span><b>Memória.</b> O rollout conjunto é maior; o update precisa de chunks para não estourar a GPU.</span></li>
+              <li><span class="bullet red"></span><span><b>Dependência da coleta.</b> O crítico centralizado exige as observações de todos no mesmo passo; não dá para treinar com um agente isolado.</span></li>
+              <li><span class="bullet red"></span><span><b>Mesmos limites on-policy.</b> Sem replay, sem <span class="mono">--envs</span>, sem <span class="mono">--overlap</span>, sem adversários baseline misturados.</span></li>
+            </ul>
+          </div>
+        </div>
+
+        <div class="note warn"><span class="mark">!</span><span><b>Neste mapa, o ganho é menor do que em POMDPs.</b> A grade de cada agente já mostra todos os personagens. O que o MAPPO adiciona é o vetor conjunto de features, a identidade e a variância menor; em um mapa com observação parcial, o crítico centralizado veria informação que o ator não tem.</span></div>
+        <div class="note"><span class="mark">→</span><span><b>Quando usar.</b> Times com papéis diferentes, recompensa compartilhada e necessidade de um valor conjunto. Se os agentes são homogêneos e o orçamento é curto, o IPPO é mais simples.</span></div>
+      </div>
+    </section>
+
+    <!-- 14 -->
+    <section class="slide" id="slide-14" data-section="crítico" data-title="Times e o one-hot">
+      <div class="slide-inner">
+        <div>
+          <div class="eyebrow">crítico · identidade</div>
+          <h2 class="title">Times e o one-hot</h2>
+        </div>
+        <p class="lede">As mesmas features conjuntas alimentam todos os V. Sem identidade, o crítico não teria como dar valores diferentes ao agente 0 e ao agente 1. O one-hot é essa identidade.</p>
+
+        <div class="split">
+          <div class="lab">
+            <div class="lab-head"><span>agente consultado</span><b>one-hot</b></div>
+            <div class="segmented" role="group" aria-label="Agente consultado" id="query-buttons">
+              <button type="button" data-query="0" aria-pressed="true">a0</button>
+              <button type="button" data-query="1" aria-pressed="false">a1</button>
+              <button type="button" data-query="2" aria-pressed="false">a2</button>
+              <button type="button" data-query="3" aria-pressed="false">a3</button>
+            </div>
+            <div class="onehot" id="query-onehot"></div>
+            <div class="shape-formula" id="query-text">consultando a0 → o crítico devolve V0.</div>
+            <p class="caption">O one-hot entra concatenado às features; ele não muda o estado, só diz qual saída o crítico deve produzir.</p>
+          </div>
+          <div class="stack">
+            <ul class="list">
+              <li><span class="bullet"></span><span><b>Mesmo estado, saídas diferentes.</b> O crítico devolve um V por agente. O one-hot permite que a mesma rede aprenda valores específicos de time ou papel.</span></li>
+              <li><span class="bullet amber"></span><span><b>Persistente = False.</b> <span class="mono">agent_onehot</span> é um buffer derivado de <span class="mono">n_agents</span>; não entra no <span class="mono">state_dict</span> nem no checkpoint.</span></li>
+              <li><span class="bullet"></span><span><b>Em todos-contra-todos</b> o one-hot é o único sinal de identidade. Em times, os canais 2 e 5 também mostram inimigos e aliados, mas não dizem qual membro é qual.</span></li>
+            </ul>
+            <div class="note"><span class="mark">4</span><span>Com 4 agentes, o crítico recebe 4 saídas: uma por linha do one-hot. O ator continua com uma saída por agente, calculada localmente.</span></div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- 15 -->
+    <section class="slide" id="slide-15" data-section="integração" data-title="Checkpoint, avaliação e duelo">
+      <div class="slide-inner">
+        <div>
+          <div class="eyebrow">integração · ciclo de vida</div>
+          <h2 class="title">Checkpoint, avaliação e duelo</h2>
+        </div>
+        <p class="lede">O MAPPO grava o mesmo formato pesos-only do IPPO, com o algoritmo e o cenário na config. A execução é descentralizada, então avaliar e assistir funcionam igual.</p>
+
+        <div class="split">
+          <div class="stack">
+            <div class="card">
+              <h3>O que vai para o disco</h3>
+              <ul class="list" style="margin-top:8px">
+                <li><span class="bullet"></span><span><span class="mono">algorithm = "mappo"</span>, <span class="mono">arch_version = "alg-mappo-v1"</span>.</span></li>
+                <li><span class="bullet"></span><span>Pesos da rede única, otimizador, contadores e config com <span class="mono">n_agents</span>/<span class="mono">team_ids</span>.</span></li>
+                <li><span class="bullet red"></span><span>Não vão: o buffer conjunto, o one-hot (derivável) e os RNGs.</span></li>
+              </ul>
+            </div>
+            <div class="note"><span class="mark">✓</span><span><b>Avaliação e espectador.</b> <span class="mono">evaluate.py</span> usa <span class="mono">act_batch(..., greedy=True)</span> e grava uma linha por agente; <span class="mono">play.py</span> entra em modo espectador.</span></div>
+            <div class="note loss"><span class="mark">×</span><span><b>Não mistura algoritmos.</b> Um checkpoint MAPPO não carrega em IPPO ou PPO: o campo <span class="mono">algorithm</span> é validado. O cenário também não pode mudar na retomada.</span></div>
+          </div>
+          <div class="stack">
+            <div class="code-label">duelo MAPPO × IPPO</div>
+            <pre class="code">python scripts/duel_multiagent.py \
+  --mappo-checkpoint checkpoints/mappo_teams4_3h/best.pt \
+  --ippo-checkpoint checkpoints/ippo_teams4_3h/best.pt \
+  --mappo-team 0 \
+  --record duelo.mp4</pre>
+            <div class="note warn"><span class="mark">!</span><span><b>Um checkpoint por time.</b> O <span class="mono">play.py</span> só aceita um checkpoint multiagente (modo espectador). Para colocar MAPPO contra IPPO, o script de duelo carrega dois checkpoints, valida que o formato de observação e o cenário coincidem, e usa a política gulosa com seeds fixas.</span></div>
+            <div class="note"><span class="mark">2</span><span><b>O duelo não treina.</span> É uma avaliação pareada: MAPPO controla um time, IPPO controla os demais. O mesmo par de checkpoints e as mesmas seeds produzem o mesmo vídeo.</span></div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- 16 -->
+    <section class="slide" id="slide-16" data-section="prática" data-title="Rodando e testando">
+      <div class="slide-inner">
+        <div>
+          <div class="eyebrow">prática · comandos e testes</div>
+          <h2 class="title">Rodando e testando</h2>
+        </div>
+        <p class="lede">O MAPPO usa o mesmo CLI do IPPO; só o valor de <span class="mono">--alg</span> muda. A implementação desta aula está no worktree <span class="mono">mappo-multiagent</span>.</p>
+
+        <div class="split">
+          <div class="stack">
+            <div class="code-label">treinar e avaliar</div>
+            <pre class="code">python train.py --episodes 300 --alg mappo --agents 4 \
+  --scenario teams --teams 2 --checkpoint-dir checkpoints/mappo_teams4
+
+python evaluate.py --checkpoint checkpoints/mappo_teams4/best.pt --episodes 10
+python play.py --checkpoint checkpoints/mappo_teams4/best.pt --render</pre>
+            <div class="code-label">testes</div>
+            <pre class="code">pytest tests/test_mappo.py -q</pre>
+            <div class="note warn"><span class="mark">↳</span><span><b>Onde está o código.</b> No checkout principal, o pacote está em <span class="mono">.claude/worktrees/mappo-multiagent/algs/alg_mappo/</span> (branch <span class="mono">worktree-mappo-multiagent</span>). O <span class="mono">main</span> ainda documenta cinco algoritmos; o worktree adiciona o sexto.</span></div>
+          </div>
+          <div class="stack">
+            <div class="card">
+              <h3>O que os testes cobrem</h3>
+              <ul class="list" style="margin-top:8px">
+                <li><span class="bullet"></span><span><b>Crítico centralizado:</b> V0 muda quando as features do agente 1 mudam.</span></li>
+                <li><span class="bullet"></span><span><b>Buffer conjunto:</b> commit só com n agentes; duplicata levanta erro; formas (T,n,...).</span></li>
+                <li><span class="bullet"></span><span><b>GAE:</b> fronteira de episódio por coluna; <span class="mono">finish_training</span> consome o rabo.</span></li>
+                <li><span class="bullet"></span><span><b>Checkpoint:</b> round-trip, config do cenário e incompatibilidade com IPPO.</span></li>
+                <li><span class="bullet"></span><span><b>CLI:</b> <span class="mono">--alg mappo</span> aceita o cenário e recusa <span class="mono">--envs</span>, <span class="mono">--overlap</span> e <span class="mono">--opponent</span> fixo.</span></li>
+              </ul>
+            </div>
+            <div class="note"><span class="mark">4</span><span><b>Defaults.</b> <span class="mono">--agents 4</span>, <span class="mono">all-vs-all</span>, <span class="mono">--teams 2</span>. Para times, <span class="mono">--agents</span> precisa ser divisível por <span class="mono">--teams</span>.</span></div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- 17 -->
+    <section class="slide" id="slide-17" data-section="prática" data-title="Quiz">
+      <div class="slide-inner">
+        <div>
+          <div class="eyebrow">prática · checagem</div>
+          <h2 class="title">Três perguntas para fechar</h2>
+        </div>
+        <p class="lede">Clique em uma opção. O feedback explica o mecanismo, não só o gabarito.</p>
+
+        <div class="quiz-list">
+          <div class="quiz" data-explain="O crítico centralizado recebe as features de todos os agentes no mesmo passo, mais um one-hot que identifica o agente consultado. O ator continua vendo só a observação local.">
+            <p class="q"><span class="qnum">01</span><span>O que o crítico do MAPPO vê no treino?</span></p>
+            <div class="options">
+              <button class="opt" type="button" data-correct="true">As features de todos os agentes mais o one-hot do agente consultado.</button>
+              <button class="opt" type="button" data-correct="false">Só a observação local do agente que age.</button>
+              <button class="opt" type="button" data-correct="false">Só a recompensa do time.</button>
+            </div>
+            <p class="feedback" hidden></p>
+          </div>
+
+          <div class="quiz" data-explain="Em act/act_batch, forward(x) devolve só os logits do ator a partir da observação local. joint_values é usado apenas no update; o crítico desaparece na execução.">
+            <p class="q"><span class="qnum">02</span><span>O que o ator consulta na execução?</span></p>
+            <div class="options">
+              <button class="opt" type="button" data-correct="false">O estado global concatenado.</button>
+              <button class="opt" type="button" data-correct="true">Só a observação local do agente.</button>
+              <button class="opt" type="button" data-correct="false">O one-hot e o crítico central.</button>
+            </div>
+            <p class="feedback" hidden></p>
+          </div>
+
+          <div class="quiz" data-explain="learn() compara buffer.n_steps com rollout_steps. n_steps conta passos conjuntos completos; cada um carrega n transições, uma por agente. Com 1024 passos e 4 agentes, o update vê 4096 transições.">
+            <p class="q"><span class="qnum">03</span><span>O que <span class="mono">n_steps</span> conta no buffer do MAPPO?</span></p>
+            <div class="options">
+              <button class="opt" type="button" data-correct="false">O total de transições de todos os agentes.</button>
+              <button class="opt" type="button" data-correct="true">Os passos conjuntos completos.</button>
+              <button class="opt" type="button" data-correct="false">O número de agentes do cenário.</button>
+            </div>
+            <p class="feedback" hidden></p>
+          </div>
+        </div>
+        <div class="btn-row"><button class="btn-ghost" id="quiz-reset" type="button">Recomeçar o quiz</button></div>
+      </div>
+    </section>
+
+    <!-- 18 -->
+    <section class="slide" id="slide-18" data-section="prática" data-title="Para levar">
+      <div class="slide-inner">
+        <div>
+          <div class="eyebrow">prática · fechamento</div>
+          <h2 class="title">Para levar</h2>
+        </div>
+
+        <div class="takeaways">
+          <div class="takeaway"><span class="k">01 · ator</span><b>Local no treino e na execução</b><p>A política compartilhada nunca consulta o estado global; ela decide com a observação do agente.</p></div>
+          <div class="takeaway"><span class="k">02 · crítico</span><b>Centralizado só no treino</b><p>V(s_global) vê as features de todos e o one-hot; na execução, ele desaparece.</p></div>
+          <div class="takeaway"><span class="k">03 · dados</span><b>Um buffer de passos conjuntos</b><p>Um registro por passo com n agentes; o update dispara em n_steps, não em transições soltas.</p></div>
+          <div class="takeaway"><span class="k">04 · update</span><b>GAE por agente, minibatch conjunto</b><p>Valores centrais, vantagens normalizadas em T×n e blocos de passos conjuntos na CNN.</p></div>
+        </div>
+
+        <div class="split">
+          <div class="stack">
+            <div class="code-label">para abrir depois da aula</div>
+            <pre class="code">algs/alg_mappo/agent.py
+algs/alg_mappo/model.py
+algs/alg_mappo/rollout_buffer.py
+scripts/duel_multiagent.py
+
+pytest tests/test_mappo.py -q</pre>
+          </div>
+          <div class="stack">
+            <div class="note"><span class="mark">→</span><span><b>Próximo passo.</b> Rode o duelo MAPPO × IPPO com os mesmos checkpoints, seeds e cenário. A pergunta deixa de ser “qual é melhor?” e passa a ser “em que cenário o crítico centralizado paga o custo?”.</span></div>
+            <div class="note warn"><span class="mark">?</span><span><b>Pergunta para levar.</b> Se a grade de cada agente já mostra todos os personagens, o que o crítico centralizado acrescenta? Pense em identidade, papel e variância, não em informação escondida.</span></div>
+          </div>
+        </div>
+
+        <div class="cover-foot">
+          <span class="mono">MAPPO no rl-arena · aula</span>
+          <button class="btn" id="restart" type="button">Voltar ao início</button>
+        </div>
+      </div>
+    </section>
+
+  </main>
+
+  <footer class="foot">
+    <div class="hint"><kbd>←</kbd><kbd>→</kbd> navegar <span class="sep">·</span> <kbd>O</kbd> índice <span class="sep">·</span> <kbd>F</kbd> tela cheia</div>
+    <div class="foot-title" id="foot-title"></div>
+    <div class="navbtns">
+      <button class="navbtn" id="prev" type="button" aria-label="Slide anterior">←</button>
+      <button class="navbtn" id="next" type="button" aria-label="Próximo slide">→</button>
+    </div>
+  </footer>
+</div>
+
+<div class="overlay" id="overlay" role="dialog" aria-modal="true" aria-labelledby="overlay-title" hidden>
+  <div class="overlay-head">
+    <div>
+      <div class="eyebrow">navegação</div>
+      <h2 id="overlay-title">Índice da aula</h2>
+    </div>
+    <button class="btn" id="overlay-close" type="button">Fechar</button>
+  </div>
+  <div class="index-grid" id="index-grid"></div>
+</div>
+
+<script>
+(function () {
+  "use strict";
+
+  var slides = Array.prototype.slice.call(document.querySelectorAll(".slide"));
+  var total = slides.length;
+  var current = 0;
+  var overlay = document.getElementById("overlay");
+  var indexGrid = document.getElementById("index-grid");
+  var overlayBuilt = false;
+
+  function pad(n) { return String(n).padStart(2, "0"); }
+
+  function setHash(i) {
+    var h = "slide-" + (i + 1);
+    if (location.hash !== "#" + h) location.hash = h;
+  }
+
+  function show(i, opts) {
+    opts = opts || {};
+    i = Math.max(0, Math.min(total - 1, i));
+    current = i;
+    slides.forEach(function (slide, j) {
+      var on = j === i;
+      slide.hidden = !on;
+      slide.classList.toggle("active", on);
+      if (on) slide.scrollTop = 0;
+    });
+    document.getElementById("counter").textContent = pad(i + 1) + " / " + pad(total);
+    document.getElementById("progress-fill").style.width = (i / Math.max(1, total - 1) * 100) + "%";
+    document.getElementById("sec-label").textContent = slides[i].dataset.section || "";
+    document.getElementById("foot-title").textContent = slides[i].dataset.title || "";
+    document.getElementById("prev").disabled = i === 0;
+    document.getElementById("next").disabled = i === total - 1;
+    if (opts.hash !== false) setHash(i);
+    if (!overlay.hidden) markCurrentIndex();
+  }
+
+  function markCurrentIndex() {
+    Array.prototype.forEach.call(indexGrid.children, function (btn) {
+      btn.classList.toggle("current", Number(btn.dataset.goto) === current);
+    });
+  }
+
+  function buildIndex() {
+    if (overlayBuilt) return;
+    indexGrid.innerHTML = slides.map(function (slide, i) {
+      return '<button class="index-item" type="button" data-goto="' + i + '">' +
+        '<span class="idx-num">' + pad(i + 1) + '</span>' +
+        '<span class="idx-sec">' + (slide.dataset.section || "") + '</span>' +
+        '<span class="idx-title">' + (slide.dataset.title || "Slide") + '</span>' +
+        '</button>';
+    }).join("");
+    overlayBuilt = true;
+  }
+
+  function openIndex() {
+    buildIndex();
+    markCurrentIndex();
+    overlay.hidden = false;
+    document.getElementById("overlay-close").focus();
+  }
+
+  function closeIndex() {
+    overlay.hidden = true;
+    document.getElementById("btn-index").focus();
+  }
+
+  function toggleIndex() { if (overlay.hidden) openIndex(); else closeIndex(); }
+
+  function toggleFullscreen() {
+    var root = document.documentElement;
+    if (!document.fullscreenElement) {
+      if (root.requestFullscreen) root.requestFullscreen().catch(function () {});
+    } else if (document.exitFullscreen) {
+      document.exitFullscreen().catch(function () {});
+    }
+  }
+
+  function fromHash() {
+    var m = /^#slide-(\d+)$/.exec(location.hash);
+    if (!m) return 0;
+    return Math.max(0, Math.min(total - 1, parseInt(m[1], 10) - 1));
+  }
+
+  document.getElementById("prev").addEventListener("click", function () { show(current - 1); });
+  document.getElementById("next").addEventListener("click", function () { show(current + 1); });
+  document.getElementById("btn-index").addEventListener("click", openIndex);
+  document.getElementById("btn-full").addEventListener("click", toggleFullscreen);
+  document.getElementById("overlay-close").addEventListener("click", closeIndex);
+  document.getElementById("restart").addEventListener("click", function () { show(0); });
+  overlay.addEventListener("click", function (e) { if (e.target === overlay) closeIndex(); });
+  indexGrid.addEventListener("click", function (e) {
+    var btn = e.target.closest(".index-item");
+    if (!btn) return;
+    closeIndex();
+    show(Number(btn.dataset.goto));
+  });
+
+  document.addEventListener("fullscreenchange", function () {
+    document.getElementById("btn-full").textContent = document.fullscreenElement ? "Sair" : "Tela cheia";
+  });
+
+  window.addEventListener("hashchange", function () { show(fromHash(), { hash: false }); });
+
+  document.addEventListener("keydown", function (e) {
+    var t = e.target;
+    var tag = t && t.tagName ? t.tagName : "";
+    if (e.key === "Escape") { if (!overlay.hidden) closeIndex(); return; }
+    if ((e.key === "o" || e.key === "O") && tag !== "INPUT" && tag !== "SELECT" && tag !== "TEXTAREA") {
+      e.preventDefault(); toggleIndex(); return;
+    }
+    if ((e.key === "f" || e.key === "F") && tag !== "INPUT" && tag !== "SELECT" && tag !== "TEXTAREA") {
+      e.preventDefault(); toggleFullscreen(); return;
+    }
+    if (tag === "INPUT" || tag === "SELECT" || tag === "TEXTAREA") return;
+    if (tag === "BUTTON" && (e.key === " " || e.key === "Enter")) return;
+    if (e.key === "ArrowRight" || e.key === "PageDown" || e.key === " ") {
+      e.preventDefault(); show(current + 1);
+    } else if (e.key === "ArrowLeft" || e.key === "PageUp") {
+      e.preventDefault(); show(current - 1);
+    } else if (e.key === "Home") {
+      e.preventDefault(); show(0);
+    } else if (e.key === "End") {
+      e.preventDefault(); show(total - 1);
+    }
+  });
+
+  var touchX = null, touchY = null;
+  var stage = document.getElementById("stage");
+  stage.addEventListener("touchstart", function (e) {
+    if (e.touches.length !== 1) return;
+    var t = e.target;
+    if (t.closest("input, select, button, .chart-scroll, .diagram-scroll")) return;
+    touchX = e.touches[0].clientX;
+    touchY = e.touches[0].clientY;
+  }, { passive: true });
+  stage.addEventListener("touchend", function (e) {
+    if (touchX === null) return;
+    var dx = e.changedTouches[0].clientX - touchX;
+    var dy = e.changedTouches[0].clientY - touchY;
+    touchX = null; touchY = null;
+    if (Math.abs(dx) > 64 && Math.abs(dy) < 52 && Math.abs(dx) > Math.abs(dy) * 1.4) {
+      show(current + (dx < 0 ? 1 : -1));
+    }
+  }, { passive: true });
+
+  // ---------------------------------------------------------------
+  // CTDE: treino vs execução
+  // ---------------------------------------------------------------
+  var ctde = document.getElementById("ctde");
+  var ctdeStatus = document.getElementById("ctde-status");
+  var ctdeMode = document.getElementById("ctde-mode");
+  var ctdeOut = document.getElementById("ctde-out");
+  var ctdePanelNote = document.getElementById("ctde-panel-note");
+  var ctdeSideTitle = document.getElementById("ctde-side-title");
+  var ctdeSideText = document.getElementById("ctde-side-text");
+
+  function setCtde(mode) {
+    var exec = mode === "exec";
+    ctde.classList.toggle("exec", exec);
+    document.getElementById("ctde-panel").classList.toggle("train", !exec);
+    Array.prototype.forEach.call(document.querySelectorAll("[data-ctde]"), function (b) {
+      b.setAttribute("aria-pressed", String(b.dataset.ctde === mode));
+    });
+    if (exec) {
+      ctdeStatus.textContent = "O crítico não é consultado: cada agente usa só a observação local.";
+      ctdeMode.textContent = "execução descentralizada";
+      ctdeOut.textContent = "ação";
+      ctdePanelNote.textContent = "O crítico centralizado fica de fora; o ator compartilhado decide com a observação local.";
+      ctdeSideTitle.textContent = "Na execução";
+      ctdeSideText.textContent = "O crítico centralizado desaparece. Cada agente consulta o ator compartilhado com a própria observação e escolhe uma ação. Nada global é necessário.";
+    } else {
+      ctdeStatus.textContent = "O crítico vê o estado conjunto e alimenta o GAE.";
+      ctdeMode.textContent = "treino centralizado";
+      ctdeOut.textContent = "GAE → update";
+      ctdePanelNote.textContent = "O crítico consome as features de todos os agentes no mesmo passo.";
+      ctdeSideTitle.textContent = "No treino";
+      ctdeSideText.textContent = "O crítico centralizado vê as features de todos os agentes e devolve um V por agente. Esse V alimenta o GAE e reduz a variância do gradiente. O ator continua local.";
+    }
+  }
+
+  Array.prototype.forEach.call(document.querySelectorAll("[data-ctde]"), function (btn) {
+    btn.addEventListener("click", function () { setCtde(btn.dataset.ctde); });
+  });
+
+  // ---------------------------------------------------------------
+  // Forma do crítico + one-hot
+  // ---------------------------------------------------------------
+  var agentsEl = document.getElementById("mappo-agents");
+  var criticInputEl = document.getElementById("critic-input");
+  var criticFormulaEl = document.getElementById("critic-formula");
+  var onehotEl = document.getElementById("onehot");
+  var query = 0;
+
+  function renderOnehot() {
+    var n = Number(agentsEl.value);
+    if (query >= n) query = 0;
+    onehotEl.innerHTML = "";
+    for (var i = 0; i < n; i++) {
+      var span = document.createElement("span");
+      span.textContent = "a" + i + (i === query ? " · 1" : " · 0");
+      span.className = i === query ? "on" : "";
+      onehotEl.appendChild(span);
+    }
+    Array.prototype.forEach.call(document.querySelectorAll("[data-query]"), function (b) {
+      var idx = Number(b.dataset.query);
+      b.hidden = idx >= n;
+      b.disabled = idx >= n;
+      b.setAttribute("aria-pressed", String(idx === query));
+    });
+    var dim = n * 1280 + n;
+    criticInputEl.textContent = dim.toLocaleString("pt-BR");
+    criticFormulaEl.textContent = n + " × 1280 + " + n + " = " + dim.toLocaleString("pt-BR") + " entradas";
+    document.getElementById("query-text").textContent =
+      "consultando a" + query + " → o crítico devolve V" + query + ".";
+  }
+
+  onehotEl.addEventListener("click", function (e) {
+    var idx = Array.prototype.indexOf.call(onehotEl.children, e.target);
+    if (idx >= 0) { query = idx; renderOnehot(); }
+  });
+  Array.prototype.forEach.call(document.querySelectorAll("[data-query]"), function (btn) {
+    btn.addEventListener("click", function () {
+      query = Number(btn.dataset.query);
+      renderOnehot();
+    });
+  });
+  agentsEl.addEventListener("input", function () {
+    document.getElementById("mappo-agents-out").textContent = agentsEl.value;
+    renderOnehot();
+  });
+
+  // ---------------------------------------------------------------
+  // Montagem do buffer conjunto
+  // ---------------------------------------------------------------
+  var jointPending = [];
+  var jointRecords = [];
+  var jointStatus = document.getElementById("joint-status");
+  var jointSlots = document.getElementById("joint-slots");
+  var jointRecordsEl = document.getElementById("joint-records");
+  var jointCount = document.getElementById("joint-count");
+  var jointLen = document.getElementById("joint-len");
+
+  function renderJoint() {
+    jointSlots.innerHTML = "";
+    for (var i = 0; i < 4; i++) {
+      var slot = document.createElement("div");
+      var filled = jointPending.indexOf(i) !== -1;
+      slot.className = "joint-slot" + (filled ? " filled" : "");
+      slot.textContent = "a" + i + (filled ? " ✓" : "");
+      jointSlots.appendChild(slot);
+    }
+    jointCount.textContent = "T = " + jointRecords.length;
+    jointLen.textContent = "len = " + (jointRecords.length * 4 + jointPending.length) + " transições";
+    if (jointRecords.length === 0) {
+      jointRecordsEl.textContent = "nenhum passo conjunto completo";
+    } else {
+      jointRecordsEl.innerHTML = jointRecords.slice(-3).map(function (r, k) {
+        var t = jointRecords.length - Math.min(3, jointRecords.length) + k;
+        return "<span>T" + t + "</span>" +
+          '<span class="joint-chip">a0</span><span class="joint-chip">a1</span><span class="joint-chip">a2</span><span class="joint-chip">a3</span>';
+      }).join("");
+    }
+  }
+
+  Array.prototype.forEach.call(document.querySelectorAll("[data-add-agent]"), function (btn) {
+    btn.addEventListener("click", function () {
+      var i = Number(btn.dataset.addAgent);
+      if (jointPending.indexOf(i) !== -1) {
+        jointStatus.className = "status wait";
+        jointStatus.innerHTML = "<b>ValueError:</b> agente " + i + " já está em <span class='mono'>_pending</span>. Complete os quatro antes de recomeçar.";
+        return;
+      }
+      jointPending.push(i);
+      if (jointPending.length === 4) {
+        jointRecords.push(jointPending.slice());
+        jointPending = [];
+        jointStatus.className = "status ok";
+        jointStatus.innerHTML = "<strong>Passo conjunto commitado.</strong> <span class='mono'>states</span> ganhou (1, 4, C, H, W); <span class='mono'>actions</span>, <span class='mono'>rewards</span> e <span class='mono'>terminated</span> ganharam (1, 4).";
+      } else {
+        jointStatus.className = "status";
+        jointStatus.innerHTML = "Pendentes: " + jointPending.length + " de 4. O registro só é gravado quando todos contribuem.";
+      }
+      renderJoint();
+    });
+  });
+
+  document.getElementById("joint-reset").addEventListener("click", function () {
+    jointPending = [];
+    jointRecords = [];
+    jointStatus.className = "status";
+    jointStatus.innerHTML = "Adicione os quatro agentes para fechar um passo conjunto.";
+    renderJoint();
+  });
+
+  // ---------------------------------------------------------------
+  // Minibatch de passos conjuntos
+  // ---------------------------------------------------------------
+  var batchEl = document.getElementById("batch-size");
+  var batchAgentsEl = document.getElementById("batch-agents");
+  var batchGrid = document.getElementById("batch-grid");
+
+  function renderBatch() {
+    var batch = Number(batchEl.value);
+    var n = Number(batchAgentsEl.value);
+    var steps = Math.max(1, Math.floor(batch / n));
+    var transitions = steps * n;
+    var batches = Math.ceil(1024 / steps);
+    document.getElementById("batch-size-out").textContent = batch;
+    document.getElementById("batch-agents-out").textContent = n;
+    document.getElementById("steps-per-batch").textContent = steps;
+    document.getElementById("transitions-batch").textContent = transitions;
+    document.getElementById("batches-epoch").textContent = batches;
+    document.getElementById("adam-steps").textContent = batches * 4;
+    var cells = "";
+    for (var a = 0; a < n; a++) {
+      for (var s = 0; s < steps; s++) {
+        cells += '<span class="batch-cell a' + (a % 4) + '"></span>';
+      }
+    }
+    batchGrid.style.gridTemplateColumns = "repeat(" + steps + ", minmax(0, 1fr))";
+    batchGrid.innerHTML = cells;
+  }
+
+  batchEl.addEventListener("input", renderBatch);
+  batchAgentsEl.addEventListener("input", renderBatch);
+
+  // ---------------------------------------------------------------
+  // Quiz
+  // ---------------------------------------------------------------
+  Array.prototype.forEach.call(document.querySelectorAll(".quiz"), function (quiz) {
+    var feedback = quiz.querySelector(".feedback");
+    Array.prototype.forEach.call(quiz.querySelectorAll(".opt"), function (btn) {
+      btn.addEventListener("click", function () {
+        var ok = btn.dataset.correct === "true";
+        Array.prototype.forEach.call(quiz.querySelectorAll(".opt"), function (b) {
+          b.classList.remove("correct", "wrong");
+          if (b.dataset.correct === "true") b.classList.add("correct");
+        });
+        if (!ok) btn.classList.add("wrong");
+        feedback.hidden = false;
+        feedback.className = "feedback " + (ok ? "correct" : "wrong");
+        feedback.textContent = (ok ? "Correto. " : "Ainda não. ") + quiz.dataset.explain;
+      });
+    });
+  });
+
+  document.getElementById("quiz-reset").addEventListener("click", function () {
+    Array.prototype.forEach.call(document.querySelectorAll(".quiz"), function (quiz) {
+      Array.prototype.forEach.call(quiz.querySelectorAll(".opt"), function (b) {
+        b.classList.remove("correct", "wrong");
+      });
+      var feedback = quiz.querySelector(".feedback");
+      feedback.hidden = true;
+      feedback.textContent = "";
+    });
+  });
+
+  // ---------------------------------------------------------------
+  // Inicialização
+  // ---------------------------------------------------------------
+  show(fromHash(), { hash: false });
+  setCtde("train");
+  renderOnehot();
+  renderJoint();
+  renderBatch();
+})();
+</script>

@@ -1,5 +1,8 @@
 import pygame
 
+TEAM_COLORS = [(70, 190, 250), (240, 90, 95), (120, 230, 140), (250, 200, 90)]
+
+
 class ArenaRenderer:
     def __init__(self, cfg):
         pygame.init()
@@ -19,8 +22,12 @@ class ArenaRenderer:
             pygame.draw.rect(self.screen, (95, 105, 125), (x, y, w, h))
         for coin in engine.coins:
             pygame.draw.circle(self.screen, (245, 195, 55), (int(coin.x), int(coin.y)), 7)
+        team_ids = tuple((info or {}).get("team_ids") or ())
         for i, c in enumerate(engine.characters):
-            color = (70, 190, 250) if i == 0 else (240, 90, 95)
+            if team_ids and i < len(team_ids):
+                color = TEAM_COLORS[team_ids[i] % len(TEAM_COLORS)]
+            else:
+                color = (70, 190, 250) if i == 0 else (240, 90, 95)
             if c.alive:
                 s = self.cfg.player_size
                 pygame.draw.rect(self.screen, color, (int(c.x-s/2), int(c.y-s), s, s))
@@ -28,7 +35,12 @@ class ArenaRenderer:
                 txt = self.font.render(f"respawn {max(0,c.respawn_timer):.1f}s", True, color)
                 self.screen.blit(txt, (int(c.x), self.cfg.height - 25))
         p = engine.characters[0]
-        line = f"t={elapsed:.1f}s | moedas={p.coins} | mortes={p.deaths}"
+        teams = (info or {}).get("teams") or []
+        if teams:
+            line = f"t={elapsed:.1f}s | " + " | ".join(
+                f"T{t['team'] + 1}: {t['coins']}" for t in teams)
+        else:
+            line = f"t={elapsed:.1f}s | moedas={p.coins} | mortes={p.deaths}"
         self.screen.blit(self.font.render(line, True, (240, 240, 245)), (10, 10))
         pygame.display.flip()
         self.clock.tick(self.cfg.fps)

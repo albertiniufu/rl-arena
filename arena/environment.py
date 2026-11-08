@@ -9,6 +9,8 @@ from agents.baseline import PolicyContext, make_policy
 from .actions import N_ACTIONS, PUSH_LEFT, PUSH_RIGHT, STOP
 from .config import ArenaConfig
 from .engine import ArenaEngine, Character, Coin
+from .observations import render_grid
+from .reward_shaping import coin_potential
 from .skins import load_renderer_class
 
 class ArenaEnv(gym.Env):
@@ -46,34 +48,11 @@ class ArenaEnv(gym.Env):
     def _observation(self):
         """Frame único atual: grade semântica (5, H, W).
 
-        O clamp é feito em Python puro de propósito: `np.clip` sobre um
-        escalar custa dezenas de microssegundos por célula, e esta função
-        roda `frame_skip + 1` vezes por passo do agente (a maior parte do
-        custo do `env.step` em CPU). O resultado é idêntico ao de antes.
+        A montagem fica em `arena/observations.py` para ser compartilhada com
+        o ambiente multiagente (que usa uma grade egocêntrica de 6 canais).
+        Os defaults reproduzem exatamente a grade legada.
         """
-        cell, gh, gw = self.cfg.cell, self.grid_h, self.grid_w
-        g = np.zeros((5, gh, gw), dtype=np.float32)
-        for x, y, w, h in self.engine.platforms:
-            c0, c1 = max(0, int(x // cell)), min(gw, int((x+w) // cell))
-            r0, r1 = max(0, int(y // cell)), min(gh, max(int((y+h) // cell), int(y // cell)+1))
-            g[0, r0:r1, c0:c1] = 1
-        for i, c in enumerate(self.engine.characters):
-            if c.alive:
-                channel = 1 if i == 0 else 2
-                y = c.y - self.cfg.player_size / 2
-            else:
-                channel = 4
-                y = self.cfg.height - 5
-            col, row = int(c.x // cell), int(y // cell)
-            col = 0 if col < 0 else (gw - 1 if col >= gw else col)
-            row = 0 if row < 0 else (gh - 1 if row >= gh else row)
-            g[channel, row, col] = 1.0
-        for coin in self.engine.coins:
-            col, row = int(coin.x // cell), int(coin.y // cell)
-            col = 0 if col < 0 else (gw - 1 if col >= gw else col)
-            row = 0 if row < 0 else (gh - 1 if row >= gh else row)
-            g[3, row, col] = 1.0
-        return g
+        return render_grid(self.engine, self.cfg)
 
     def _stacked(self):
         """Observação do agente: pilha de frames (5 * frame_stack, H, W), do mais antigo ao mais novo."""
@@ -131,10 +110,13 @@ class ArenaEnv(gym.Env):
         if not self.action_space.contains(action):
             raise ValueError(f"Invalid action: {action}")
         action = int(action)
+        # PBRS: potencial no estado em que a ação foi escolhida.
+        if self.cfg.pbrs_coef:
+            phi_before = coin_potential(self.engine, 0)
         push_missed = action in (PUSH_LEFT, PUSH_RIGHT) and not self._push_target_in_range()
         dt = 1.0 / self.cfg.fps
         reward = 0.0
-        collected = deaths = 0
+        collected = deaths = transferred = 0
         for _ in range(self.cfg.frame_skip):
             # Observação pré-substep: é o estado sobre o qual as políticas decidem.
             policy_obs = self._observation()
@@ -144,9 +126,18 @@ class ArenaEnv(gym.Env):
             reward += (
                 event["collected"][0] * self.cfg.coin_reward
                 + event["deaths_delta"][0] * self.cfg.death_penalty
+                # Transferência assinada: ganha quem empurra, perde o alvo.
+                + event["coins_transferred"][0] * self.cfg.push_coin_reward
             )
             collected += event["collected"][0]
             deaths += event["deaths_delta"][0]
+            transferred += event["coins_transferred"][0]
+        pbrs = 0.0
+        if self.cfg.pbrs_coef:
+            phi_after = coin_potential(self.engine, 0)
+            pbrs = self.cfg.pbrs_coef * (
+                self.cfg.pbrs_gamma * phi_after - phi_before)
+            reward += pbrs
         if action == STOP:
             reward += self.cfg.stop_penalty
         elif push_missed:
@@ -162,6 +153,8 @@ class ArenaEnv(gym.Env):
             "sim_time": self.engine.sim_time,
             "collected_this_step": collected,
             "deaths_this_step": deaths,
+            "coins_transferred_this_step": transferred,
+            "pbrs_this_step": pbrs,
         }
         self._last_info = info
         self._frames.append(self._observation())

@@ -27,6 +27,7 @@ import pygame
 # utilidades
 # --------------------------------------------------------------------------- #
 PLAYER_COLORS = [(70, 190, 250), (240, 90, 95), (120, 230, 140), (250, 200, 90)]
+TEAM_COLORS = [(70, 190, 250), (240, 90, 95), (120, 230, 140), (250, 200, 90)]
 PLAYER_NAMES = ["Agente", "Rival", "Bot 3", "Bot 4"]
 COIN_COLOR = (250, 200, 60)
 
@@ -70,6 +71,7 @@ class ArenaRenderer:
     def __init__(self, cfg):
         pygame.init()
         self.cfg = cfg
+        self.team_ids = ()
         self.W, self.H = cfg.width, cfg.height
         self.screen = pygame.display.set_mode((self.W, self.H))
         pygame.display.set_caption("RL Arena")
@@ -173,9 +175,16 @@ class ArenaRenderer:
         self.floats.append([x, y, text, color, 1.0])
 
     def _name(self, i):
+        if self.team_ids and i < len(self.team_ids):
+            team = self.team_ids[i]
+            # Em todos-contra-todos cada time tem um membro: nomes legados.
+            if len(set(self.team_ids)) < len(self.team_ids):
+                return f"Time {team + 1} #{i + 1}"
         return PLAYER_NAMES[i] if i < len(PLAYER_NAMES) else f"Bot {i + 1}"
 
     def _color(self, i):
+        if self.team_ids and i < len(self.team_ids):
+            return TEAM_COLORS[self.team_ids[i] % len(TEAM_COLORS)]
         return PLAYER_COLORS[i % len(PLAYER_COLORS)]
 
     # ---------------------------------------------- observação do estado/engine
@@ -433,6 +442,10 @@ class ArenaRenderer:
         items = []
         if info:
             for k, v in info.items():
+                # O info multiagente traz listas (agents/teams) e a tupla
+                # team_ids; o placar por time é desenhado separadamente.
+                if isinstance(v, (list, dict, tuple)):
+                    continue
                 items.append((str(k), f"{v:.3f}" if isinstance(v, float) else str(v)))
         items.append(("fps", f"{self.clock.get_fps():.0f}"))
         pw = 190
@@ -443,8 +456,17 @@ class ArenaRenderer:
             img = self.font_small.render(v, True, (235, 235, 245))
             self.screen.blit(img, (pr.right - 10 - img.get_width(), pr.y + 9 + n * 20))
 
-        # kill feed
+        # placar por time (multiagente)
         y = pr.bottom + 10
+        for team in (info or {}).get("teams") or []:
+            col = TEAM_COLORS[team["team"] % len(TEAM_COLORS)]
+            text = (f"Time {team['team'] + 1}: {team['coins']} moedas  "
+                    f"{team['deaths']} mortes")
+            self.screen.blit(self.font_small.render(text, True, col),
+                             (pr.x, y))
+            y += 18
+
+        # kill feed
         for text, col, ttl in self.feed:
             img = self.font.render(text, True, col)
             img.set_alpha(int(255 * clamp(ttl, 0, 1)))
@@ -491,6 +513,7 @@ class ArenaRenderer:
         self._draw_hud(engine, elapsed, info)
 
     def render(self, engine, elapsed, info=None):
+        self.team_ids = tuple((info or {}).get("team_ids") or ())
         self._handle_events()
         while self.paused:  # pausa bloqueante: o loop de treino também para
             self._draw(engine, elapsed, info)
