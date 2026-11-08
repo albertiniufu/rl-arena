@@ -3,6 +3,7 @@ from pathlib import Path
 import numpy as np
 import torch
 from agents.baseline import make_policy
+from arena.actions import PUSH_INTENSITY
 from arena.environment import ArenaEnv
 from arena.multi_environment import ArenaMultiEnv
 from arena.scenario import Scenario
@@ -286,13 +287,19 @@ def parse_args(argv=None):
                     help="política do adversário (auto = currículo que alterna "
                          "random, coins, rule e checkpoints)")
     ap.add_argument("--agents", type=int, default=None,
-                    help="número de agentes no modo multiagente (IPPO/MAPPO); "
+                    help="número de agentes no modo multiagente "
+                         "(IPPO/MAPPO/HAPPO); "
                          "omitido = 4 com um algoritmo multiagente e 1 nos demais")
-    ap.add_argument("--scenario", choices=["all-vs-all", "teams"],
-                    default="all-vs-all",
-                    help="cenário multiagente: todos-contra-todos (padrão) ou times")
+    ap.add_argument(
+        "--scenario", choices=["all-vs-all", "teams", "collectors-vs-pushers"],
+        default="all-vs-all",
+        help="cenário multiagente: todos-contra-todos (padrão), times ou "
+             "times assimétricos (metade só coleta, metade só empurra — usa "
+             "a força de empurrão de meia arena e recarga de 2 s)")
     ap.add_argument("--teams", type=int, default=2,
-                    help="número de times com --scenario teams (padrão 2)")
+                    help="número de times com --scenario teams/"
+                         "collectors-vs-pushers; precisa ser par no cenário "
+                         "assimétrico (padrão 2)")
     ap.add_argument("--checkpoint-dir", default="checkpoints",
                     help="diretório de checkpoints (saves e leitura do adversário auto)")
     ap.add_argument("--stats", action="store_true",
@@ -348,7 +355,8 @@ def parse_args(argv=None):
                     help="algoritmo de RL: pacote alg_<nome> em algs/ "
                          "(dqn = DQN enxuto; doubledqn_per_dueling = Double DQN "
                          "+ PER + dueling; ppo = PPO; a2c = A2C; "
-                         "ippo/mappo = multiagente)")
+                         "ippo/mappo/happo = multiagente; happo suporta "
+                         "atores heterogêneos por papel)")
     ap.add_argument("--lr", type=float, default=2.5e-4,
                     help="taxa de aprendizado do Adam (na retomada, o otimizador "
                          "restaurado do checkpoint sobrepõe este valor)")
@@ -406,7 +414,7 @@ def tensorboard_run_name(args):
     scenario = ""
     if getattr(args, "agents", 1) > 1:
         scenario = f"_{args.scenario}_a{args.agents}"
-        if args.scenario == "teams":
+        if args.scenario in ("teams", "collectors-vs-pushers"):
             scenario += f"_t{args.teams}"
     return (
         f"{args.alg}_configs_{args.opponent}{scenario}"
@@ -450,7 +458,8 @@ def validate_train_args(args):
         raise SystemExit(f"--agents deve ser >= 1 (recebido {agents})")
     if agents > 1 and not multi_agent_alg:
         raise SystemExit(
-            "--agents > 1 exige um algoritmo multiagente (--alg ippo/mappo)")
+            "--agents > 1 exige um algoritmo multiagente "
+            "(--alg ippo/mappo/happo)")
     if multi_agent_alg:
         if agents < 2:
             raise SystemExit(
@@ -464,16 +473,22 @@ def validate_train_args(args):
             raise SystemExit(
                 "--opponent não se aplica ao modo multiagente; "
                 "todos os agentes aprendem")
-        if scenario == "teams":
+        if scenario in ("teams", "collectors-vs-pushers"):
             if teams < 2:
                 raise SystemExit(
-                    f"--teams deve ser >= 2 com --scenario teams (recebido {teams})")
+                    f"--teams deve ser >= 2 com --scenario {scenario} "
+                    f"(recebido {teams})")
             if agents % teams:
                 raise SystemExit(
                     f"--agents ({agents}) deve ser divisível por --teams ({teams})")
+            if scenario == "collectors-vs-pushers" and teams % 2:
+                raise SystemExit(
+                    "--scenario collectors-vs-pushers exige --teams par "
+                    f"(recebido {teams}): metade coleta, metade empurra")
     elif scenario != "all-vs-all":
         raise SystemExit(
-            "--scenario só se aplica ao modo multiagente (--alg ippo/mappo)")
+            "--scenario só se aplica ao modo multiagente "
+            "(--alg ippo/mappo/happo)")
     if getattr(args, "save_every_minutes", 0) < 0:
         raise SystemExit("--save-every-minutes deve ser >= 0")
     if getattr(args, "video_every_minutes", 0) < 0:
@@ -1375,11 +1390,25 @@ def main():
     scenario = None
     if multi_agent:
         # O cenário vai para o ArenaConfig (e portanto para o checkpoint).
-        scenario = (Scenario.all_vs_all(args.agents)
-                    if args.scenario == "all-vs-all"
-                    else Scenario.teams(args.agents, args.teams))
+        if args.scenario == "all-vs-all":
+            scenario = Scenario.all_vs_all(args.agents)
+        elif args.scenario == "teams":
+            scenario = Scenario.teams(args.agents, args.teams)
+        else:
+            scenario = Scenario.collectors_vs_pushers(
+                args.agents, args.teams)
         cfg.n_agents = scenario.n_agents
         cfg.team_ids = tuple(scenario.team_ids)
+        cfg.agent_roles = tuple(scenario.roles)
+        if scenario.has_roles:
+            # Calibra o empurrão para deslocar o alvo por meia arena e aplica
+            # a recarga de 2 s pedida pelo cenário. O teto de velocidade evita
+            # que o substep seguinte corte o impulso forte.
+            cfg.push_impulse = cfg.push_impulse_for_range(
+                cfg.width / 2.0, PUSH_INTENSITY)
+            cfg.push_speed_cap = (
+                cfg.push_impulse * PUSH_INTENSITY * 1.1)
+            cfg.push_cooldown = 2.0
         env = ArenaMultiEnv(cfg, render_mode="human" if args.render else None,
                             skin=args.skin)
     else:
@@ -1392,6 +1421,9 @@ def main():
     if multi_agent:
         agent_kwargs.update(n_agents=scenario.n_agents,
                             team_ids=tuple(scenario.team_ids))
+        if scenario.has_roles and getattr(
+                alg.Agent, "accepts_roles", False):
+            agent_kwargs["agent_roles"] = tuple(scenario.roles)
     elif not getattr(alg.Agent, "on_policy", False):
         # Só os agentes off-policy usam epsilon e warmup; PPO/A2C não
         # aceitam esses parâmetros (a exploração deles é a entropia).
@@ -1423,13 +1455,16 @@ def main():
             saved = payload.get("config") or {}
             saved_n = int(saved.get("n_agents", 0) or 0)
             saved_teams = tuple(saved.get("team_ids") or ())
+            saved_roles = tuple(saved.get("agent_roles") or ())
             if (saved_n != scenario.n_agents
-                    or saved_teams != tuple(scenario.team_ids)):
+                    or saved_teams != tuple(scenario.team_ids)
+                    or saved_roles != tuple(scenario.roles)):
                 raise SystemExit(
                     f"Cenário do checkpoint incompatível (n_agents={saved_n}, "
-                    f"team_ids={saved_teams}); esperado "
+                    f"team_ids={saved_teams}, roles={saved_roles}); esperado "
                     f"n_agents={scenario.n_agents}, "
-                    f"team_ids={tuple(scenario.team_ids)}.")
+                    f"team_ids={tuple(scenario.team_ids)}, "
+                    f"roles={tuple(scenario.roles)}.")
         if auto is not None:
             auto.init_from_disk()
     last_ep = start_ep + args.episodes - 1

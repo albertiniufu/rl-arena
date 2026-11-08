@@ -35,17 +35,28 @@ Treina sem abrir janela (padrão). `--alg` escolhe o pacote `alg_<nome>` em `alg
 
 Dica: se o terminal for inundado por avisos do NNPACK, rode com `TORCH_CPP_LOG_LEVEL=ERROR python train.py ...`.
 
-**Multiagente (IPPO e MAPPO).** Use `--alg ippo` ou `--alg mappo` para treinar todos
-os agentes ao mesmo tempo. O IPPO tem um crítico local por agente; o MAPPO usa um
-**crítico centralizado** (CTDE), que vê as features de todos os agentes durante o
-treino, embora a política continue descentralizada na execução.
+**Multiagente (IPPO, MAPPO e HAPPO).** Use `--alg ippo`, `--alg mappo` ou
+`--alg happo` para treinar todos os agentes ao mesmo tempo. O IPPO tem um crítico
+local por agente; o MAPPO usa um **crítico centralizado** (CTDE), que vê as
+features de todos os agentes durante o treino, embora a política continue
+descentralizada na execução. O HAPPO mantém o crítico centralizado, mas dá a cada
+agente um **ator independente** e faz o update em sequência, corrigindo a razão
+pelo produto das razões dos agentes já atualizados — a escolha para cenários
+heterogêneos, em que os papéis não têm o mesmo espaço de ação efetivo.
 Em `--scenario all-vs-all` cada agente é um time; em `--scenario teams --teams K` os
 agentes são divididos em K times de mesmo tamanho. Em times, a recompensa de cada
 membro é a média das recompensas do time.
+Em `--scenario collectors-vs-pushers --teams K` (K par) metade dos times só coleta
+moedas e metade só empurra os outros. Nesse cenário o empurrão é calibrado para
+deslocar o alvo por meia arena (320 px) e cada personagem espera **2 s** para
+empurrar de novo. Coletores têm `PUSH_LEFT`/`PUSH_RIGHT` mascarados (o ambiente
+também converte a ação em `STOP`); empurradores não coletam moedas do mapa e só
+ganham saldo pela transferência do empurrão.
 
 ```bash
 python train.py --alg ippo --agents 4 --scenario all-vs-all --checkpoint-dir checkpoints/all4
 python train.py --alg mappo --agents 4 --scenario teams --teams 2 --checkpoint-dir checkpoints/mappo_teams4
+python train.py --alg happo --agents 4 --scenario collectors-vs-pushers --teams 2 --checkpoint-dir checkpoints/happo_roles
 python evaluate.py --checkpoint checkpoints/teams4/best.pt --episodes 10
 python play.py --checkpoint checkpoints/teams4/best.pt --render   # modo espectador
 python play.py --checkpoint checkpoints/teams4/best.pt --player human --human-agent 0  # você + agente no time
@@ -114,7 +125,7 @@ Com `--opponent human` a janela também abre sozinha e o adversário usa o mesmo
 
 ### 6. Experimentar
 
-- Algoritmo: `--alg dqn` (padrão), `doubledqn_per_dueling`, `ppo`, `a2c`, `ippo` ou `mappo` — veja [Algoritmos](#algoritmos).
+- Algoritmo: `--alg dqn` (padrão), `doubledqn_per_dueling`, `ppo`, `a2c`, `ippo`, `mappo` ou `happo` — veja [Algoritmos](#algoritmos).
 - Adversário: `--opponent random`, `coins` ou `rule` (o padrão `auto` é um currículo — veja [Adversários](#adversários)).
 - Semente: `--seed N` (treinos com a mesma semente são idênticos).
 - Mundo: física, recompensas, duração do episódio e contagens ficam em `arena/config.py`.
@@ -196,6 +207,7 @@ Os algoritmos off-policy (`dqn` e `doubledqn_per_dueling`) usam a mesma observa�
 - **`a2c`**: on-policy, com a mesma rede actor-critic, mas retornos n-step (`n_steps = batch_size`, 64 no protocolo) e um único passo de otimização por rollout. Quando o episódio termina antes de completar o rollout, `end_episode()` consome o rabo; o retorno usa bootstrap no truncamento e não atravessa a fronteira do episódio. Usa as mesmas perdas de valor e entropia do PPO.
 - **`ippo`**: on-policy multiagente. Todos os agentes compartilham uma rede actor-critic e têm um buffer de rollout próprio; o update calcula GAE por trajetória e concatena as transições (horizonte `rollout_steps` por agente). O crítico é local: cada agente estima `V(s)` só com a própria observação. A observação é egocêntrica e usa 6 canais: self no 1, inimigos no 2, aliados no 5. Serve para todos-contra-todos e times; nestes últimos a recompensa é a média dos membros. Na primeira versão não aceita `--envs > 1`, `--overlap` nem adversários baseline misturados.
 - **`mappo`**: a mesma base do IPPO com **crítico centralizado** (CTDE). O ator compartilhado vê apenas a observação local, mas o crítico recebe as features de todos os agentes no mesmo passo (a grade egocêntrica de cada um já separa self/inimigos/aliados) mais um one-hot que identifica o agente consultado, e é esse estado conjunto que alimenta o GAE. O update agrupa as transições em passos conjuntos: a CNN roda uma vez por agente e serve às duas cabeças. O crítico centralizado reduz a variância do gradiente em troca de depender da observação conjunta na coleta; na execução nada global é consultado, então `evaluate.py`/`play.py` funcionam igual ao IPPO.
+- **`happo`**: PPO para agentes **heterogêneos**. Cada agente tem o próprio ator (CNN + cabeça categórica, sem pesos compartilhados) e o crítico é centralizado como no MAPPO, devolvendo um V por agente. O update é **sequencial**: para o agente `i`, a razão de política é `r_i · M_i`, com `M_i = Π_{j<i} r_j_novo` recalculado sem gradiente depois de cada ator atualizado. É o que preserva a decomposição da vantagem conjunta quando os papéis diferem. No cenário `collectors-vs-pushers`, os coletores têm `PUSH_*` mascarados na política e o ambiente converte a ação em `STOP`; empurradores não coletam do mapa (o engine ignora a moeda) e ganham saldo pela transferência do empurrão. Sem papéis, funciona como um MAPPO com atores separados.
 
 ```bash
 python train.py --episodes 300 --alg dqn
@@ -207,6 +219,7 @@ python train.py --episodes 300 --alg ppo --envs 8 --overlap --opponent rule
 python train.py --episodes 300 --alg ippo --agents 4 --scenario all-vs-all
 python train.py --episodes 300 --alg ippo --agents 4 --scenario teams --teams 2
 python train.py --episodes 300 --alg mappo --agents 4 --scenario teams --teams 2
+python train.py --episodes 300 --alg happo --agents 4 --scenario collectors-vs-pushers --teams 2
 ```
 
 PPO e A2C são on-policy; a política é estocástica no treino e gulosa na avaliação (`evaluate.py`/`play.py` chamam `act(..., greedy=True)`). Ambos aceitam `--envs N` (com adversário fixo): a coleta age em lote e os retornos são calculados em blocos por worker. Com `--overlap`, uma thread coleta o próximo rollout na CPU (cópia da política) enquanto a thread principal faz o update na GPU; a fila de tamanho 1 limita a defasagem a um rollout. O preço é que o treino deixa de ser bit a bit reprodutível (a versão de pesos usada em cada rollout depende do timing), embora as seeds continuem controlando ambientes e amostragem. Os retornos GAE/n-step são calculados em CPU mesmo com a rede em CUDA — a recorrência escalar na GPU sincroniza por passo (no A2C, o cálculo dos retornos de 64 passos cai de ~41 ms para ~10 ms e o update inteiro de ~45 ms para ~13 ms). Para alimentar melhor a GPU, aumente o minibatch do PPO (`--batch-size 256` reduz o update de 1024 amostras de ~160 ms para ~70 ms); no A2C o `--batch-size` também define o horizonte n-step, então mudá-lo altera o algoritmo.
@@ -292,7 +305,7 @@ python play.py --player coins --opponent coins --record demonstracao.mp4
 - O cenário e a configuração inicial são fixos.
 - O episódio termina pelo limite de tempo (truncamento), nunca apenas por morte. Ao morrer, o personagem perde 10 moedas (saldo mínimo zero), fica inativo por 5 s simulados e reaparece sobre uma plataforma aleatória.
 - A observação é uma grade semântica `(5, H, W)` no modo single-agent e `(6, H, W)` no multiagente (aliados no canal 5); velocidades e temporizadores não estão codificados, então a observação não é totalmente Markoviana — simplificação deliberada para a primeira experiência com CNN.
-- No multiagente todos os agentes compartilham a mesma política e não há coleta vetorizada, `--overlap` nem adversários baseline misturados na primeira versão. O IPPO usa crítico local; o MAPPO usa crítico centralizado (as features de todos os agentes no mesmo passo) apenas durante o treino.
+- No multiagente, IPPO e MAPPO compartilham a política entre os agentes; o HAPPO usa um ator por agente e atualiza em sequência. Não há coleta vetorizada, `--overlap` nem adversários baseline misturados na primeira versão. O IPPO usa crítico local; MAPPO e HAPPO usam crítico centralizado (as features de todos os agentes no mesmo passo) apenas durante o treino. A observação não codifica a recarga do empurrão, então o timer de 2 s também é uma fonte de não-Markovianidade no cenário assimétrico.
 
 ### Ideias para simplificar ainda mais o treino
 
@@ -310,7 +323,7 @@ Mudanças de ambiente que costumam acelerar o aprendizado (nenhuma está aplicad
 ```text
 rl-arena/
 ├── arena/                    # configuração, motor, ambiente, ações e renderizadores
-│   ├── scenario.py           # cenários multiagente (todos-contra-todos/times)
+│   ├── scenario.py           # cenários multiagente (todos-contra-todos/times/papéis)
 │   ├── observations.py       # grade semântica (5 canais legado, 6 por viewer)
 │   ├── multi_environment.py  # ArenaMultiEnv: ações conjuntas por agente
 │   └── ...
@@ -322,7 +335,9 @@ rl-arena/
 │   ├── alg_ppo/              # PPO: actor-critic, rollout com GAE
 │   ├── alg_a2c/              # A2C: actor-critic, retornos n-step
 │   ├── alg_ippo/             # IPPO: política compartilhada, buffer por agente
-│   └── alg_mappo/            # MAPPO: ator compartilhado, crítico centralizado
+│   ├── alg_mappo/            # MAPPO: ator compartilhado, crítico centralizado
+│   └── alg_happo/            # HAPPO: n atores independentes, update sequencial
+├── docs/                     # aulas em HTML (ppo, ippo, mappo, happo)
 ├── scripts/                  # comparações controladas e sumarizador
 ├── tests/
 ├── train.py

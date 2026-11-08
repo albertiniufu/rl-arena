@@ -1,0 +1,2395 @@
+<title>HAPPO no rl-arena</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,600;12..96,700&family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
+<style>
+  /* ---------------------------------------------------------------
+     Plano de design
+     Cor: papel frio esverdeado, tinta quase preta, verde de política,
+          azul de valor, âmbar de recompensa, vermelho de perda.
+     Tipo: Bricolage Grotesque (títulos), IBM Plex Sans (corpo),
+           IBM Plex Mono (dados, fórmulas, código).
+     Layout: palco único de slides; trilha de progresso; grade de 20 px
+             lembrando a célula do mapa.
+     --------------------------------------------------------------- */
+  :root {
+    --bg: #f1f4ef;
+    --grid: rgba(21, 33, 26, 0.045);
+    --surface: #fbfcf9;
+    --surface-2: #e6ece4;
+    --ink: #15211a;
+    --muted: #5d6c63;
+    --line: #d2dbd3;
+    --accent: #0e7c5a;
+    --accent-strong: #0a5c43;
+    --accent-soft: #d7eee4;
+    --value: #2f5fa8;
+    --value-soft: #dde8f8;
+    --reward: #a96518;
+    --reward-soft: #f6e7d1;
+    --loss: #b23b32;
+    --loss-soft: #f6dfdc;
+    --code-bg: #101b15;
+    --code-fg: #dce8e0;
+    --code-dim: #7e9788;
+    --code-key: #6fd6a8;
+    --code-str: #e8b271;
+    --code-num: #9bc2f0;
+    --font-display: "Bricolage Grotesque", "IBM Plex Sans", system-ui, sans-serif;
+    --font-body: "IBM Plex Sans", system-ui, -apple-system, sans-serif;
+    --font-mono: "IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+  }
+
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #0d1612;
+      --grid: rgba(232, 239, 233, 0.05);
+      --surface: #14211b;
+      --surface-2: #1d2d25;
+      --ink: #e8efe9;
+      --muted: #9aaEA3;
+      --line: #2a3b32;
+      --accent: #57d3a3;
+      --accent-strong: #8be8c4;
+      --accent-soft: #163a2c;
+      --value: #8db4f5;
+      --value-soft: #1b2d4c;
+      --reward: #e9a45b;
+      --reward-soft: #3c2a16;
+      --loss: #f08379;
+      --loss-soft: #3b1d1a;
+      --code-bg: #08110c;
+      color-scheme: dark;
+    }
+  }
+
+  :root[data-theme="dark"] {
+    --bg: #0d1612;
+    --grid: rgba(232, 239, 233, 0.05);
+    --surface: #14211b;
+    --surface-2: #1d2d25;
+    --ink: #e8efe9;
+    --muted: #9aaEA3;
+    --line: #2a3b32;
+    --accent: #57d3a3;
+    --accent-strong: #8be8c4;
+    --accent-soft: #163a2c;
+    --value: #8db4f5;
+    --value-soft: #1b2d4c;
+    --reward: #e9a45b;
+    --reward-soft: #3c2a16;
+    --loss: #f08379;
+    --loss-soft: #3b1d1a;
+    --code-bg: #08110c;
+    color-scheme: dark;
+  }
+
+  * { box-sizing: border-box; }
+  html, body { height: 100%; }
+  body {
+    margin: 0;
+    overflow: hidden;
+    background-color: var(--bg);
+    background-image:
+      linear-gradient(to right, var(--grid) 1px, transparent 1px),
+      linear-gradient(to bottom, var(--grid) 1px, transparent 1px);
+    background-size: 20px 20px;
+    color: var(--ink);
+    font-family: var(--font-body);
+    font-size: 15px;
+    line-height: 1.5;
+    -webkit-font-smoothing: antialiased;
+  }
+  button, input, select { font: inherit; color: inherit; }
+  button { cursor: pointer; }
+  p { margin: 0; }
+  h1, h2, h3 { margin: 0; text-wrap: balance; }
+  a { color: var(--accent); }
+  button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible, [tabindex]:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 3px;
+    border-radius: 4px;
+  }
+  .slide:focus, .slide:focus-visible, .stage:focus, .stage:focus-visible { outline: none; }
+  ::selection { background: var(--accent-soft); color: var(--ink); }
+
+  .app {
+    height: 100%;
+    display: grid;
+    grid-template-rows: 3px auto minmax(0, 1fr) auto;
+    padding-left: max(18px, env(safe-area-inset-left, 0px));
+    padding-right: max(18px, env(safe-area-inset-right, 0px));
+  }
+  .progress { background: var(--line); border-radius: 99px; overflow: hidden; }
+  .progress span { display: block; height: 100%; width: 0; background: var(--accent); transition: width .35s ease; }
+
+  .topbar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+    padding-block: 11px 9px;
+    border-bottom: 1px solid var(--line);
+  }
+  .brand {
+    display: flex;
+    align-items: center;
+    gap: 9px;
+    min-width: 0;
+    font-family: var(--font-mono);
+    font-size: 11px;
+    letter-spacing: .13em;
+    text-transform: uppercase;
+    color: var(--muted);
+    white-space: nowrap;
+  }
+  .brand b { color: var(--ink); font-weight: 600; }
+  .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--accent); flex: none; }
+  .sec-label { color: var(--accent); padding-left: 4px; }
+  .top-actions { display: flex; align-items: center; gap: 8px; }
+  .tb {
+    background: transparent;
+    border: 1px solid var(--line);
+    color: var(--muted);
+    border-radius: 7px;
+    padding: 5px 9px;
+    font-family: var(--font-mono);
+    font-size: 10.5px;
+    letter-spacing: .05em;
+    text-transform: uppercase;
+    white-space: nowrap;
+    transition: color .15s ease, border-color .15s ease;
+  }
+  .tb:hover { color: var(--ink); border-color: var(--accent); }
+  .counter {
+    font-family: var(--font-mono);
+    font-size: 11px;
+    color: var(--muted);
+    font-variant-numeric: tabular-nums;
+    min-width: 66px;
+    text-align: right;
+  }
+
+  .stage { position: relative; min-height: 0; }
+  .slide {
+    position: absolute;
+    inset: 0;
+    overflow-y: auto;
+    overflow-x: hidden;
+    padding-block: clamp(18px, 3.4vh, 34px) clamp(16px, 3vh, 30px);
+    scrollbar-width: thin;
+  }
+  .slide[hidden] { display: none !important; }
+  .slide.active { animation: enter .32s ease both; }
+  @keyframes enter { from { opacity: 0; transform: translateY(7px); } to { opacity: 1; transform: none; } }
+  .slide-inner {
+    width: 100%;
+    max-width: 1180px;
+    min-height: 100%;
+    margin: 0 auto;
+    display: flex;
+    flex-direction: column;
+    gap: clamp(14px, 2.4vh, 26px);
+  }
+  .slide-inner > * { min-width: 0; }
+
+  .eyebrow {
+    font-family: var(--font-mono);
+    font-size: 10.5px;
+    letter-spacing: .16em;
+    text-transform: uppercase;
+    color: var(--accent);
+  }
+  .title {
+    font-family: var(--font-display);
+    font-weight: 640;
+    font-size: clamp(28px, 3.6vw, 47px);
+    line-height: 1.04;
+    letter-spacing: -.022em;
+    max-width: 25ch;
+  }
+  .lede {
+    color: var(--muted);
+    font-size: clamp(14px, 1.2vw, 16.5px);
+    line-height: 1.55;
+    max-width: 68ch;
+  }
+  .display {
+    font-family: var(--font-display);
+    font-weight: 650;
+    font-size: clamp(46px, 8vw, 106px);
+    line-height: .93;
+    letter-spacing: -.04em;
+  }
+  .display .thin { color: var(--accent); font-weight: 500; }
+  .mono { font-family: var(--font-mono); }
+  .muted { color: var(--muted); }
+  .accent { color: var(--accent); }
+
+  .cover-wrap {
+    flex: 1;
+    display: grid;
+    grid-template-columns: minmax(0, 1.25fr) minmax(0, .75fr);
+    gap: clamp(20px, 4vw, 56px);
+    align-items: center;
+    padding-block: 8px 20px;
+  }
+  .cover-copy { display: flex; flex-direction: column; gap: 18px; min-width: 0; }
+  .cover-copy .lede { font-size: clamp(15px, 1.5vw, 19px); max-width: 46ch; }
+  .chips { display: flex; flex-wrap: wrap; gap: 7px; }
+  .chip {
+    font-family: var(--font-mono);
+    font-size: 10.5px;
+    letter-spacing: .04em;
+    color: var(--muted);
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-radius: 999px;
+    padding: 5px 10px;
+    white-space: nowrap;
+  }
+  .chip.green { color: var(--accent-strong); border-color: var(--accent); background: var(--accent-soft); }
+  .cover-foot {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 14px;
+    flex-wrap: wrap;
+    padding-top: 16px;
+    border-top: 1px solid var(--line);
+    font-size: 12px;
+    color: var(--muted);
+  }
+  .cover-refs {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    padding-top: 10px;
+    border-top: 1px dashed var(--line);
+  }
+  .cover-refs .ref {
+    display: flex;
+    align-items: baseline;
+    gap: 8px;
+    font-size: 11.5px;
+    line-height: 1.45;
+    color: var(--muted);
+  }
+  .cover-refs .ref-tag {
+    flex: none;
+    font-family: var(--font-mono);
+    font-size: 8.5px;
+    letter-spacing: .1em;
+    text-transform: uppercase;
+    color: var(--accent-strong);
+    background: var(--accent-soft);
+    border: 1px solid var(--accent);
+    border-radius: 3px;
+    padding: 1px 5px;
+  }
+  .cover-refs a {
+    color: var(--ink);
+    text-decoration: none;
+    border-bottom: 1px solid var(--line);
+    overflow-wrap: anywhere;
+  }
+  .cover-refs a:hover { color: var(--accent-strong); border-bottom-color: var(--accent); }
+  .cover-refs .src {
+    font-family: var(--font-mono);
+    font-size: 10px;
+    color: var(--muted);
+  }
+  kbd {
+    font-family: var(--font-mono);
+    font-size: 10px;
+    color: var(--ink);
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-bottom-width: 2px;
+    border-radius: 4px;
+    padding: 1px 5px;
+  }
+  .cover-art { display: flex; flex-direction: column; gap: 10px; min-width: 0; }
+  .mini-map {
+    position: relative;
+    width: 100%;
+    max-width: 390px;
+    aspect-ratio: 16 / 10;
+    margin-left: auto;
+    border: 1px solid var(--line);
+    border-radius: 14px;
+    background-color: var(--surface);
+    background-image:
+      linear-gradient(to right, var(--grid) 1px, transparent 1px),
+      linear-gradient(to bottom, var(--grid) 1px, transparent 1px);
+    background-size: 20px 20px;
+    overflow: hidden;
+    box-shadow: 0 18px 40px -30px rgba(10, 25, 18, .45);
+  }
+  .mini-map .platform {
+    position: absolute;
+    height: 7px;
+    border-radius: 2px;
+    background: var(--ink);
+    opacity: .22;
+  }
+  .mini-map .unit { position: absolute; border-radius: 50%; transform: translate(-50%, -50%); }
+  .mini-map .unit.player { width: 13px; height: 13px; background: var(--accent); box-shadow: 0 0 0 4px var(--accent-soft); }
+  .mini-map .unit.opponent { width: 12px; height: 12px; background: var(--value); box-shadow: 0 0 0 4px var(--value-soft); }
+  .mini-map .unit.coin { width: 8px; height: 8px; background: var(--reward); box-shadow: 0 0 0 3px var(--reward-soft); }
+  .mini-caption {
+    margin-left: auto;
+    font-family: var(--font-mono);
+    font-size: 10.5px;
+    color: var(--muted);
+    text-align: right;
+  }
+
+  .grid-2 { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: clamp(14px, 2.2vw, 26px); align-items: start; }
+  .grid-3 { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: clamp(12px, 1.6vw, 18px); }
+  .grid-2 > *, .grid-3 > * { min-width: 0; }
+  .stack { display: flex; flex-direction: column; gap: 14px; min-width: 0; }
+  .stack.tight { gap: 9px; }
+  .split { display: grid; grid-template-columns: minmax(0, 1.15fr) minmax(0, .85fr); gap: clamp(14px, 2.2vw, 26px); align-items: start; }
+  .split > * { min-width: 0; }
+  .gae-layout { grid-template-columns: minmax(260px, .78fr) minmax(0, 1.22fr); }
+
+  .card {
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-radius: 13px;
+    padding: clamp(14px, 1.8vw, 20px);
+    min-width: 0;
+  }
+  .card h3 {
+    font-family: var(--font-display);
+    font-weight: 600;
+    font-size: 17px;
+    letter-spacing: -.01em;
+    line-height: 1.2;
+    margin-bottom: 7px;
+  }
+  .card p { font-size: 13.5px; line-height: 1.5; color: var(--muted); }
+  .file-card { display: flex; flex-direction: column; gap: 8px; }
+  .file-top { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; }
+  .file-name { font-family: var(--font-mono); font-size: 13px; color: var(--ink); font-weight: 500; word-break: break-word; }
+  .file-lines { font-family: var(--font-mono); font-size: 10.5px; color: var(--muted); white-space: nowrap; }
+  .file-card .role { font-size: 13px; color: var(--muted); line-height: 1.5; }
+  .file-card .symbol { font-family: var(--font-mono); font-size: 10.5px; color: var(--accent); }
+
+  .note {
+    display: flex;
+    gap: 11px;
+    align-items: flex-start;
+    padding: 10px 14px;
+    background: var(--accent-soft);
+    border-radius: 9px;
+    font-size: 13px;
+    line-height: 1.5;
+    color: var(--ink);
+  }
+  .note .mark { font-family: var(--font-mono); color: var(--accent-strong); font-weight: 600; flex: none; }
+  .note.warn { background: var(--reward-soft); }
+  .note.warn .mark { color: var(--reward); }
+  .note.loss { background: var(--loss-soft); }
+  .note.loss .mark { color: var(--loss); }
+  .note code { font-family: var(--font-mono); font-size: .94em; }
+
+  .list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 9px; }
+  .list li { display: flex; gap: 10px; align-items: flex-start; font-size: 13.5px; line-height: 1.5; }
+  .list .bullet { flex: none; width: 7px; height: 7px; border-radius: 50%; background: var(--accent); margin-top: 7px; }
+  .list .bullet.blue { background: var(--value); }
+  .list .bullet.amber { background: var(--reward); }
+  .list .bullet.red { background: var(--loss); }
+  .list b, .card b { font-weight: 600; }
+
+  .formula {
+    font-family: var(--font-mono);
+    font-size: clamp(12.5px, 1.35vw, 15.5px);
+    line-height: 1.85;
+    background: var(--surface-2);
+    border-left: 3px solid var(--accent);
+    border-radius: 0 10px 10px 0;
+    padding: 11px 15px;
+    overflow-x: auto;
+    white-space: nowrap;
+    color: var(--ink);
+  }
+  .formula .dim { color: var(--muted); }
+  .formula .blue { color: var(--value); }
+  .formula .amber { color: var(--reward); }
+  .formula sub, .formula sup { font-size: .74em; }
+  .formula-wrap { overflow-x: auto; }
+
+  .code {
+    margin: 0;
+    background: var(--code-bg);
+    color: var(--code-fg);
+    border: 1px solid #223229;
+    border-radius: 11px;
+    padding: 14px 16px;
+    overflow-x: auto;
+    font-family: var(--font-mono);
+    font-size: clamp(11px, 1.02vw, 12.8px);
+    line-height: 1.72;
+    tab-size: 2;
+  }
+  .code .c { color: var(--code-dim); }
+  .code .k { color: var(--code-key); }
+  .code .s { color: var(--code-str); }
+  .code .n { color: var(--code-num); }
+  .code .hl { background: rgba(111, 214, 168, .13); border-radius: 3px; padding: 0 2px; }
+  .code-label {
+    font-family: var(--font-mono);
+    font-size: 10px;
+    letter-spacing: .1em;
+    text-transform: uppercase;
+    color: var(--muted);
+    margin-bottom: 6px;
+  }
+
+  .table-wrap {
+    overflow-x: auto;
+    border: 1px solid var(--line);
+    border-radius: 12px;
+    background: var(--surface);
+  }
+  table { border-collapse: collapse; width: 100%; min-width: 560px; font-size: 13px; }
+  th {
+    text-align: left;
+    font-family: var(--font-mono);
+    font-size: 10px;
+    letter-spacing: .08em;
+    text-transform: uppercase;
+    color: var(--muted);
+    font-weight: 500;
+    padding: 10px 14px;
+    border-bottom: 1px solid var(--line);
+    white-space: nowrap;
+  }
+  td { padding: 10px 14px; border-bottom: 1px solid var(--line); vertical-align: top; line-height: 1.45; }
+  tr:last-child td { border-bottom: 0; }
+  td.mono, th.mono { font-family: var(--font-mono); font-size: 12px; }
+  td .yes { color: var(--accent); font-weight: 600; }
+  td .no { color: var(--loss); font-weight: 600; }
+
+  .spec { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; }
+  .spec .num { font-family: var(--font-mono); font-size: clamp(24px, 3vw, 36px); letter-spacing: -.04em; line-height: 1; }
+  .spec .unit { font-family: var(--font-mono); font-size: 10.5px; color: var(--muted); letter-spacing: .06em; text-transform: uppercase; }
+  .stats { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 8px; }
+  .stat {
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-radius: 9px;
+    padding: 9px 11px;
+    min-width: 0;
+  }
+  .stat b { display: block; font-family: var(--font-mono); font-size: 17px; font-weight: 500; letter-spacing: -.02em; font-variant-numeric: tabular-nums; }
+  .stat span { display: block; margin-top: 2px; font-family: var(--font-mono); font-size: 9.5px; color: var(--muted); letter-spacing: .05em; text-transform: uppercase; }
+
+  .channels { display: flex; flex-direction: column; gap: 0; border: 1px solid var(--line); border-radius: 12px; overflow: hidden; background: var(--surface); }
+  .channel { display: grid; grid-template-columns: 20px 18px 105px minmax(0, 1fr); align-items: center; gap: 10px; padding: 9px 13px; border-bottom: 1px solid var(--line); font-size: 13px; }
+  .channel:last-child { border-bottom: 0; }
+  .channel .idx { font-family: var(--font-mono); font-size: 10.5px; color: var(--muted); }
+  .channel .swatch { width: 15px; height: 15px; border-radius: 4px; }
+  .channel .name { font-family: var(--font-mono); font-size: 11.5px; }
+  .channel .desc { color: var(--muted); font-size: 12px; }
+  .actions { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; }
+  .action {
+    display: flex;
+    align-items: baseline;
+    gap: 7px;
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    padding: 7px 9px;
+    min-width: 0;
+  }
+  .action .code-act { font-family: var(--font-mono); font-size: 10px; color: var(--accent); }
+  .action .name-act { font-size: 11.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+  .figure { margin: 0; display: flex; flex-direction: column; gap: 9px; min-width: 0; }
+  .figure figcaption { font-size: 12px; color: var(--muted); line-height: 1.45; max-width: 85ch; }
+  .diagram-scroll, .chart-scroll { overflow-x: auto; overflow-y: hidden; }
+  .diagram { display: block; width: 100%; height: auto; }
+  .net { min-width: 760px; }
+
+  .diagram .box { fill: var(--surface); stroke: var(--line); stroke-width: 1.4; }
+  .diagram .conv { fill: var(--surface-2); }
+  .diagram .box-actor { fill: var(--accent-soft); stroke: var(--accent); }
+  .diagram .box-critic { fill: var(--value-soft); stroke: var(--value); }
+  .diagram .in-rect { fill: var(--surface-2); stroke: var(--line); stroke-width: 1.2; }
+  .diagram .wire { fill: none; stroke: var(--muted); stroke-width: 1.5; }
+  .diagram .arrowhead { fill: var(--muted); }
+  .diagram .box-title { fill: var(--ink); font-family: var(--font-mono); font-size: 12px; font-weight: 500; }
+  .diagram .box-sub { fill: var(--muted); font-family: var(--font-mono); font-size: 10px; }
+  .diagram .edge-label { fill: var(--muted); font-family: var(--font-mono); font-size: 9.5px; letter-spacing: .04em; }
+  .diagram .out-chip { fill: var(--bg); stroke: var(--line); stroke-width: 1.2; }
+
+  .timeline-svg .lane { fill: var(--accent-soft); stroke: var(--accent); stroke-width: 1.2; }
+  .timeline-svg .dead { fill: var(--loss-soft); stroke: var(--loss); stroke-width: 1.2; }
+  .timeline-svg .axis { stroke: var(--line); stroke-width: 1.4; }
+  .timeline-svg .wire { stroke: var(--accent); stroke-width: 1.5; stroke-dasharray: 4 3; }
+  .timeline-svg .tick { fill: var(--muted); font-family: var(--font-mono); font-size: 10px; }
+  .timeline-svg .label { fill: var(--ink); font-family: var(--font-mono); font-size: 10.5px; }
+  .timeline-svg .note-text { fill: var(--muted); font-family: var(--font-mono); font-size: 10px; }
+  .timeline-svg .marker { fill: var(--loss); }
+  .timeline-svg .arrowhead-a { fill: var(--accent); }
+
+  .tape { display: flex; gap: 3px; height: 20px; margin-top: 10px; }
+  .seg {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 0;
+    overflow: hidden;
+    white-space: nowrap;
+    font-family: var(--font-mono);
+    font-size: 8.5px;
+    border-radius: 4px;
+  }
+  .seg.collect { background: var(--accent-soft); color: var(--accent-strong); border: 1px solid var(--accent); }
+  .seg.update { background: var(--value-soft); color: var(--value); border: 1px solid var(--value); }
+  .lanes { display: flex; flex-direction: column; gap: 4px; margin-top: 10px; }
+  .lane { display: grid; grid-template-columns: 30px minmax(0, 1fr); gap: 6px; align-items: center; }
+  .lane .tape { margin-top: 0; }
+  .lane-label { font-family: var(--font-mono); font-size: 8px; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); }
+
+  .pipeline { display: flex; align-items: stretch; gap: 6px; flex-wrap: wrap; }
+  .pipe-step {
+    flex: 1 1 120px;
+    min-width: 0;
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-radius: 9px;
+    padding: 9px 10px;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+  }
+  .pipe-step .step-n { font-family: var(--font-mono); font-size: 9px; color: var(--accent); letter-spacing: .08em; }
+  .pipe-step b { font-family: var(--font-mono); font-size: 11.5px; font-weight: 500; overflow-wrap: anywhere; }
+  .pipe-step small { font-size: 10.5px; color: var(--muted); line-height: 1.35; }
+  .pipe-arrow { align-self: center; color: var(--muted); font-family: var(--font-mono); font-size: 13px; flex: none; }
+
+  .lab {
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-radius: 13px;
+    padding: clamp(13px, 1.6vw, 18px);
+    display: flex;
+    flex-direction: column;
+    gap: 11px;
+    min-width: 0;
+  }
+  .lab-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    font-family: var(--font-mono);
+    font-size: 9.5px;
+    letter-spacing: .09em;
+    text-transform: uppercase;
+    color: var(--muted);
+  }
+  .lab-head b { color: var(--accent); font-weight: 500; }
+  .control {
+    display: grid;
+    grid-template-columns: 86px minmax(0, 1fr) 58px;
+    align-items: center;
+    gap: 10px;
+    font-family: var(--font-mono);
+    font-size: 11.5px;
+  }
+  .control label { color: var(--muted); }
+  .control output { text-align: right; font-variant-numeric: tabular-nums; color: var(--ink); }
+  .control select {
+    grid-column: 2 / 4;
+    width: 100%;
+    min-width: 0;
+    background: var(--surface-2);
+    border: 1px solid var(--line);
+    border-radius: 6px;
+    padding: 4px 6px;
+    font-family: var(--font-mono);
+    font-size: 11px;
+    color: var(--ink);
+  }
+  input[type="range"] {
+    -webkit-appearance: none;
+    appearance: none;
+    width: 100%;
+    height: 18px;
+    background: transparent;
+    cursor: pointer;
+  }
+  input[type="range"]::-webkit-slider-runnable-track {
+    height: 4px;
+    border-radius: 99px;
+    background: var(--surface-2);
+    border: 1px solid var(--line);
+  }
+  input[type="range"]::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    appearance: none;
+    width: 13px;
+    height: 13px;
+    margin-top: -5px;
+    border-radius: 50%;
+    background: var(--accent);
+    border: 2px solid var(--surface);
+    box-shadow: 0 0 0 1px var(--accent);
+  }
+  input[type="range"]::-moz-range-track {
+    height: 4px;
+    border-radius: 99px;
+    background: var(--surface-2);
+    border: 1px solid var(--line);
+  }
+  input[type="range"]::-moz-range-thumb {
+    width: 11px;
+    height: 11px;
+    border-radius: 50%;
+    background: var(--accent);
+    border: 2px solid var(--surface);
+  }
+
+  .btn, .btn-accent, .btn-ghost {
+    border-radius: 7px;
+    padding: 7px 11px;
+    font-family: var(--font-mono);
+    font-size: 11px;
+    letter-spacing: .02em;
+    border: 1px solid var(--line);
+    background: var(--surface);
+    color: var(--ink);
+    transition: border-color .15s ease, background .15s ease;
+    min-width: 0;
+  }
+  .btn:hover, .btn-ghost:hover { border-color: var(--accent); }
+  .btn-accent { background: var(--accent); border-color: var(--accent); color: var(--bg); font-weight: 500; }
+  .btn-accent:hover { background: var(--accent-strong); border-color: var(--accent-strong); }
+  .btn-ghost { background: transparent; }
+  .btn-row { display: flex; flex-wrap: wrap; gap: 7px; }
+  .status { font-size: 12px; line-height: 1.45; color: var(--muted); min-height: 2.9em; }
+  .status strong { color: var(--ink); font-weight: 600; }
+  .status.ok { color: var(--accent-strong); }
+  .status.wait { color: var(--reward); }
+
+  .policy-rows { display: flex; flex-direction: column; gap: 6px; }
+  .policy-row {
+    display: grid;
+    grid-template-columns: 82px minmax(0, 1fr) 44px;
+    align-items: center;
+    gap: 9px;
+    font-family: var(--font-mono);
+    font-size: 11px;
+  }
+  .policy-row .name { color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .policy-row .pct { text-align: right; font-variant-numeric: tabular-nums; color: var(--ink); }
+  .policy-row.sampled .name { color: var(--reward); font-weight: 500; }
+  .policy-row.sampled input[type="range"]::-webkit-slider-thumb { background: var(--reward); box-shadow: 0 0 0 1px var(--reward); }
+  .policy-row.sampled input[type="range"]::-moz-range-thumb { background: var(--reward); }
+  .policy-result {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 7px;
+    padding-top: 9px;
+    border-top: 1px solid var(--line);
+  }
+  .policy-result div { display: flex; flex-direction: column; gap: 1px; min-width: 0; }
+  .policy-result .k { font-family: var(--font-mono); font-size: 9px; letter-spacing: .07em; text-transform: uppercase; color: var(--muted); }
+  .policy-result b { font-family: var(--font-mono); font-size: 12px; font-weight: 500; color: var(--ink); overflow-wrap: anywhere; }
+
+  .step-strip { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 4px; min-width: 520px; }
+  .step-cell {
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-radius: 7px;
+    padding: 5px 6px;
+    display: flex;
+    flex-direction: column;
+    gap: 1px;
+    font-family: var(--font-mono);
+    font-size: 10px;
+    min-width: 0;
+  }
+  .step-cell .t { color: var(--accent); font-size: 9px; letter-spacing: .06em; }
+  .step-cell .r { color: var(--reward); }
+  .step-cell .v { color: var(--value); }
+  .chart-scroll { overflow-x: auto; overflow-y: hidden; }
+  .chart { display: block; width: 100%; height: auto; min-width: 0; }
+  .chart .axis { stroke: var(--line); stroke-width: 1.2; }
+  .chart .tick { fill: var(--muted); font-family: var(--font-mono); font-size: 10px; }
+  .chart .val { fill: var(--ink); font-family: var(--font-mono); font-size: 10px; font-variant-numeric: tabular-nums; }
+  .chart .bar-pos { fill: var(--accent); }
+  .chart .bar-neg { fill: var(--loss); }
+  .chart .curve { fill: none; stroke: var(--accent); stroke-width: 2.4; }
+  .chart .flat { stroke: var(--reward); stroke-width: 2.4; }
+  .chart .guide { stroke: var(--line); stroke-width: 1; stroke-dasharray: 3 3; }
+  .chart .region { fill: var(--surface-2); }
+  .chart .region-warn { fill: var(--loss-soft); }
+  .chart .dot { fill: var(--accent); }
+  .chart .lbl { fill: var(--muted); font-family: var(--font-mono); font-size: 10px; }
+  .chart .lbl-strong { fill: var(--ink); font-family: var(--font-mono); font-size: 10.5px; }
+  .caption { font-size: 11.5px; line-height: 1.45; color: var(--muted); }
+
+  .buffer-bar {
+    height: 16px;
+    border-radius: 99px;
+    background: var(--surface-2);
+    border: 1px solid var(--line);
+    overflow: hidden;
+  }
+  .buffer-bar span { display: block; height: 100%; width: 0; background: var(--accent); border-radius: 99px; transition: width .25s ease; }
+  .buffer-meta { display: flex; justify-content: space-between; gap: 10px; font-family: var(--font-mono); font-size: 10.5px; color: var(--muted); flex-wrap: wrap; }
+
+  .quiz-list { display: flex; flex-direction: column; gap: 12px; }
+  .quiz { background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: 14px 16px; display: flex; flex-direction: column; gap: 9px; }
+  .q { font-size: 14.5px; font-weight: 600; line-height: 1.4; display: flex; gap: 10px; align-items: baseline; }
+  .q .qnum { font-family: var(--font-mono); font-size: 10px; color: var(--accent); letter-spacing: .08em; flex: none; }
+  .options { display: grid; gap: 6px; }
+  .opt {
+    text-align: left;
+    background: var(--bg);
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    padding: 8px 11px;
+    font-size: 12.5px;
+    line-height: 1.4;
+    color: var(--ink);
+    transition: border-color .15s ease, background .15s ease;
+  }
+  .opt:hover { border-color: var(--accent); }
+  .opt.correct { border-color: var(--accent); background: var(--accent-soft); }
+  .opt.wrong { border-color: var(--loss); background: var(--loss-soft); }
+  .feedback { font-size: 12px; line-height: 1.5; color: var(--muted); }
+  .feedback.correct { color: var(--accent-strong); }
+  .feedback.wrong { color: var(--loss); }
+
+  .takeaways { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+  .takeaway { background: var(--surface); border: 1px solid var(--line); border-radius: 11px; padding: 13px 15px; display: flex; flex-direction: column; gap: 4px; }
+  .takeaway .k { font-family: var(--font-mono); font-size: 9.5px; letter-spacing: .09em; text-transform: uppercase; color: var(--accent); }
+  .takeaway b { font-size: 14.5px; line-height: 1.3; font-weight: 600; }
+  .takeaway p { font-size: 12px; color: var(--muted); line-height: 1.45; }
+
+  .foot {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 14px;
+    padding-block: 8px 10px;
+    border-top: 1px solid var(--line);
+    font-size: 11px;
+    color: var(--muted);
+    min-height: 38px;
+  }
+  .hint { display: flex; align-items: center; gap: 5px; flex-wrap: wrap; }
+  .hint .sep { opacity: .5; padding: 0 2px; }
+  .foot-title {
+    font-family: var(--font-mono);
+    font-size: 10px;
+    letter-spacing: .05em;
+    color: var(--muted);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    text-align: center;
+    flex: 1;
+  }
+  .navbtns { display: flex; gap: 6px; }
+  .navbtn {
+    width: 32px;
+    height: 28px;
+    display: grid;
+    place-items: center;
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-radius: 7px;
+    color: var(--ink);
+    font-family: var(--font-mono);
+    font-size: 14px;
+    line-height: 1;
+  }
+  .navbtn:hover { border-color: var(--accent); }
+  .navbtn:disabled { opacity: .35; cursor: default; border-color: var(--line); }
+
+  .overlay {
+    position: fixed;
+    inset: 0;
+    z-index: 50;
+    background: var(--bg);
+    overflow-y: auto;
+    padding:
+      max(18px, env(safe-area-inset-top, 0px))
+      max(18px, env(safe-area-inset-right, 0px))
+      max(18px, env(safe-area-inset-bottom, 0px))
+      max(18px, env(safe-area-inset-left, 0px));
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+  }
+  .overlay[hidden] { display: none !important; }
+  .overlay-head { display: flex; align-items: center; justify-content: space-between; gap: 14px; max-width: 1100px; width: 100%; margin: 0 auto; }
+  .overlay-head h2 { font-family: var(--font-display); font-size: 24px; font-weight: 600; letter-spacing: -.02em; }
+  .overlay-head .eyebrow { margin-bottom: 3px; }
+  .index-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 8px; max-width: 1100px; width: 100%; margin: 0 auto; }
+  .index-item {
+    display: grid;
+    grid-template-columns: 30px minmax(0, 1fr);
+    grid-template-rows: auto auto;
+    gap: 1px 8px;
+    text-align: left;
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-radius: 9px;
+    padding: 9px 10px;
+    color: var(--ink);
+    transition: border-color .15s ease;
+  }
+  .index-item:hover { border-color: var(--accent); }
+  .index-item.current { border-color: var(--accent); background: var(--accent-soft); }
+  .idx-num { grid-row: 1 / 3; font-family: var(--font-mono); font-size: 11px; color: var(--accent); padding-top: 2px; font-variant-numeric: tabular-nums; }
+  .idx-sec { font-family: var(--font-mono); font-size: 8.5px; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); }
+  .idx-title { font-size: 12.5px; line-height: 1.3; font-weight: 500; }
+
+  @media (max-width: 980px) {
+    .grid-3 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .stats { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+    .cover-wrap { grid-template-columns: 1fr; }
+    .cover-art { display: none; }
+    .split { grid-template-columns: 1fr; }
+  }
+  @media (max-width: 760px) {
+    body { font-size: 14px; }
+    .grid-2, .grid-3 { grid-template-columns: 1fr; }
+    .sec-label { display: none; }
+    .foot-title { display: none; }
+    .hint { display: none; }
+    .title { max-width: none; }
+    .slide { padding-block: 16px 20px; }
+    .takeaways { grid-template-columns: 1fr; }
+    .stats { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .display { font-size: clamp(42px, 13vw, 68px); }
+    .topbar { gap: 10px; }
+    .counter { min-width: 58px; }
+    .tb { padding: 5px 7px; font-size: 9.5px; }
+    #btn-full { display: none; }
+  }
+  @media (max-width: 600px) {
+    .chart { min-width: 520px; }
+  }
+  @media (max-width: 480px) {
+    .app { padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); }
+    .actions { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .channel { grid-template-columns: 18px 16px 84px minmax(0, 1fr); padding: 8px 10px; }
+    .channel .desc { font-size: 11px; }
+    .control { grid-template-columns: 72px minmax(0, 1fr) 52px; gap: 7px; }
+    .policy-row { grid-template-columns: 70px minmax(0, 1fr) 40px; }
+    .btn { padding: 7px 9px; }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after { animation: none !important; transition: none !important; scroll-behavior: auto !important; }
+  }
+
+
+/* ---------------------------------------------------------------
+   Componentes das aulas de IPPO e MAPPO
+   --------------------------------------------------------------- */
+.pill-row { display: flex; flex-wrap: wrap; gap: 6px; }
+.pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: .03em;
+  padding: 4px 8px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  color: var(--muted);
+  background: var(--surface);
+  white-space: nowrap;
+}
+.pill .sw { width: 7px; height: 7px; border-radius: 2px; background: var(--accent); }
+.pill.blue .sw { background: var(--value); }
+.pill.amber .sw { background: var(--reward); }
+.pill.red .sw { background: var(--loss); }
+
+.diff-grid { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 8px; }
+.diff-card {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 10px 12px;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+.diff-card .k {
+  font-family: var(--font-mono);
+  font-size: 8.5px;
+  letter-spacing: .09em;
+  text-transform: uppercase;
+  color: var(--accent);
+}
+.diff-card b { font-size: 13px; line-height: 1.3; }
+.diff-card p { font-size: 11.5px; line-height: 1.42; color: var(--muted); }
+
+.segmented {
+  display: inline-flex;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  overflow: hidden;
+  background: var(--surface);
+  flex-wrap: wrap;
+}
+.segmented button {
+  border: 0;
+  background: transparent;
+  color: var(--muted);
+  padding: 6px 10px;
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  line-height: 1;
+}
+.segmented button + button { border-left: 1px solid var(--line); }
+.segmented button[aria-pressed="true"] {
+  background: var(--accent-soft);
+  color: var(--accent-strong);
+}
+
+.scenario-panel { display: flex; flex-direction: column; gap: 8px; }
+.scenario-readout { font-family: var(--font-mono); font-size: 10.5px; color: var(--muted); overflow-wrap: anywhere; }
+.spawn-map {
+  position: relative;
+  height: 92px;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  background-color: var(--surface);
+  background-image:
+    linear-gradient(to right, var(--grid) 1px, transparent 1px),
+    linear-gradient(to bottom, var(--grid) 1px, transparent 1px);
+  background-size: 20px 20px;
+  overflow: hidden;
+}
+.spawn-band { position: absolute; top: 0; bottom: 0; border-right: 1px dashed var(--line); }
+.spawn-band:last-child { border-right: 0; }
+.spawn-band .band-label {
+  position: absolute;
+  top: 4px;
+  left: 6px;
+  font-family: var(--font-mono);
+  font-size: 8px;
+  letter-spacing: .06em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.spawn-dot {
+  position: absolute;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  transform: translate(-50%, -50%);
+  border: 2px solid var(--surface);
+  box-shadow: 0 0 0 1px currentColor;
+}
+.spawn-dot.t0 { background: var(--accent); color: var(--accent); }
+.spawn-dot.t1 { background: var(--value); color: var(--value); }
+.spawn-dot.t2 { background: var(--reward); color: var(--reward); }
+.spawn-dot.t3 { background: var(--loss); color: var(--loss); }
+
+.team-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.team-card {
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  padding: 9px 10px;
+  background: var(--surface);
+}
+.team-card .team-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  font-family: var(--font-mono);
+  font-size: 9.5px;
+  letter-spacing: .06em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.team-card .team-head b { color: var(--accent); font-weight: 500; }
+.team-card.t1 .team-head b { color: var(--value); }
+.team-card.t2 .team-head b { color: var(--reward); }
+.team-card.t3 .team-head b { color: var(--loss); }
+.reward-row {
+  display: grid;
+  grid-template-columns: 52px minmax(0, 1fr) 48px;
+  gap: 7px;
+  align-items: center;
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+}
+.reward-row label { display: flex; align-items: center; gap: 5px; color: var(--muted); }
+.reward-row .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--accent); flex: none; }
+.reward-row.t1 .dot { background: var(--value); }
+.reward-row.t2 .dot { background: var(--reward); }
+.reward-row.t3 .dot { background: var(--loss); }
+.reward-row output { text-align: right; font-variant-numeric: tabular-nums; color: var(--ink); }
+.team-avg {
+  margin-top: 7px;
+  padding-top: 6px;
+  border-top: 1px dashed var(--line);
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  color: var(--muted);
+}
+.team-avg b { color: var(--accent); font-weight: 500; font-variant-numeric: tabular-nums; }
+.team-card.t1 .team-avg b { color: var(--value); }
+.team-card.t2 .team-avg b { color: var(--reward); }
+.team-card.t3 .team-avg b { color: var(--loss); }
+
+.agent-buffers { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 6px; }
+.agent-buffer {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 7px 8px;
+  background: var(--surface);
+  min-width: 0;
+}
+.agent-buffer .head { display: flex; justify-content: space-between; gap: 4px; font-family: var(--font-mono); font-size: 9.5px; color: var(--muted); }
+.agent-buffer .head b { color: var(--ink); font-weight: 500; }
+.agent-buffer .track { height: 7px; border-radius: 99px; background: var(--surface-2); overflow: hidden; margin: 5px 0 4px; }
+.agent-buffer .fill { display: block; height: 100%; width: 0; background: var(--value); border-radius: 99px; transition: width .2s ease; }
+.agent-buffer.full .fill { background: var(--accent); }
+.agent-buffer .count { font-family: var(--font-mono); font-size: 9px; color: var(--muted); font-variant-numeric: tabular-nums; }
+
+.clock { display: flex; gap: 4px; align-items: stretch; }
+.clock-step {
+  flex: 1;
+  min-width: 0;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 6px;
+  background: var(--surface);
+}
+.clock-step .k { font-family: var(--font-mono); font-size: 8px; letter-spacing: .07em; text-transform: uppercase; color: var(--muted); }
+.clock-step.held { background: var(--accent-soft); border-color: var(--accent); }
+.clock-step .acts { display: flex; gap: 3px; flex-wrap: wrap; margin-top: 4px; }
+.clock-step .act { font-family: var(--font-mono); font-size: 8.5px; padding: 2px 4px; border-radius: 3px; background: var(--surface-2); color: var(--ink); }
+
+.trajectory-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.trajectory {
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  padding: 8px;
+  background: var(--surface);
+  min-width: 0;
+}
+.trajectory .head { display: flex; justify-content: space-between; gap: 6px; font-family: var(--font-mono); font-size: 9.5px; color: var(--muted); }
+.trajectory .head b { color: var(--ink); font-weight: 500; }
+.trajectory .cells { display: grid; grid-template-columns: repeat(6, 1fr); gap: 3px; margin-top: 6px; }
+.trajectory .cell {
+  height: 25px;
+  border-radius: 4px;
+  background: var(--surface-2);
+  display: grid;
+  place-items: center;
+  font-family: var(--font-mono);
+  font-size: 9px;
+  color: var(--muted);
+}
+.trajectory .cell.pos { background: var(--accent-soft); color: var(--accent-strong); }
+.trajectory .cell.neg { background: var(--loss-soft); color: var(--loss); }
+.concat-bar {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 7px 10px;
+  border: 1px dashed var(--accent);
+  border-radius: 8px;
+  background: var(--accent-soft);
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--accent-strong);
+  text-align: center;
+}
+
+.ctde-toggle { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.ctde {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+  align-items: stretch;
+}
+.ctde-panel {
+  border: 1px solid var(--line);
+  border-radius: 11px;
+  padding: 12px;
+  background: var(--surface);
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+  min-width: 0;
+}
+.ctde-panel.train { border-color: var(--reward); }
+.ctde-panel.exec { border-color: var(--accent); }
+.ctde-title {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  font-family: var(--font-mono);
+  font-size: 9px;
+  letter-spacing: .09em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.ctde-title b { color: var(--ink); font-weight: 500; }
+.node-row { display: flex; gap: 5px; flex-wrap: wrap; }
+.node {
+  font-family: var(--font-mono);
+  font-size: 9.5px;
+  line-height: 1.2;
+  padding: 5px 7px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--surface-2);
+  color: var(--ink);
+}
+.node.agent { border-color: var(--value); background: var(--value-soft); color: var(--value); }
+.node.actor { border-color: var(--accent); background: var(--accent-soft); color: var(--accent-strong); }
+.node.critic { border-color: var(--reward); background: var(--reward-soft); color: var(--reward); }
+.node.out { border-color: var(--ink); }
+.ctde-arrow { text-align: center; font-family: var(--font-mono); font-size: 11px; color: var(--muted); line-height: 1; }
+.ctde-note { font-family: var(--font-mono); font-size: 9px; line-height: 1.45; color: var(--muted); }
+.ctde.exec .critic-node { opacity: .25; filter: grayscale(1); }
+.ctde.exec .critic-link { opacity: .25; text-decoration: line-through; }
+.ctde .critic-node, .ctde .critic-link { transition: opacity .2s ease; }
+
+.shape-row { display: flex; flex-direction: column; gap: 8px; }
+.shape-big {
+  font-family: var(--font-mono);
+  font-size: clamp(28px, 4vw, 44px);
+  letter-spacing: -.04em;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+}
+.shape-formula {
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  line-height: 1.6;
+  color: var(--muted);
+  overflow-wrap: anywhere;
+}
+.onehot { display: flex; gap: 3px; flex-wrap: wrap; }
+.onehot span {
+  font-family: var(--font-mono);
+  font-size: 9.5px;
+  padding: 3px 6px;
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  color: var(--muted);
+}
+.onehot span.on { background: var(--reward-soft); border-color: var(--reward); color: var(--reward); }
+
+.joint-assembly { display: flex; flex-direction: column; gap: 8px; }
+.joint-slots { display: flex; gap: 5px; flex-wrap: wrap; }
+.joint-slot {
+  width: 46px;
+  height: 34px;
+  border: 1px dashed var(--line);
+  border-radius: 6px;
+  display: grid;
+  place-items: center;
+  font-family: var(--font-mono);
+  font-size: 9px;
+  color: var(--muted);
+  background: transparent;
+}
+.joint-slot.filled {
+  border-style: solid;
+  border-color: var(--accent);
+  background: var(--accent-soft);
+  color: var(--accent-strong);
+}
+.joint-record {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+  font-family: var(--font-mono);
+  font-size: 9.5px;
+  color: var(--muted);
+  border-top: 1px dashed var(--line);
+  padding-top: 7px;
+}
+.joint-chip {
+  padding: 2px 5px;
+  border-radius: 4px;
+  background: var(--accent-soft);
+  color: var(--accent-strong);
+  font-size: 8.5px;
+}
+
+.batch-grid { display: grid; gap: 2px; margin-top: 6px; }
+.batch-cell { height: 9px; border-radius: 2px; background: var(--surface-2); }
+.batch-cell.a0 { background: var(--accent); }
+.batch-cell.a1 { background: var(--value); }
+.batch-cell.a2 { background: var(--reward); }
+.batch-cell.a3 { background: var(--loss); }
+
+.memory { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.memory-lane {
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  padding: 8px;
+  background: var(--surface);
+  min-width: 0;
+}
+.memory-lane .head {
+  display: flex;
+  justify-content: space-between;
+  gap: 6px;
+  font-family: var(--font-mono);
+  font-size: 9px;
+  letter-spacing: .06em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.memory-blocks { display: flex; gap: 3px; flex-wrap: wrap; margin-top: 6px; }
+.memory-block {
+  height: 12px;
+  flex: 1 1 12px;
+  border-radius: 2px;
+  background: var(--value-soft);
+  border: 1px solid var(--value);
+}
+.memory-block.gpu { background: var(--accent-soft); border-color: var(--accent); }
+.memory-note { font-family: var(--font-mono); font-size: 9px; line-height: 1.4; color: var(--muted); margin-top: 5px; }
+
+.small-table table { min-width: 0; font-size: 12px; }
+.compare-3 th:nth-child(2), .compare-3 td:nth-child(2) { background: color-mix(in srgb, var(--accent-soft) 45%, transparent); }
+.compare-3 th:nth-child(3), .compare-3 td:nth-child(3) { background: color-mix(in srgb, var(--reward-soft) 35%, transparent); }
+.tag {
+  display: inline-block;
+  font-family: var(--font-mono);
+  font-size: 8.5px;
+  letter-spacing: .06em;
+  text-transform: uppercase;
+  padding: 2px 5px;
+  border-radius: 3px;
+  background: var(--accent-soft);
+  color: var(--accent-strong);
+}
+.tag.amber { background: var(--reward-soft); color: var(--reward); }
+.tag.blue { background: var(--value-soft); color: var(--value); }
+
+@media (max-width: 980px) {
+  .diff-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .ctde { grid-template-columns: 1fr; }
+}
+@media (max-width: 760px) {
+  .diff-grid { grid-template-columns: 1fr; }
+  .team-grid, .trajectory-grid, .memory { grid-template-columns: 1fr; }
+  .agent-buffers { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+.joint-assembly > .btn-ghost { align-self: flex-start; }
+.onehot span { cursor: pointer; }
+</style>
+
+<style>
+  /* Widgets específicos da aula de HAPPO. As cores e tipos vêm dos tokens
+     do documento MAPPO (mesmo plano de design). */
+  .role-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; }
+  .role-card {
+    background: var(--surface); border: 1px solid var(--line);
+    border-radius: 11px; padding: 12px 13px; display: flex;
+    flex-direction: column; gap: 5px; min-width: 0;
+  }
+  .role-card.collector { border-color: var(--accent); background: var(--accent-soft); }
+  .role-card.pusher { border-color: var(--reward); background: var(--reward-soft); }
+  .role-card .who { font-family: var(--font-mono); font-size: 11px; letter-spacing: .05em; }
+  .role-card .what { font-size: 13px; font-weight: 600; }
+  .role-card p { font-size: 11.5px; color: var(--muted); line-height: 1.4; }
+  .role-card .mini-acts { font-family: var(--font-mono); font-size: 10px; color: var(--muted); }
+  .role-card .mini-acts b { color: var(--ink); font-weight: 500; }
+
+  .push-lab { background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: 14px 15px; display: flex; flex-direction: column; gap: 11px; }
+  .push-track {
+    position: relative; height: 72px; border-radius: 10px; overflow: hidden;
+    background: var(--bg); border: 1px solid var(--line);
+  }
+  .push-track .floor { position: absolute; left: 0; right: 0; bottom: 0; height: 16px; background: var(--surface-2); border-top: 1px solid var(--line); }
+  .push-track .half { position: absolute; top: 0; bottom: 0; left: 62.5%; border-left: 1px dashed var(--reward); opacity: .8; }
+  .push-track .half-label { position: absolute; top: 5px; left: calc(62.5% + 5px); font-family: var(--font-mono); font-size: 9px; letter-spacing: .06em; color: var(--reward); text-transform: uppercase; }
+  .push-dot {
+    position: absolute; bottom: 16px; left: 12.5%; width: 18px; height: 18px;
+    border-radius: 50%; background: var(--reward); box-shadow: 0 0 0 4px var(--reward-soft);
+    transform: translateX(-50%); z-index: 2;
+  }
+  .push-dot.actor { left: 7%; background: var(--value); box-shadow: 0 0 0 4px var(--value-soft); }
+  .push-meta { display: flex; justify-content: space-between; gap: 10px; flex-wrap: wrap; font-family: var(--font-mono); font-size: 10.5px; color: var(--muted); }
+  .push-meta b { color: var(--ink); font-weight: 500; }
+  .push-bar { height: 12px; border-radius: 99px; background: var(--surface-2); border: 1px solid var(--line); overflow: hidden; }
+  .push-bar span { display: block; height: 100%; width: 100%; background: var(--reward); border-radius: 99px; transition: width .08s linear; }
+
+  .seq-list { display: flex; flex-direction: column; gap: 7px; }
+  .seq-row {
+    display: grid; grid-template-columns: 118px minmax(0, 1fr) 82px;
+    gap: 10px; align-items: center; padding: 9px 11px;
+    border: 1px solid var(--line); border-radius: 9px; background: var(--surface);
+    transition: border-color .15s ease, background .15s ease;
+  }
+  .seq-row .agent { font-family: var(--font-mono); font-size: 11px; }
+  .seq-row .formula { font-family: var(--font-mono); font-size: 11.5px; color: var(--muted); overflow-wrap: anywhere; }
+  .seq-row .state { font-family: var(--font-mono); font-size: 9.5px; letter-spacing: .05em; text-transform: uppercase; text-align: right; color: var(--muted); }
+  .seq-row.current { border-color: var(--accent); background: var(--accent-soft); }
+  .seq-row.current .formula { color: var(--ink); }
+  .seq-row.current .state { color: var(--accent-strong); }
+  .seq-row.done { border-color: var(--accent); }
+  .seq-row.done .state { color: var(--accent-strong); }
+  .seq-row.collector .agent { color: var(--accent-strong); }
+  .seq-row.pusher .agent { color: var(--reward); }
+
+  .mask-actions { display: flex; gap: 4px; flex-wrap: wrap; }
+  .mask-chip { font-family: var(--font-mono); font-size: 10px; border: 1px solid var(--line); border-radius: 6px; padding: 3px 6px; color: var(--muted); background: var(--bg); }
+  .mask-chip.on { border-color: var(--accent); color: var(--accent-strong); background: var(--accent-soft); }
+  .mask-chip.off { border-color: var(--loss); color: var(--loss); background: var(--loss-soft); text-decoration: line-through; }
+  .compare-3 td.nope { color: var(--loss); font-family: var(--font-mono); }
+
+  @media (max-width: 760px) {
+    .role-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .seq-row { grid-template-columns: 96px minmax(0, 1fr); }
+    .seq-row .state { grid-column: 2; text-align: left; }
+  }
+</style>
+
+<div class="app">
+  <div class="progress" aria-hidden="true"><span id="progress-fill"></span></div>
+
+  <header class="topbar">
+    <div class="brand">
+      <span class="dot"></span>
+      <span><b>HAPPO</b> // rl-arena</span>
+      <span class="sec-label" id="sec-label">abertura</span>
+    </div>
+    <div class="top-actions">
+      <button class="tb" id="btn-index" type="button">Índice</button>
+      <button class="tb" id="btn-full" type="button">Tela cheia</button>
+      <span class="counter" id="counter">01 / 16</span>
+    </div>
+  </header>
+
+  <main class="stage" id="stage">
+
+    <!-- 1 -->
+    <section class="slide" id="slide-1" data-section="abertura" data-title="HAPPO no rl-arena">
+      <div class="slide-inner">
+        <div class="cover-wrap">
+          <div class="cover-copy">
+            <div class="eyebrow">aula 4 · multiagente heterogêneo</div>
+            <h1 class="display">HAPPO no<br><span class="thin">rl-arena</span></h1>
+            <p class="lede">Um PPO para times que não fazem a mesma coisa: metade só coleta moedas, metade só empurra os outros. Atores separados, crítico centralizado e atualização em ordem.</p>
+            <div class="chips">
+              <span class="chip green">atores heterogêneos</span>
+              <span class="chip">update sequencial</span>
+              <span class="chip">crítico centralizado</span>
+              <span class="chip">máscara por papel</span>
+            </div>
+            <div class="cover-foot">
+              <span class="mono">algs/alg_happo/ · cenário collectors-vs-pushers</span>
+              <span>Use <kbd>→</kbd> para começar</span>
+            </div>
+            <div class="cover-refs">
+              <div class="ref">
+                <span class="ref-tag">paper</span>
+                <a href="https://arxiv.org/abs/2111.05992" target="_blank" rel="noopener">Kuba et al., “Trust Region Policy Optimization for Mixed Cooperative-Competitive Reinforcement Learning” (NeurIPS 2021) <span class="src">arXiv:2111.05992</span></a>
+              </div>
+              <div class="ref">
+                <span class="ref-tag">código</span>
+                <a href="https://github.com/PKU-MARL/HARL" target="_blank" rel="noopener">PKU-MARL/HARL — implementação oficial (HAPPO/HATRPO) <span class="src">github.com/PKU-MARL/HARL</span></a>
+              </div>
+              <div class="ref">
+                <span class="ref-tag">base</span>
+                <a href="https://arxiv.org/abs/2103.01955" target="_blank" rel="noopener">Yu et al., “The Surprising Effectiveness of PPO in Cooperative Multi-Agent Games” <span class="src">arXiv:2103.01955</span></a>
+              </div>
+            </div>
+          </div>
+          <div class="cover-art" aria-hidden="true">
+            <div class="mini-map">
+              <span class="platform" style="left:0;top:82%;width:100%"></span>
+              <span class="platform" style="left:10%;top:58%;width:26%"></span>
+              <span class="platform" style="left:56%;top:46%;width:30%"></span>
+              <span class="unit player" style="left:18%;top:68%"></span>
+              <span class="unit player" style="left:30%;top:68%;background:var(--accent);opacity:.65"></span>
+              <span class="unit opponent" style="left:64%;top:68%;background:var(--reward);box-shadow:0 0 0 4px var(--reward-soft)"></span>
+              <span class="unit opponent" style="left:78%;top:68%;background:var(--reward);opacity:.65;box-shadow:0 0 0 4px var(--reward-soft)"></span>
+              <span class="unit coin" style="left:46%;top:30%"></span>
+              <span class="unit coin" style="left:84%;top:38%"></span>
+              <span style="position:absolute;left:50%;top:16%;bottom:12%;border-left:1px dashed var(--line)"></span>
+            </div>
+            <span class="mini-caption">2 coletores · 2 empurradores<br>atores separados, 1 crítico</span>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- 2 -->
+    <section class="slide" id="slide-2" data-section="cenário" data-title="Dois papéis, um mapa">
+      <div class="slide-inner">
+        <div>
+          <div class="eyebrow">cenário · coletores × empurradores</div>
+          <h2 class="title">Dois papéis, um mapa</h2>
+        </div>
+        <p class="lede">O novo cenário divide os times ao meio. Um lado só coleta moedas do mapa; o outro só ganha moedas empurrando. O mapa, a física e as recompensas continuam os mesmos.</p>
+
+        <div class="role-grid">
+          <div class="role-card collector">
+            <span class="who">time 0 · agente 0</span>
+            <span class="what">coletor</span>
+            <p>Anda, pula e coleta. Não pode empurrar: as ações de empurrão são mascaradas e o ambiente as converte em STOP.</p>
+            <span class="mini-acts"><b>ações:</b> STOP · ← · → · JUMP</span>
+          </div>
+          <div class="role-card collector">
+            <span class="who">time 0 · agente 1</span>
+            <span class="what">coletor</span>
+            <p>Mesmo contrato do agente 0. A recompensa é a média do time; os dois cooperam para encher o saldo.</p>
+            <span class="mini-acts"><b>ações:</b> STOP · ← · → · JUMP</span>
+          </div>
+          <div class="role-card pusher">
+            <span class="who">time 1 · agente 2</span>
+            <span class="what">empurrador</span>
+            <p>Anda, pula e empurra. Não coleta moedas do mapa: o saldo dele só cresce com a transferência do empurrão.</p>
+            <span class="mini-acts"><b>ações:</b> STOP · ← · → · JUMP · PUSH ←/→</span>
+          </div>
+          <div class="role-card pusher">
+            <span class="who">time 1 · agente 3</span>
+            <span class="what">empurrador</span>
+            <p>Mesmo contrato do agente 2. O empurrão tira até 5 moedas do alvo e passa para quem empurrou.</p>
+            <span class="mini-acts"><b>ações:</b> STOP · ← · → · JUMP · PUSH ←/→</span>
+          </div>
+        </div>
+
+        <div class="grid-2">
+          <div class="card">
+            <h3 style="color:var(--accent)">O que o coletor pode</h3>
+            <ul class="list" style="margin-top:8px">
+              <li><span class="bullet"></span><span><b>Coletar</b> qualquer moeda do mapa ao encostar nela.</span></li>
+              <li><span class="bullet"></span><span><b>Fugir</b> e pular para longe dos empurradores.</span></li>
+              <li><span class="bullet red"></span><span><b>Não empurrar:</b> a máscara zera a probabilidade de PUSH_LEFT/PUSH_RIGHT.</span></li>
+            </ul>
+          </div>
+          <div class="card">
+            <h3 style="color:var(--reward)">O que o empurrador pode</h3>
+            <ul class="list" style="margin-top:8px">
+              <li><span class="bullet amber"></span><span><b>Empurrar</b> um inimigo e transferir moedas dele para si.</span></li>
+              <li><span class="bullet amber"></span><span><b>Perseguir</b> com as mesmas ações de movimento do coletor.</span></li>
+              <li><span class="bullet red"></span><span><b>Não coletar:</b> o engine ignora a coleta de moedas para o papel PUSHER.</span></li>
+            </ul>
+          </div>
+        </div>
+
+        <div class="note"><span class="mark">=</span><span><b>O que não muda:</b> 6 ações por agente, observação egocêntrica de 6 canais, frame stack por agente, recompensa de time pela média, episódios só por tempo e morte que respawna. O que muda é <b>quem pode fazer o quê</b>.</span></div>
+        <div class="note warn"><span class="mark">!</span><span><b>Não confunda papel com ação.</b> O empurrador continua andando e pulando; “só empurra” significa que a interação dele com as moedas é o empurrão, não que ele fique parado. Sem movimento, ele nunca alcançaria um alvo.</span></div>
+      </div>
+    </section>
+
+    <!-- 3 -->
+    <section class="slide" id="slide-3" data-section="cenário" data-title="Meia arena e dois segundos">
+      <div class="slide-inner">
+        <div>
+          <div class="eyebrow">cenário · física do empurrão</div>
+          <h2 class="title">Meia arena e dois segundos</h2>
+        </div>
+        <p class="lede">O cenário aumentou o impulso para o alvo atravessar até 320 px — metade dos 640 px do mapa — e colocou uma recarga de 2 s no empurrão bem-sucedido. Clique para simular.</p>
+
+        <div class="split">
+          <div class="stack">
+            <div class="push-lab">
+              <div class="push-track">
+                <span class="floor"></span>
+                <span class="half"></span>
+                <span class="half-label">deslocamento · 320 px</span>
+                <span class="push-dot actor" title="empurrador"></span>
+                <span class="push-dot" id="push-dot" title="alvo"></span>
+              </div>
+              <div class="push-meta">
+                <span>impulso <b>436,4</b> × intensidade <b>3</b></span>
+                <span>velocidade inicial <b>≈1.309 px/s</b></span>
+                <span>atrito <b>0,88 / substep</b></span>
+              </div>
+              <div class="push-bar" aria-hidden="true"><span id="push-cd-fill"></span></div>
+              <div class="push-meta">
+                <span id="push-status">pronto para empurrar</span>
+                <span>distância <b id="push-distance">0 px</b> · recarga <b id="push-cd-text">2,00 s</b></span>
+              </div>
+              <div class="btn-row">
+                <button class="btn-accent" id="push-btn" type="button">Empurrar</button>
+                <button class="btn-ghost" id="push-reset" type="button">Reiniciar</button>
+              </div>
+            </div>
+            <div class="note"><span class="mark">i</span><span><b>Por que 436,4?</b> O engine aplica o atrito <b>antes</b> de mover no substep do empurrão. A distância total é <span class="mono">v₀ · dt · 0,88 / (1 − 0,88)</span>. Com <span class="mono">dt = 1/30</span> e alvo de 320 px, <span class="mono">v₀ ≈ 1.309 px/s</span>; dividindo pela intensidade 3, chega-se a <b>436,4</b>. A conta fica em <span class="mono">ArenaConfig.push_impulse_for_range</span>.</span></div>
+          </div>
+          <div class="stack">
+            <div class="stats">
+              <div class="stat"><b>320</b><span>px por empurrão</span></div>
+              <div class="stat"><b>2,0</b><span>s de recarga</span></div>
+              <div class="stat"><b>5</b><span>moedas transferidas</span></div>
+              <div class="stat"><b>1,1×</b><span>teto do impulso</span></div>
+              <div class="stat"><b>0,88</b><span>atrito por substep</span></div>
+            </div>
+            <div class="note warn"><span class="mark">!</span><span><b>A recarga é por personagem, não global.</b> <span class="mono">Character.push_cooldown</span> decrementa a cada substep de física. Um empurrão só entra se <span class="mono">push_cooldown &lt;= 0</span>; ao acertar, o timer volta a <span class="mono">cfg.push_cooldown</span> (2 s).</span></div>
+            <div class="note"><span class="mark">→</span><span><b>O teto de velocidade importa.</b> O impulso forte passaria de <span class="mono">max_speed × 2</span> e seria cortado no substep seguinte. O cenário eleva <span class="mono">push_speed_cap</span> para <span class="mono">1,1 × impulso × intensidade</span>; o movimento normal não muda porque a aceleração de caminhada satura bem abaixo disso.</span></div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- 4 -->
+    <section class="slide" id="slide-4" data-section="heterogeneidade" data-title="Por que a política compartilhada quebra">
+      <div class="slide-inner">
+        <div>
+          <div class="eyebrow">heterogeneidade · o problema</div>
+          <h2 class="title">Por que a política compartilhada quebra</h2>
+        </div>
+        <p class="lede">IPPO e MAPPO usam uma única rede de ator para todos. Isso funciona quando os agentes têm o mesmo espaço de ação e o mesmo papel. Aqui eles não têm.</p>
+
+        <div class="grid-2">
+          <div class="card">
+            <h3 style="color:var(--accent)">IPPO / MAPPO</h3>
+            <ul class="list" style="margin-top:8px">
+              <li><span class="bullet"></span><span>Uma rede aprende a política de todos os agentes.</span></li>
+              <li><span class="bullet"></span><span>Observação egocêntrica: o canal 1 é “eu”, o 2 é inimigo, o 5 é aliado.</span></li>
+              <li><span class="bullet red"></span><span>Sem sinal explícito de <b>papel</b>, o coletor e o empurrador precisam aprender comportamentos opostos na mesma cabeça.</span></li>
+              <li><span class="bullet red"></span><span>As ações de empurrão do coletor são inválidas, mas a rede compartilhada continua com logits para elas.</span></li>
+            </ul>
+          </div>
+          <div class="card" style="border-color:var(--reward)">
+            <h3 style="color:var(--reward)">O que o cenário exige</h3>
+            <ul class="list" style="margin-top:8px">
+              <li><span class="bullet amber"></span><span><b>Espaços de ação efetivos diferentes:</b> {STOP, ←, →, JUMP} vs. {STOP, ←, →, JUMP, PUSH ←, PUSH →}.</span></li>
+              <li><span class="bullet amber"></span><span><b>Recompense o comportamento certo:</b> o coletor é pago por moedas no chão; o empurrador, por transferência.</span></li>
+              <li><span class="bullet amber"></span><span><b>Permita especialização:</b> dois agentes do mesmo time podem aprender políticas diferentes sem competir pela mesma cabeça.</span></li>
+              <li><span class="bullet amber"></span><span><b>Mantenha a coordenação:</b> o crítico continua vendo o estado conjunto.</span></li>
+            </ul>
+          </div>
+        </div>
+
+        <div class="note"><span class="mark">1</span><span><b>Uma rede, seis ações, dois papéis.</b> Não é impossível treinar com a rede compartilhada — a máscara e o canal de aliados ajudam. Mas o gradiente do coletor e o do empurrador disputam os mesmos pesos. Em cenários heterogêneos, separar os atores remove essa competição.</span></div>
+        <div class="note warn"><span class="mark">!</span><span><b>O crítico pode continuar compartilhado.</b> A heterogeneidade que importa para a política é a do ator. O valor conjunto pode ser estimado por uma única rede centralizada que devolve um V por agente.</span></div>
+      </div>
+    </section>
+
+    <!-- 5 -->
+    <section class="slide" id="slide-5" data-section="visão geral" data-title="HAPPO em uma frase">
+      <div class="slide-inner">
+        <div>
+          <div class="eyebrow">visão geral · a ideia</div>
+          <h2 class="title">HAPPO em uma frase</h2>
+        </div>
+        <p class="lede">HAPPO é um PPO multiagente para agentes heterogêneos: cada agente tem seu ator; o crítico é centralizado; e os atores são atualizados <b>em sequência</b>, corrigindo a razão de importância pelo efeito dos agentes já atualizados.</p>
+
+        <div class="grid-3">
+          <div class="card">
+            <h3 style="color:var(--accent)">Atores separados</h3>
+            <p>Um CNN + cabeça categórica por agente. O coletor pode ter uma política especializada em fugir e coletar; o empurrador, em perseguir e empurrar.</p>
+            <div class="pill-row" style="margin-top:9px"><span class="pill"><span class="sw"></span>n atores</span></div>
+          </div>
+          <div class="card">
+            <h3 style="color:var(--value)">Crítico central</h3>
+            <p>V(s_global) vê as features de todos os agentes no mesmo passo + one-hot. Só existe no treino; na execução, cada ator decide sozinho.</p>
+            <div class="pill-row" style="margin-top:9px"><span class="pill blue"><span class="sw"></span>CTDE</span></div>
+          </div>
+          <div class="card">
+            <h3 style="color:var(--reward)">Update em ordem</h3>
+            <p>Atualiza a0, depois a1 com o fator de a0, depois a2 com a0·a1, e assim por diante. É o que preserva a decomposição da vantagem conjunta.</p>
+            <div class="pill-row" style="margin-top:9px"><span class="pill amber"><span class="sw"></span>ratio M</span></div>
+          </div>
+        </div>
+
+        <div class="note"><span class="mark">=</span><span><b>O que continua igual ao PPO:</b> recorte 0,2, GAE(λ=0,95), 4 épocas, perda de valor 0,5, entropia 0,01, Adam 2,5e−4, grad clip 10, política estocástica na coleta e gulosa na avaliação. O HAPPO não inventa outra perda de política; ele muda <b>quem</b> é atualizado e <b>com que fator</b>.</span></div>
+        <div class="note warn"><span class="mark">!</span><span><b>Sem papéis, ainda serve.</b> Rodar HAPPO em <span class="mono">--scenario all-vs-all</span> ou <span class="mono">teams</span> dá atores independentes com crítico central — um MAPPO com políticas separadas. É um bom controle para isolar o efeito da heterogeneidade.</span></div>
+      </div>
+    </section>
+
+    <!-- 6 -->
+    <section class="slide" id="slide-6" data-section="arquitetura" data-title="Atores heterogêneos + crítico central">
+      <div class="slide-inner">
+        <div>
+          <div class="eyebrow">arquitetura · o desenho</div>
+          <h2 class="title">Atores heterogêneos + crítico central</h2>
+        </div>
+        <p class="lede">O caminho de execução é local e curto. O caminho de treino é o único que junta os agentes — e só para estimar valor.</p>
+
+        <div class="split">
+          <div class="stack">
+            <div class="code-label">execução · descentralizada</div>
+            <pre class="code">obs_i ──► actors[i] ──► logits_i ──► mask_i ──► ação_i
+
+coletor:  logits[PUSH_LEFT]  = -1e9
+          logits[PUSH_RIGHT] = -1e9
+empurrador: máscara toda True</pre>
+            <div class="note" style="margin-top:4px"><span class="mark">→</span><span>Cada linha é independente: o ator do agente <span class="mono">i</span> só recebe a observação <span class="mono">i</span>. Não há estado global nem one-hot na execução.</span></div>
+          </div>
+          <div class="stack">
+            <div class="code-label">treino · centralizado</div>
+            <pre class="code">obs_0 … obs_n
+   │       │
+   ▼       ▼
+critic.features (CNN compartilhada)
+   │
+   ▼
+concat(features) + one-hot(i)
+   │
+   ▼
+V_0 … V_n        (um valor por agente)
+   │
+   ▼
+GAE_i ──► update sequencial de actors[i]</pre>
+            <div class="note warn" style="margin-top:4px"><span class="mark">!</span><span>O crítico é um módulo separado dos atores. Ele não compartilha pesos com as políticas, então atualizar um ator não altera o valor por acidente.</span></div>
+          </div>
+        </div>
+
+        <div class="stats">
+          <div class="stat"><b>n</b><span>atores independentes</span></div>
+          <div class="stat"><b>1</b><span>crítico centralizado</span></div>
+          <div class="stat"><b>n</b><span>saídas de valor</span></div>
+          <div class="stat"><b>6</b><span>ações por ator</span></div>
+          <div class="stat"><b>2</b><span>papéis no cenário</span></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- 7 -->
+    <section class="slide" id="slide-7" data-section="update" data-title="A atualização sequencial">
+      <div class="slide-inner">
+        <div>
+          <div class="eyebrow">update · a ordem importa</div>
+          <h2 class="title">A atualização sequencial</h2>
+        </div>
+        <p class="lede">O HAPPO não atualiza os quatro atores ao mesmo tempo. Ele escolhe uma ordem e, para cada agente, inclui na razão de política o produto das razões dos agentes já atualizados. Clique em “próximo agente”.</p>
+
+        <div class="split">
+          <div class="stack">
+            <div class="seq-list" id="seq-list">
+              <div class="seq-row collector" data-agent="0">
+                <span class="agent">a0 · coletor</span>
+                <span class="formula">—</span>
+                <span class="state">pendente</span>
+              </div>
+              <div class="seq-row collector" data-agent="1">
+                <span class="agent">a1 · coletor</span>
+                <span class="formula">—</span>
+                <span class="state">pendente</span>
+              </div>
+              <div class="seq-row pusher" data-agent="2">
+                <span class="agent">a2 · empurrador</span>
+                <span class="formula">—</span>
+                <span class="state">pendente</span>
+              </div>
+              <div class="seq-row pusher" data-agent="3">
+                <span class="agent">a3 · empurrador</span>
+                <span class="formula">—</span>
+                <span class="state">pendente</span>
+              </div>
+            </div>
+            <div class="btn-row">
+              <button class="btn-accent" id="seq-next" type="button">Próximo agente</button>
+              <button class="btn-ghost" id="seq-reset" type="button">Reiniciar</button>
+            </div>
+            <div class="status" id="seq-status">Nenhum ator atualizado. M = 1.</div>
+          </div>
+          <div class="stack">
+            <ul class="list">
+              <li><span class="bullet"></span><span><b>Por que em ordem?</b> A vantagem conjunta pode ser decomposta em vantagens por agente que condicionam nas ações dos agentes anteriores: <span class="mono">A_i(s, a_{1:i})</span>.</span></li>
+              <li><span class="bullet"></span><span><b>O fator M</b> corrige a razão para a política nova dos agentes anteriores. Sem ele, o gradiente de <span class="mono">a2</span> usaria uma distribuição antiga para <span class="mono">a0</span> e <span class="mono">a1</span>.</span></li>
+              <li><span class="bullet amber"></span><span><b>Congelado, não diferenciado.</b> Depois de atualizar <span class="mono">a_i</span>, o código recalcula <span class="mono">r_i = π_i_novo/π_i_antigo</span> sem gradiente e acumula em <span class="mono">M</span>.</span></li>
+              <li><span class="bullet"></span><span><b>Um Adam só.</b> Zeroing + backward de um ator por vez faz o passo tocar só os parâmetros daquele ator; o estado do otimizador continua serializado no checkpoint.</span></li>
+            </ul>
+            <div class="note"><span class="mark">M</span><span>No início, <span class="mono">M = 1</span>. Depois de atualizar a0, <span class="mono">M = r0′</span>. Depois de a1, <span class="mono">M = r0′ · r1′</span>. O agente <span class="mono">i</span> sempre vê o produto dos <b>i</b> primeiros agentes, nunca o próprio.</span></div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- 8 -->
+    <section class="slide" id="slide-8" data-section="update" data-title="O fator M e a perda">
+      <div class="slide-inner">
+        <div>
+          <div class="eyebrow">update · a fórmula</div>
+          <h2 class="title">O fator M e a perda</h2>
+        </div>
+        <p class="lede">A perda do agente <span class="mono">i</span> é a do PPO aplicada a uma razão combinada: a razão dele multiplicada por M. O recorte continua em 1 ± 0,2.</p>
+
+        <div class="split">
+          <div class="stack">
+            <pre class="code">r_i = exp( log π_i(a_i|o_i)
+         - log π_i_antigo(a_i|o_i) )
+
+M_i = Π_{j &lt; i} r_j_novo          <span class="c"># sem gradiente</span>
+
+ratio = r_i * M_i
+
+policy_loss = -min(
+    ratio * A_i,
+    clamp(ratio, 1 - ε, 1 + ε) * A_i).mean()
+
+loss_i = policy_loss - c_ent * entropy(π_i)</pre>
+            <div class="note" style="margin-top:4px"><span class="mark">i</span><span><b>A vantagem A_i</b> vem do GAE por agente com os valores centralizados. As vantagens são normalizadas no conjunto de todos os agentes, como no MAPPO.</span></div>
+          </div>
+          <div class="stack">
+            <div class="grid-3">
+              <div class="card"><h3 style="color:var(--accent)">recorte</h3><p>0,2 sobre a razão <b>composta</b>, não só sobre r_i.</p></div>
+              <div class="card"><h3 style="color:var(--value)">valor</h3><p>MSE por agente contra o retorno do GAE. Peso 0,5.</p></div>
+              <div class="card"><h3 style="color:var(--reward)">entropia</h3><p>Bônus por ator, para não colapsar cedo. Peso 0,01.</p></div>
+            </div>
+            <div class="note warn"><span class="mark">!</span><span><b>Ordem muda o resultado.</b> Trocar a ordem dos agentes gera outra sequência de updates. No código a ordem é a dos índices (0..n−1); em um cenário com papéis, isso significa primeiro os coletores, depois os empurradores.</span></div>
+            <div class="note"><span class="mark">↔</span><span><b>Se todos os atores fossem idênticos</b>, M seria o produto de razões da mesma política e o HAPPO se aproximaria de um update conjunto. A diferença aparece justamente quando as políticas são heterogêneas.</span></div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- 9 -->
+    <section class="slide" id="slide-9" data-section="máscara" data-title="Máscara de ações por papel">
+      <div class="slide-inner">
+        <div>
+          <div class="eyebrow">máscara · espaço efetivo</div>
+          <h2 class="title">Máscara de ações por papel</h2>
+        </div>
+        <p class="lede">O espaço continua <span class="mono">Discrete(6)</span> para todos — o checkpoint e o buffer não mudam de forma. O papel só zera a probabilidade das ações proibidas.</p>
+
+        <div class="table-wrap">
+          <table class="compare-3">
+            <thead><tr><th>agente</th><th>papel</th><th>STOP</th><th>←</th><th>→</th><th>JUMP</th><th>PUSH ←</th><th>PUSH →</th></tr></thead>
+            <tbody>
+              <tr><td>a0</td><td>coletor</td><td>✓</td><td>✓</td><td>✓</td><td>✓</td><td class="nope">×</td><td class="nope">×</td></tr>
+              <tr><td>a1</td><td>coletor</td><td>✓</td><td>✓</td><td>✓</td><td>✓</td><td class="nope">×</td><td class="nope">×</td></tr>
+              <tr><td>a2</td><td>empurrador</td><td>✓</td><td>✓</td><td>✓</td><td>✓</td><td>✓</td><td>✓</td></tr>
+              <tr><td>a3</td><td>empurrador</td><td>✓</td><td>✓</td><td>✓</td><td>✓</td><td>✓</td><td>✓</td></tr>
+            </tbody>
+          </table>
+        </div>
+
+        <div class="grid-2">
+          <div class="card">
+            <h3 style="color:var(--accent)">Na política</h3>
+            <pre class="code" style="margin-top:8px">logits = logits.masked_fill(~mask, -1e9)
+dist = Categorical(logits=logits)</pre>
+            <p style="margin-top:8px">A amostragem nunca escolhe uma ação mascarada e o log-prob antigo é recalculado com a mesma máscara.</p>
+          </div>
+          <div class="card">
+            <h3 style="color:var(--reward)">No ambiente</h3>
+            <pre class="code" style="margin-top:8px">if not scenario.can_push(i) and a in (PUSH_L, PUSH_R):
+    effective[i] = STOP</pre>
+            <p style="margin-top:8px">Defesa em profundidade: mesmo um agente sem máscara (IPPO/MAPPO ou exploração) não empurra como coletor.</p>
+          </div>
+        </div>
+
+        <div class="note warn"><span class="mark">!</span><span><b>Empurrador não tem ação de coleta.</b> A restrição dele é no mundo, não no espaço de ações: o engine ignora moedas do mapa para o papel <span class="mono">PUSHER</span>. Só a transferência do empurrão aumenta o saldo dele. É por isso que o papel precisa estar no cenário e no checkpoint.</span></div>
+      </div>
+    </section>
+
+    <!-- 10 -->
+    <section class="slide" id="slide-10" data-section="buffer" data-title="Buffer conjunto e GAE">
+      <div class="slide-inner">
+        <div>
+          <div class="eyebrow">dados · rollout</div>
+          <h2 class="title">Buffer conjunto e GAE</h2>
+        </div>
+        <p class="lede">O HAPPO usa o mesmo formato de buffer do MAPPO: um registro por passo conjunto, com estados, ações, recompensas e terminadores de todos os agentes alinhados no tempo.</p>
+
+        <div class="split">
+          <div class="stack">
+            <div class="code-label">forma dos arrays</div>
+            <pre class="code">states        (T, n, C, H, W)
+next_states   (T, n, C, H, W)
+actions       (T, n)
+rewards       (T, n)
+terminated    (T, n)
+episode_ends  (T, n)
+
+n_steps = T          <span class="c"># passos conjuntos</span>
+len(buffer) = T * n  <span class="c"># transições</span></pre>
+            <div class="note" style="margin-top:4px"><span class="mark">T</span><span><b>O gatilho é T, não T×n.</b> <span class="mono">learn()</span> só atualiza quando <span class="mono">n_steps ≥ rollout_steps</span>. Cada passo conjunto carrega uma transição por agente.</span></div>
+          </div>
+          <div class="stack">
+            <ul class="list">
+              <li><span class="bullet"></span><span><b>Alinhamento:</b> <span class="mono">add_transition(i, ...)</span> acumula em <span class="mono">_pending</span>; quando os n agentes contribuem, o passo é commitado.</span></li>
+              <li><span class="bullet"></span><span><b>GAE por coluna:</b> cada agente tem a própria trajetória de recompensas, valores e terminadores. O cálculo respeita <span class="mono">episode_ends</span> e continua o bootstrap no truncamento por tempo.</span></li>
+              <li><span class="bullet"></span><span><b>Log-probs antigos:</b> não são guardados na coleta. Como os pesos não mudam durante o rollout, o update os recalcula de forma exata antes de começar.</span></li>
+              <li><span class="bullet amber"></span><span><b>Crítico em blocos:</b> os valores centralizados são calculados em chunks para não levar o rollout inteiro para a GPU.</span></li>
+            </ul>
+          </div>
+        </div>
+
+        <div class="note warn"><span class="mark">!</span><span><b>O buffer fica na CPU.</b> Só o minibatch corrente vai para o device. Um rollout de 1024 × 4 agentes com frame stack ocupa centenas de megabytes; somar isso às ativações pode estourar uma GPU pequena.</span></div>
+      </div>
+    </section>
+
+    <!-- 11 -->
+    <section class="slide" id="slide-11" data-section="implementação" data-title="O update no código">
+      <div class="slide-inner">
+        <div>
+          <div class="eyebrow">implementação · leitura guiada</div>
+          <h2 class="title">O update no código</h2>
+        </div>
+        <p class="lede">Três blocos em <span class="mono">algs/alg_happo/agent.py</span>: valores antigos, crítico central e a sequência de atores com M acumulado.</p>
+
+        <div class="split">
+          <div class="stack">
+            <div class="code-label">1 · valores e log-probs antigos</div>
+            <pre class="code"><span class="k">for</span> i <span class="k">in</span> range(self.n_agents):
+    logits = self._masked_logits(
+        self.online.actor_logits(s[:, i], i), i)
+    old_log_probs[..., i] = log_softmax(logits).gather(...)
+
+values = self.online.joint_values(s)
+next_values = self.online.joint_values(ns)</pre>
+            <div class="code-label" style="margin-top:10px">2 · crítico centralizado</div>
+            <pre class="code">mb_values = self.online.joint_values(mb_states)
+value_loss = mse(mb_values, returns[idx])
+(self.value_coef * value_loss).backward()
+self.optimizer.step()</pre>
+          </div>
+          <div class="stack">
+            <div class="code-label">3 · atores em ordem, com M</div>
+            <pre class="code">ratio_pre = torch.ones(n_steps, device=...)
+
+<span class="k">for</span> i <span class="k">in</span> range(self.n_agents):
+    <span class="k">for</span> epoch <span class="k">in</span> range(self.epochs):
+        <span class="k">for</span> idx <span class="k">in</span> minibatches:
+            logp = dist.log_prob(actions[idx, i])
+            ratio = exp(logp - old_log_probs[idx, i])
+            ratio = ratio * ratio_pre[idx]
+            loss = -min(ratio * adv,
+                        clamp(ratio, 1-ε, 1+ε) * adv).mean()
+            loss -= c_ent * entropy
+            loss.backward(); optimizer.step()
+
+    <span class="k">with</span> torch.no_grad():
+        new_logp = actor_i(states[:, i])
+        ratio_pre *= exp(new_logp - old_log_probs[:, i])</pre>
+            <div class="note" style="margin-top:4px"><span class="mark">3</span><span><b>O único estado entre agentes é M.</b> A cada iteração, <span class="mono">ratio_pre</span> é recalculado por completo com a política nova do agente recém-atualizado.</span></div>
+          </div>
+        </div>
+
+        <div class="note"><span class="mark">✓</span><span><b>Checkpoint:</b> a rede serializada é <span class="mono">HAPPONetwork</span> (ModuleList de atores + crítico). O formato pesos-only e a validação de <span class="mono">arch_version</span> são os mesmos dos outros algoritmos.</span></div>
+      </div>
+    </section>
+
+    <!-- 12 -->
+    <section class="slide" id="slide-12" data-section="comparativo" data-title="HAPPO × MAPPO × IPPO">
+      <div class="slide-inner">
+        <div>
+          <div class="eyebrow">comparativo · contratos</div>
+          <h2 class="title">HAPPO × MAPPO × IPPO</h2>
+        </div>
+        <p class="lede">O HAPPO não é “um MAPPO melhor”: ele troca uma premissa. Os atores deixam de compartilhar pesos e o update deixa de ser simultâneo.</p>
+
+        <div class="table-wrap">
+          <table class="compare-3">
+            <thead><tr><th>peça</th><th>IPPO</th><th>MAPPO</th><th>HAPPO</th></tr></thead>
+            <tbody>
+              <tr><td>Ator</td><td>1 rede compartilhada</td><td>1 rede compartilhada</td><td>n redes independentes</td></tr>
+              <tr><td>Crítico</td><td>V(s_i) local</td><td>V(s_global) por agente</td><td>V(s_global) por agente</td></tr>
+              <tr><td>Execução</td><td>local</td><td>local</td><td>local</td></tr>
+              <tr><td>Buffer</td><td>n rollouts por agente</td><td>passos conjuntos</td><td>passos conjuntos</td></tr>
+              <tr><td>Update</td><td>concatenado</td><td>simultâneo</td><td>sequencial com M</td></tr>
+              <tr><td>Razão</td><td>r_i</td><td>r_i (ator compartilhado)</td><td>r_i · Π_{j&lt;i} r_j′</td></tr>
+              <tr><td>Papéis</td><td>não modela</td><td>não modela</td><td>máscara por papel</td></tr>
+              <tr><td>Uso típico</td><td>homogêneo, simples</td><td>homogêneo, coordenação</td><td>heterogêneo, papéis</td></tr>
+              <tr><td>CLI</td><td><span class="mono">--alg ippo</span></td><td><span class="mono">--alg mappo</span></td><td><span class="mono">--alg happo</span></td></tr>
+            </tbody>
+          </table>
+        </div>
+
+        <div class="note"><span class="mark">=</span><span><b>O que todos compartilham:</b> CNN base, ator categórico, GAE(λ=0,95), recorte 0,2, entropia 0,01, grad clip 10, Adam 2,5e−4 e o mesmo formato pesos-only de checkpoint.</span></div>
+        <div class="note warn"><span class="mark">!</span><span><b>HAPPO custa mais parâmetros e mais passos.</b> Cada ator tem a própria CNN; o update percorre os agentes em sequência. Em troca, remove a competição entre papéis e dá ao crítico central um valor por agente.</span></div>
+      </div>
+    </section>
+
+    <!-- 13 -->
+    <section class="slide" id="slide-13" data-section="integração" data-title="Checkpoint, avaliação e espectador">
+      <div class="slide-inner">
+        <div>
+          <div class="eyebrow">integração · ciclo de vida</div>
+          <h2 class="title">Checkpoint, avaliação e espectador</h2>
+        </div>
+        <p class="lede">O cenário e os papéis ficam gravados na config do checkpoint. Avaliar e assistir reconstroem o mesmo mundo sem argumentos extras.</p>
+
+        <div class="split">
+          <div class="stack">
+            <div class="card">
+              <h3>O que vai para o disco</h3>
+              <ul class="list" style="margin-top:8px">
+                <li><span class="bullet"></span><span><span class="mono">algorithm = "happo"</span>, <span class="mono">arch_version = "alg-happo-v1"</span>.</span></li>
+                <li><span class="bullet"></span><span>Pesos dos n atores + crítico, otimizador, contadores e config com <span class="mono">n_agents</span>, <span class="mono">team_ids</span>, <span class="mono">agent_roles</span>, <span class="mono">push_impulse</span>, <span class="mono">push_speed_cap</span> e <span class="mono">push_cooldown</span>.</span></li>
+                <li><span class="bullet red"></span><span>Não vão: o buffer conjunto e os RNGs. A retomada continua o treino, mas não é bit a bit.</span></li>
+              </ul>
+            </div>
+            <div class="note"><span class="mark">✓</span><span><b>Retomada valida o cenário.</b> <span class="mono">n_agents</span>, <span class="mono">team_ids</span> e <span class="mono">agent_roles</span> precisam coincidir; trocar de cenário no meio é recusado com mensagem clara.</span></div>
+          </div>
+          <div class="stack">
+            <div class="code-label">avaliar e assistir</div>
+            <pre class="code">python evaluate.py \
+  --checkpoint checkpoints/happo_roles/best.pt \
+  --episodes 10
+
+python play.py \
+  --checkpoint checkpoints/happo_roles/best.pt \
+  --render</pre>
+            <div class="note"><span class="mark">→</span><span><b>Espectador.</b> <span class="mono">play.py</span> detecta <span class="mono">n_agents &gt; 1</span>, reconstrói o <span class="mono">Scenario</span> a partir da config e usa <span class="mono">act_batch(..., greedy=True)</span>. Os papéis e a física do empurrão vêm do checkpoint.</span></div>
+            <div class="note warn"><span class="mark">!</span><span><b>Máscara restaurada.</b> O agente é construído com <span class="mono">agent_roles</span>, então o coletor continua sem poder empurrar na avaliação e no espectador. O ambiente repete a regra de qualquer forma.</span></div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- 14 -->
+    <section class="slide" id="slide-14" data-section="prática" data-title="Rodando e testando">
+      <div class="slide-inner">
+        <div>
+          <div class="eyebrow">prática · comandos</div>
+          <h2 class="title">Rodando e testando</h2>
+        </div>
+        <p class="lede">O HAPPO é descoberto por <span class="mono">--alg happo</span> como qualquer outro pacote. O cenário novo entra por <span class="mono">--scenario collectors-vs-pushers</span>.</p>
+
+        <div class="split">
+          <div class="stack">
+            <div class="code-label">treinar</div>
+            <pre class="code">python train.py --alg happo \
+  --scenario collectors-vs-pushers \
+  --agents 4 --teams 2 \
+  --checkpoint-dir checkpoints/happo_roles \
+  --tensorboard
+
+<span class="c"># times precisam ser pares e --agents divisível por --teams</span>
+<span class="c"># papéis: times &lt; teams/2 = collector; o resto = pusher</span></pre>
+            <div class="note"><span class="mark">→</span><span><b>Com 6 agentes e 2 times:</b> 3 coletores, 3 empurradores. Com 8 e 4 times: times 0–1 coletores, times 2–3 empurradores, 2 membros por time.</span></div>
+          </div>
+          <div class="stack">
+            <div class="code-label">testar</div>
+            <pre class="code">pytest tests/test_happo.py -q
+pytest -q
+
+<span class="c"># smoke curto: 2 episódios</span>
+python train.py --alg happo \
+  --scenario collectors-vs-pushers \
+  --episodes 2 --checkpoint-dir /tmp/happo_smoke</pre>
+            <div class="note warn"><span class="mark">!</span><span><b>Controles úteis.</b> Rode o mesmo cenário com <span class="mono">--alg mappo</span> para ver a rede compartilhada competindo entre papéis; rode HAPPO com <span class="mono">--scenario teams</span> para isolar o efeito dos atores separados sem máscara.</span></div>
+            <div class="note"><span class="mark">2</span><span><b>O que os testes cobrem:</b> papéis e times, recarga e meia arena, coerção de ação no ambiente, máscara, atores independentes, update sequencial, checkpoint com papéis e validação da CLI.</span></div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- 15 -->
+    <section class="slide" id="slide-15" data-section="prática" data-title="Quiz">
+      <div class="slide-inner">
+        <div>
+          <div class="eyebrow">prática · checagem</div>
+          <h2 class="title">Quatro perguntas para fechar</h2>
+        </div>
+        <p class="lede">Clique em uma opção. O feedback explica o mecanismo, não só o gabarito.</p>
+
+        <div class="quiz-list">
+          <div class="quiz" data-explain="O HAPPO mantém o crítico centralizado (CTDE): ele vê as features de todos os agentes + one-hot e devolve um V por agente. O que muda é o ator: cada agente tem a própria rede, sem compartilhamento de pesos.">
+            <p class="q"><span class="qnum">01</span><span>O que o HAPPO separa em relação ao MAPPO?</span></p>
+            <div class="options">
+              <button class="opt" type="button" data-correct="true">Os atores: um por agente, sem pesos compartilhados.</button>
+              <button class="opt" type="button" data-correct="false">O crítico: um por agente, sem estado conjunto.</button>
+              <button class="opt" type="button" data-correct="false">O buffer: um rollout isolado por agente.</button>
+            </div>
+            <p class="feedback" hidden></p>
+          </div>
+
+          <div class="quiz" data-explain="M é o produto das razões de importância dos agentes já atualizados, recalculado sem gradiente após cada update. Para o agente i, M = Π_{j<i} π_j_novo/π_j_antigo; o próprio agente não entra em M.">
+            <p class="q"><span class="qnum">02</span><span>No update do agente i, o que entra no fator M?</span></p>
+            <div class="options">
+              <button class="opt" type="button" data-correct="false">A razão do próprio agente i.</button>
+              <button class="opt" type="button" data-correct="true">As razões dos agentes j &lt; i já atualizados.</button>
+              <button class="opt" type="button" data-correct="false">As razões de todos os agentes, inclusive os futuros.</button>
+            </div>
+            <p class="feedback" hidden></p>
+          </div>
+
+          <div class="quiz" data-explain="O coletor tem PUSH_LEFT/PUSH_RIGHT mascarados na política (probabilidade zero) e o ambiente converte qualquer empurrão em STOP. O empurrador não tem ação de coleta: o engine simplesmente ignora moedas do mapa para o papel PUSHER.">
+            <p class="q"><span class="qnum">03</span><span>Como o empurrador ganha moedas?</span></p>
+            <div class="options">
+              <button class="opt" type="button" data-correct="false">Coletando moedas do mapa como o coletor.</button>
+              <button class="opt" type="button" data-correct="true">Empurrando um alvo: a transferência leva até 5 moedas dele.</button>
+              <button class="opt" type="button" data-correct="false">Recebendo a recompensa terminal do episódio.</button>
+            </div>
+            <p class="feedback" hidden></p>
+          </div>
+
+          <div class="quiz" data-explain="O impulso é calibrado por push_impulse_for_range. O engine aplica o atrito antes de mover, então a distância é v0·dt·0,88/(1−0,88). Para 320 px a 30 fps, v0 ≈ 1.309 px/s; dividindo pela intensidade 3, o impulso é ≈ 436,4. A recarga de 2 s é por personagem.">
+            <p class="q"><span class="qnum">04</span><span>Qual é o efeito do cenário no empurrão?</span></p>
+            <div class="options">
+              <button class="opt" type="button" data-correct="false">Impulso máximo de 130, sem recarga.</button>
+              <button class="opt" type="button" data-correct="true">Alvo atravessa ~320 px e o empurrador espera 2 s para empurrar de novo.</button>
+              <button class="opt" type="button" data-correct="false">Empurrão instantâneo que teleporta o alvo para a borda.</button>
+            </div>
+            <p class="feedback" hidden></p>
+          </div>
+        </div>
+        <div class="btn-row"><button class="btn-ghost" id="quiz-reset" type="button">Recomeçar o quiz</button></div>
+      </div>
+    </section>
+
+    <!-- 16 -->
+    <section class="slide" id="slide-16" data-section="prática" data-title="Para levar">
+      <div class="slide-inner">
+        <div>
+          <div class="eyebrow">prática · fechamento</div>
+          <h2 class="title">Para levar</h2>
+        </div>
+
+        <div class="takeaways">
+          <div class="takeaway"><span class="k">01 · cenário</span><b>Papéis assimétricos</b><p>Metade dos times só coleta; metade só empurra. O papel é dado do cenário e vai para o checkpoint.</p></div>
+          <div class="takeaway"><span class="k">02 · física</span><b>Meia arena, 2 s de recarga</b><p>O impulso é calibrado por push_impulse_for_range; o cooldown é por personagem.</p></div>
+          <div class="takeaway"><span class="k">03 · atores</span><b>n políticas independentes</b><p>Sem pesos compartilhados, cada papel pode se especializar sem competir pela mesma cabeça.</p></div>
+          <div class="takeaway"><span class="k">04 · update</span><b>Sequencial com M</b><p>A razão do agente i é corrigida pelo produto das razões dos agentes já atualizados.</p></div>
+          <div class="takeaway"><span class="k">05 · crítico</span><b>Centralizado, só no treino</b><p>Features conjuntas + one-hot; um V por agente. Na execução, cada ator decide sozinho.</p></div>
+          <div class="takeaway"><span class="k">06 · máscara</span><b>O papel limita ações</b><p>Coletor não empurra (máscara + ambiente); empurrador não coleta (engine).</p></div>
+        </div>
+
+        <div class="split">
+          <div class="stack">
+            <div class="code-label">para abrir depois da aula</div>
+            <pre class="code">algs/alg_happo/agent.py
+algs/alg_happo/model.py
+algs/alg_happo/rollout_buffer.py
+arena/scenario.py
+arena/engine.py
+
+pytest tests/test_happo.py -q</pre>
+          </div>
+          <div class="stack">
+            <div class="note"><span class="mark">→</span><span><b>Próximo experimento.</b> Treine o mesmo cenário com MAPPO e HAPPO, com a mesma seed e o mesmo orçamento. A pergunta é: quantas moedas o time coletor mantém quando o empurrador especializa?</span></div>
+            <div class="note warn"><span class="mark">?</span><span><b>Pergunta para levar.</b> Se o crítico já vê o estado conjunto, por que o ator também não pode ver? Pense no que muda na execução: um ator centralizado não pode rodar em cada agente sem comunicação.</span></div>
+          </div>
+        </div>
+
+        <div class="cover-foot">
+          <span class="mono">HAPPO no rl-arena · aula</span>
+          <button class="btn" id="restart" type="button">Voltar ao início</button>
+        </div>
+      </div>
+    </section>
+
+  </main>
+
+  <footer class="foot">
+    <div class="hint"><kbd>←</kbd><kbd>→</kbd> navegar <span class="sep">·</span> <kbd>O</kbd> índice <span class="sep">·</span> <kbd>F</kbd> tela cheia</div>
+    <div class="foot-title" id="foot-title"></div>
+    <div class="navbtns">
+      <button class="navbtn" id="prev" type="button" aria-label="Slide anterior">←</button>
+      <button class="navbtn" id="next" type="button" aria-label="Próximo slide">→</button>
+    </div>
+  </footer>
+</div>
+
+<div class="overlay" id="overlay" role="dialog" aria-modal="true" aria-labelledby="overlay-title" hidden>
+  <div class="overlay-head">
+    <div>
+      <div class="eyebrow">navegação</div>
+      <h2 id="overlay-title">Índice da aula</h2>
+    </div>
+    <button class="btn" id="overlay-close" type="button">Fechar</button>
+  </div>
+  <div class="index-grid" id="index-grid"></div>
+</div>
+
+<script>
+(function () {
+  "use strict";
+
+  var slides = Array.prototype.slice.call(document.querySelectorAll(".slide"));
+  var total = slides.length;
+  var current = 0;
+  var overlay = document.getElementById("overlay");
+  var indexGrid = document.getElementById("index-grid");
+  var overlayBuilt = false;
+
+  function pad(n) { return String(n).padStart(2, "0"); }
+
+  function setHash(i) {
+    var h = "slide-" + (i + 1);
+    if (location.hash !== "#" + h) location.hash = h;
+  }
+
+  function show(i, opts) {
+    opts = opts || {};
+    i = Math.max(0, Math.min(total - 1, i));
+    current = i;
+    slides.forEach(function (slide, j) {
+      var on = j === i;
+      slide.hidden = !on;
+      slide.classList.toggle("active", on);
+      if (on) slide.scrollTop = 0;
+    });
+    document.getElementById("counter").textContent = pad(i + 1) + " / " + pad(total);
+    document.getElementById("progress-fill").style.width = (i / Math.max(1, total - 1) * 100) + "%";
+    document.getElementById("sec-label").textContent = slides[i].dataset.section || "";
+    document.getElementById("foot-title").textContent = slides[i].dataset.title || "";
+    document.getElementById("prev").disabled = i === 0;
+    document.getElementById("next").disabled = i === total - 1;
+    if (opts.hash !== false) setHash(i);
+    if (!overlay.hidden) markCurrentIndex();
+  }
+
+  function markCurrentIndex() {
+    Array.prototype.forEach.call(indexGrid.children, function (btn) {
+      btn.classList.toggle("current", Number(btn.dataset.goto) === current);
+    });
+  }
+
+  function buildIndex() {
+    if (overlayBuilt) return;
+    indexGrid.innerHTML = slides.map(function (slide, i) {
+      return '<button class="index-item" type="button" data-goto="' + i + '">' +
+        '<span class="idx-num">' + pad(i + 1) + '</span>' +
+        '<span class="idx-sec">' + (slide.dataset.section || "") + '</span>' +
+        '<span class="idx-title">' + (slide.dataset.title || "Slide") + '</span>' +
+        '</button>';
+    }).join("");
+    overlayBuilt = true;
+  }
+
+  function openIndex() {
+    buildIndex();
+    markCurrentIndex();
+    overlay.hidden = false;
+    document.getElementById("overlay-close").focus();
+  }
+
+  function closeIndex() {
+    overlay.hidden = true;
+    document.getElementById("btn-index").focus();
+  }
+
+  function toggleIndex() { if (overlay.hidden) openIndex(); else closeIndex(); }
+
+  function toggleFullscreen() {
+    var root = document.documentElement;
+    if (!document.fullscreenElement) {
+      if (root.requestFullscreen) root.requestFullscreen().catch(function () {});
+    } else if (document.exitFullscreen) {
+      document.exitFullscreen().catch(function () {});
+    }
+  }
+
+  function fromHash() {
+    var m = /^#slide-(\d+)$/.exec(location.hash);
+    if (!m) return 0;
+    return Math.max(0, Math.min(total - 1, parseInt(m[1], 10) - 1));
+  }
+
+  document.getElementById("prev").addEventListener("click", function () { show(current - 1); });
+  document.getElementById("next").addEventListener("click", function () { show(current + 1); });
+  document.getElementById("btn-index").addEventListener("click", openIndex);
+  document.getElementById("btn-full").addEventListener("click", toggleFullscreen);
+  document.getElementById("overlay-close").addEventListener("click", closeIndex);
+  document.getElementById("restart").addEventListener("click", function () { show(0); });
+  overlay.addEventListener("click", function (e) { if (e.target === overlay) closeIndex(); });
+  indexGrid.addEventListener("click", function (e) {
+    var btn = e.target.closest(".index-item");
+    if (!btn) return;
+    closeIndex();
+    show(Number(btn.dataset.goto));
+  });
+
+  document.addEventListener("fullscreenchange", function () {
+    document.getElementById("btn-full").textContent = document.fullscreenElement ? "Sair" : "Tela cheia";
+  });
+
+  window.addEventListener("hashchange", function () { show(fromHash(), { hash: false }); });
+
+  document.addEventListener("keydown", function (e) {
+    var t = e.target;
+    var tag = t && t.tagName ? t.tagName : "";
+    if (e.key === "Escape") { if (!overlay.hidden) closeIndex(); return; }
+    if ((e.key === "o" || e.key === "O") && tag !== "INPUT" && tag !== "SELECT" && tag !== "TEXTAREA") {
+      e.preventDefault(); toggleIndex(); return;
+    }
+    if ((e.key === "f" || e.key === "F") && tag !== "INPUT" && tag !== "SELECT" && tag !== "TEXTAREA") {
+      e.preventDefault(); toggleFullscreen(); return;
+    }
+    if (tag === "INPUT" || tag === "SELECT" || tag === "TEXTAREA") return;
+    if (tag === "BUTTON" && (e.key === " " || e.key === "Enter")) return;
+    if (e.key === "ArrowRight" || e.key === "PageDown" || e.key === " ") {
+      e.preventDefault(); show(current + 1);
+    } else if (e.key === "ArrowLeft" || e.key === "PageUp") {
+      e.preventDefault(); show(current - 1);
+    } else if (e.key === "Home") {
+      e.preventDefault(); show(0);
+    } else if (e.key === "End") {
+      e.preventDefault(); show(total - 1);
+    }
+  });
+
+  var touchX = null, touchY = null;
+  var stage = document.getElementById("stage");
+  stage.addEventListener("touchstart", function (e) {
+    if (e.touches.length !== 1) return;
+    var t = e.target;
+    if (t.closest("input, select, button, .chart-scroll, .diagram-scroll")) return;
+    touchX = e.touches[0].clientX;
+    touchY = e.touches[0].clientY;
+  }, { passive: true });
+  stage.addEventListener("touchend", function (e) {
+    if (touchX === null) return;
+    var dx = e.changedTouches[0].clientX - touchX;
+    var dy = e.changedTouches[0].clientY - touchY;
+    touchX = null; touchY = null;
+    if (Math.abs(dx) > 64 && Math.abs(dy) < 52 && Math.abs(dx) > Math.abs(dy) * 1.4) {
+      show(current + (dx < 0 ? 1 : -1));
+    }
+  }, { passive: true });
+
+  // ---------------------------------------------------------------
+  // Física do empurrão: meia arena + recarga de 2 s
+  // ---------------------------------------------------------------
+  var pushBtn = document.getElementById("push-btn");
+  var pushReset = document.getElementById("push-reset");
+  var pushDot = document.getElementById("push-dot");
+  var pushFill = document.getElementById("push-cd-fill");
+  var pushStatus = document.getElementById("push-status");
+  var pushDistance = document.getElementById("push-distance");
+  var pushCdText = document.getElementById("push-cd-text");
+  var CD = 2.0, TRACK_START = 12.5, TRACK_HALF = 50.0;
+  var raf = null;
+
+  function resetPush() {
+    if (raf) cancelAnimationFrame(raf);
+    raf = null;
+    pushDot.style.left = TRACK_START + "%";
+    pushFill.style.width = "100%";
+    pushStatus.textContent = "pronto para empurrar";
+    pushDistance.textContent = "0 px";
+    pushCdText.textContent = "2,00 s";
+    pushBtn.disabled = false;
+  }
+
+  function runPush() {
+    if (raf) return;
+    pushBtn.disabled = true;
+    var t0 = performance.now();
+    function frame(now) {
+      var t = Math.min(CD, (now - t0) / 1000);
+      var progress = 1 - Math.pow(0.88, t * 30);
+      pushDot.style.left = (TRACK_START + TRACK_HALF * progress) + "%";
+      pushDistance.textContent = Math.round(320 * progress) + " px";
+      var left = Math.max(0, CD - t);
+      pushFill.style.width = (left / CD * 100) + "%";
+      pushCdText.textContent = left.toFixed(2).replace(".", ",") + " s";
+      pushStatus.textContent = left > 0.01
+        ? "recarregando · empurrão bloqueado"
+        : "pronto para empurrar de novo";
+      if (t < CD) {
+        raf = requestAnimationFrame(frame);
+      } else {
+        raf = null;
+        pushBtn.disabled = false;
+      }
+    }
+    raf = requestAnimationFrame(frame);
+  }
+
+  pushBtn.addEventListener("click", runPush);
+  pushReset.addEventListener("click", resetPush);
+  resetPush();
+
+  // ---------------------------------------------------------------
+  // Update sequencial: M acumulado
+  // ---------------------------------------------------------------
+  var seqRows = Array.prototype.slice.call(
+    document.querySelectorAll("#seq-list .seq-row"));
+  var seqNext = document.getElementById("seq-next");
+  var seqReset = document.getElementById("seq-reset");
+  var seqStatus = document.getElementById("seq-status");
+  var seqStep = 0;
+  var seqFormulas = [
+    "r0 = π0_novo / π0_antigo",
+    "r1 · r0′",
+    "r2 · r0′ · r1′",
+    "r3 · r0′ · r1′ · r2′"
+  ];
+
+  function renderSeq() {
+    seqRows.forEach(function (row, i) {
+      row.classList.toggle("done", i < seqStep);
+      row.classList.toggle("current", i === seqStep);
+      row.querySelector(".state").textContent =
+        i < seqStep ? "atualizado" : (i === seqStep ? "próximo" : "pendente");
+      row.querySelector(".formula").textContent =
+        i < seqStep ? seqFormulas[i] : (i === seqStep ? seqFormulas[i] : "—");
+    });
+    if (seqStep === 0) {
+      seqStatus.innerHTML = "Nenhum ator atualizado. <span class='mono'>M = 1</span>.";
+    } else if (seqStep < seqRows.length) {
+      seqStatus.innerHTML = "M = produto das razões de a0..a" + (seqStep - 1) +
+        ". Próximo: <b>a" + seqStep + "</b>.";
+    } else {
+      seqStatus.innerHTML = "<strong>Update completo.</strong> O buffer é limpo e a coleta recomeça com as políticas novas.";
+    }
+    seqNext.disabled = seqStep >= seqRows.length;
+    seqNext.textContent = seqStep >= seqRows.length ? "Ordem completa" : "Próximo agente";
+  }
+
+  seqNext.addEventListener("click", function () {
+    if (seqStep < seqRows.length) seqStep += 1;
+    renderSeq();
+  });
+  seqReset.addEventListener("click", function () {
+    seqStep = 0;
+    renderSeq();
+  });
+  renderSeq();
+
+  // ---------------------------------------------------------------
+  // Quiz
+  // ---------------------------------------------------------------
+  Array.prototype.forEach.call(document.querySelectorAll(".quiz"), function (quiz) {
+    var feedback = quiz.querySelector(".feedback");
+    Array.prototype.forEach.call(quiz.querySelectorAll(".opt"), function (btn) {
+      btn.addEventListener("click", function () {
+        var ok = btn.dataset.correct === "true";
+        Array.prototype.forEach.call(quiz.querySelectorAll(".opt"), function (b) {
+          b.classList.remove("correct", "wrong");
+          if (b.dataset.correct === "true") b.classList.add("correct");
+        });
+        if (!ok) btn.classList.add("wrong");
+        feedback.hidden = false;
+        feedback.className = "feedback " + (ok ? "correct" : "wrong");
+        feedback.textContent = (ok ? "Correto. " : "Ainda não. ") + quiz.dataset.explain;
+      });
+    });
+  });
+
+  document.getElementById("quiz-reset").addEventListener("click", function () {
+    Array.prototype.forEach.call(document.querySelectorAll(".quiz"), function (quiz) {
+      Array.prototype.forEach.call(quiz.querySelectorAll(".opt"), function (b) {
+        b.classList.remove("correct", "wrong");
+      });
+      var feedback = quiz.querySelector(".feedback");
+      feedback.hidden = true;
+      feedback.textContent = "";
+    });
+  });
+
+  // ---------------------------------------------------------------
+  // Inicialização
+  // ---------------------------------------------------------------
+  show(fromHash(), { hash: false });
+})();
+</script>

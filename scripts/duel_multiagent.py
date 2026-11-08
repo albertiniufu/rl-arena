@@ -80,6 +80,7 @@ def checkpoint_config(meta):
         "frame_skip": config.get("frame_skip"),
         "n_agents": config.get("n_agents"),
         "team_ids": tuple(config.get("team_ids") or ()),
+        "agent_roles": tuple(config.get("agent_roles") or ()),
     }
 
 
@@ -100,10 +101,13 @@ def build_agent(alg, path, env, scenario, device, attempts=5, delay=3.0):
     last = None
     for _ in range(attempts):
         try:
+            kwargs = dict(n_agents=scenario.n_agents,
+                          team_ids=tuple(scenario.team_ids), device=device)
+            if scenario.has_roles and getattr(
+                    alg.Agent, "accepts_roles", False):
+                kwargs["agent_roles"] = tuple(scenario.roles)
             agent = alg.Agent(
-                env.observation_space.shape, env.action_space.n,
-                n_agents=scenario.n_agents,
-                team_ids=tuple(scenario.team_ids), device=device)
+                env.observation_space.shape, env.action_space.n, **kwargs)
             load_checkpoint(path, agent, resume=False)
             return agent
         except Exception as exc:

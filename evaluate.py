@@ -28,9 +28,12 @@ def _evaluate_multi(args, alg, cfg):
     env = ArenaMultiEnv(cfg, scenario=scenario,
                         render_mode="human" if args.render else None,
                         skin=args.skin)
+    agent_kwargs = dict(n_agents=scenario.n_agents,
+                        team_ids=tuple(scenario.team_ids))
+    if scenario.has_roles and getattr(alg.Agent, "accepts_roles", False):
+        agent_kwargs["agent_roles"] = tuple(scenario.roles)
     agent = alg.Agent(env.observation_space.shape, env.action_space.n,
-                      n_agents=scenario.n_agents,
-                      team_ids=tuple(scenario.team_ids))
+                      **agent_kwargs)
     load_checkpoint(args.checkpoint, agent, resume=False)
     rows = []
     for ep in range(args.episodes):

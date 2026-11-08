@@ -42,6 +42,7 @@ class ArenaMultiEnv:
         self.scenario = scenario
         self.cfg.n_agents = scenario.n_agents
         self.cfg.team_ids = tuple(scenario.team_ids)
+        self.cfg.agent_roles = tuple(scenario.roles)
         self.render_mode = render_mode
         self.skin = skin
         self.engine = ArenaEngine(self.cfg)
@@ -80,6 +81,7 @@ class ArenaMultiEnv:
                 "coins": int(c.coins),
                 "deaths": int(c.deaths),
                 "team": int(self.scenario.team_of(i)),
+                "role": self.scenario.role_of(i),
                 "reward": 0.0 if rewards is None else float(rewards[i]),
                 "raw_reward": 0.0 if raw is None else float(raw[i]),
                 "collected_this_step": 0 if collected is None else int(collected[i]),
@@ -158,6 +160,14 @@ class ArenaMultiEnv:
                 f"esperado {self.n_agents} ações, recebido {actions.shape[0]}")
         if np.any(actions < 0) or np.any(actions >= N_ACTIONS):
             raise ValueError(f"ações inválidas: {actions.tolist()}")
+        # Política com papel restrito: o coletor não empurra. Em vez de
+        # rejeitar (o que quebraria a exploração de algoritmos sem máscara),
+        # a ação inválida vira STOP — a mesma semântica que o engine aplica.
+        effective = actions.copy()
+        for i, a in enumerate(effective):
+            if (not self.scenario.can_push(i)
+                    and a in (PUSH_LEFT, PUSH_RIGHT)):
+                effective[i] = STOP
         # PBRS: potencial no estado em que a ação foi escolhida. Aplicado uma
         # vez por step do agente (não por substep), casando com o gamma do GAE.
         if self.cfg.pbrs_coef:
@@ -167,7 +177,7 @@ class ArenaMultiEnv:
         push_missed = np.array([
             bool(a in (PUSH_LEFT, PUSH_RIGHT))
             and not self._push_target_in_range(i)
-            for i, a in enumerate(actions)
+            for i, a in enumerate(effective)
         ], dtype=bool)
 
         dt = 1.0 / self.cfg.fps
@@ -176,7 +186,7 @@ class ArenaMultiEnv:
         deaths = np.zeros(self.n_agents, dtype=np.int64)
         transferred = np.zeros(self.n_agents, dtype=np.int64)
         for _ in range(self.cfg.frame_skip):
-            event = self.engine.step(actions.tolist(), dt)
+            event = self.engine.step(effective.tolist(), dt)
             self.elapsed += dt
             step_collected = np.asarray(event["collected"], dtype=np.int64)
             step_deaths = np.asarray(event["deaths_delta"], dtype=np.int64)
@@ -201,7 +211,7 @@ class ArenaMultiEnv:
             raw += pbrs
 
         # Penalidades de modelagem: uma vez por step do agente, não por substep.
-        raw += np.where(actions == STOP, self.cfg.stop_penalty, 0.0)
+        raw += np.where(effective == STOP, self.cfg.stop_penalty, 0.0)
         raw += np.where(push_missed, self.cfg.push_miss_penalty, 0.0)
         rewards = self._aggregate_rewards(raw)
 

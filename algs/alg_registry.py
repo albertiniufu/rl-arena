@@ -167,6 +167,14 @@ def apply_env_config(cfg, meta):
     cfg.frame_skip = int(config.get("frame_skip", cfg.frame_skip))
     cfg.n_agents = int(config.get("n_agents", cfg.n_agents))
     cfg.team_ids = tuple(config.get("team_ids", cfg.team_ids) or ())
+    # O cenário coletores × empurradores precisa dos papéis e da física do
+    # empurrão para reconstruir exatamente o mundo treinado.
+    cfg.agent_roles = tuple(config.get("agent_roles", cfg.agent_roles) or ())
+    cfg.push_impulse = float(config.get("push_impulse", cfg.push_impulse))
+    cfg.push_speed_cap = float(
+        config.get("push_speed_cap", cfg.push_speed_cap))
+    cfg.push_cooldown = float(
+        config.get("push_cooldown", cfg.push_cooldown))
     return cfg
 
 
