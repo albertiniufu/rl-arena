@@ -221,6 +221,22 @@ def test_push_coin_reward_scales_reward_but_not_the_transfer():
     env.close()
 
 
+def test_multi_env_renders_each_substep_when_requested():
+    env, _ = make_env(4, frame_skip=3)
+    env.render_mode = "human"
+    calls = []
+    env.render = lambda: calls.append(1)
+    env.reset(seed=0)
+
+    env.step([STOP] * 4, render_intermediate=True)
+    assert len(calls) == 3  # um frame por substep, a 30 fps
+
+    calls.clear()
+    env.step([STOP] * 4)
+    assert len(calls) == 1  # comportamento padrão: um frame por decision
+    env.close()
+
+
 def test_coin_potential_uses_team_margin():
     engine = ArenaEngine(ArenaConfig())
     engine.reset(seed=0, n_characters=4,

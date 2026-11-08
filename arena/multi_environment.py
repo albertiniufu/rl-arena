@@ -145,7 +145,13 @@ class ArenaMultiEnv:
             rewards[members] = float(np.mean(rewards[members]))
         return rewards
 
-    def step(self, actions):
+    def step(self, actions, render_intermediate=False):
+        """Avança a simulação; `render_intermediate` desenha cada substep.
+
+        No modo humano isso mantém o render a `fps` (30) mesmo com
+        `frame_skip > 1`: as decisões continuam uma vez por step do agente,
+        mas a tela atualiza a cada substep de física.
+        """
         actions = np.asarray(actions, dtype=np.int64).reshape(-1)
         if actions.shape[0] != self.n_agents:
             raise ValueError(
@@ -182,6 +188,8 @@ class ArenaMultiEnv:
             collected += step_collected
             deaths += step_deaths
             transferred += step_transferred
+            if render_intermediate and self.render_mode == "human":
+                self.render()
 
         pbrs = np.zeros(self.n_agents, dtype=np.float64)
         if self.cfg.pbrs_coef:
@@ -205,7 +213,7 @@ class ArenaMultiEnv:
             self.n_agents, self.elapsed >= self.cfg.episode_seconds, dtype=bool)
         info = self._info(rewards, raw, collected, deaths, transferred, pbrs)
         self._last_info = info
-        if self.render_mode == "human":
+        if self.render_mode == "human" and not render_intermediate:
             self.render()
         return obs, rewards, terminated, truncated, info
 

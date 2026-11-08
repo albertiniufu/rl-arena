@@ -55,7 +55,7 @@ python scripts/duel_multiagent.py \
   --record duelo.mp4   # MAPPO × IPPO, um checkpoint por time
 ```
 
-Com `--player human` num checkpoint multiagente, o agente `--human-agent N` (padrão 0) é controlado pelo teclado; o colega de time e os adversários usam o checkpoint. É preciso um cenário `teams` em que esse agente tenha colega. Cada render avança `frame_skip` substeps, então o render roda em `fps/frame_skip` para o humano jogar em tempo real. O padrão de `--agents` é 4 com um algoritmo multiagente (1 nos demais algoritmos).
+Com `--player human` num checkpoint multiagente, o agente `--human-agent N` (padrão 0) é controlado pelo teclado; o colega de time e os adversários usam o checkpoint. É preciso um cenário `teams` em que esse agente tenha colega. No modo humano o render desenha **cada substep** de física (30 fps), enquanto as decisões continuam uma vez por `frame_skip` substeps. O padrão de `--agents` é 4 com um algoritmo multiagente (1 nos demais algoritmos).
 Na primeira versão, multiagente não combina com `--envs`, `--overlap` nem
 `--opponent` baseline.
 

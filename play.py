@@ -1,5 +1,4 @@
 import argparse
-import copy
 import time
 
 import numpy as np
@@ -151,11 +150,6 @@ def _play_multi(args, alg, cfg, render_mode):
                       team_ids=tuple(scenario.team_ids))
     load_checkpoint(args.checkpoint, agent, resume=False)
     agent.epsilon = 0.0
-    # Cada render avança `frame_skip` substeps de física. Para o humano jogar
-    # em tempo real, o render (e o vídeo) usam fps / frame_skip.
-    render_fps = env.cfg.fps
-    if human is not None and env.cfg.frame_skip > 1:
-        render_fps = max(1, env.cfg.fps // env.cfg.frame_skip)
     video_writer = None
     if args.record:
         try:
@@ -164,7 +158,7 @@ def _play_multi(args, alg, cfg, render_mode):
             raise SystemExit(
                 "Gravar vídeo requer: pip install imageio imageio-ffmpeg") from exc
         video_writer = imageio.get_writer(
-            args.record, fps=render_fps, codec="libx264",
+            args.record, fps=env.cfg.fps, codec="libx264",
             output_params=["-pix_fmt", "yuv420p", "-crf", "23",
                            "-movflags", "+faststart"])
     try:
@@ -174,11 +168,6 @@ def _play_multi(args, alg, cfg, render_mode):
                 # Inicializa a janela antes do primeiro teclado e mostra o
                 # estado inicial (também entra no vídeo, quando houver).
                 env.render()
-                if human is not None and render_fps != env.cfg.fps:
-                    # O renderer usa cfg.fps no clock.tick; uma cópia evita
-                    # mudar o dt da física no ambiente.
-                    env._renderer.cfg = copy.copy(env.cfg)
-                    env._renderer.cfg.fps = render_fps
                 if video_writer is not None:
                     record_frame(video_writer)
             while True:
@@ -190,7 +179,10 @@ def _play_multi(args, alg, cfg, render_mode):
                         player_character=env.engine.characters[human_index],
                         stacked_obs=obs[human_index])
                     actions[human_index] = human.act(ctx)
-                obs, rewards, terminated, truncated, info = env.step(actions)
+                # Com humano, renderiza cada substep: a tela roda a 30 fps
+                # mesmo com frame_skip=3 (as decisões seguem a 10 Hz).
+                obs, rewards, terminated, truncated, info = env.step(
+                    actions, render_intermediate=human is not None)
                 if video_writer is not None:
                     record_frame(video_writer)
                 if bool(np.all(truncated)):
