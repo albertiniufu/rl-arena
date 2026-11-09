@@ -7,7 +7,7 @@ testes e entry points.
 | Jogo | Diretório | Descrição |
 | --- | --- | --- |
 | RL Arena | [`games/default/`](games/default/README.md) | Plataforma 2D com DQN, Double DQN/PER, PPO, A2C, IPPO e MAPPO. |
-| Economia | [`games/economy/`](games/economy/README.md) | Simulador de agentes econômicos: população, empresas, governo e choques macroeconômicos. |
+| Economia | [`games/economy/`](games/economy/README.md) | Banco-agente: concessão e precificação por GH com recompensa por RAROC líquido, sobre uma economia com população, empresas, governo e choques macro. Modo governo disponível. |
 | Risco | [`games/risk/`](games/risk/README.md) | Jogo de conquista de territórios inspirado em War/Risk, com motor de fases e combate por dados. |
 
 ## Instalação

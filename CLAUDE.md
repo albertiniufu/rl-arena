@@ -10,7 +10,10 @@ próximo ao diretório de trabalho.
   `algs/`, `train.py`, `evaluate.py`, `play.py`, testes). Leia
   [`games/default/CLAUDE.md`](games/default/CLAUDE.md) antes de mexer nele.
 - `games/economy/` — simulador econômico (população, empresas, governo,
-  variabilidade macro) + ambiente Gymnasium + demo em texto.
+  variabilidade macro) com dois agentes Gymnasium: `BankEnv` (principal —
+  banco decide aprovação, limite e spread por GH, recompensa por RAROC
+  líquido) e `EconomyEnv` (governo). Demos em texto em `bank_demo.py` e
+  `demo.py`.
 - `games/risk/` — jogo de conquista inspirado em War/Risk (territórios,
   fases, combate por dados) + ambiente Gymnasium + modo jogável em texto.
 - `conftest.py` (raiz) — ajusta `sys.path` para os testes de todos os jogos.
@@ -23,6 +26,7 @@ próximo ao diretório de trabalho.
 pytest -q                     # suíte completa
 pytest -q games/economy       # um jogo
 cd games/default && python train.py --episodes 300
+python -m games.economy.bank_demo --steps 24 --policy risk-aware
 python -m games.economy.demo --steps 24
 python -m games.risk.play
 ```
