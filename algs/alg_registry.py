@@ -175,6 +175,13 @@ def apply_env_config(cfg, meta):
         config.get("push_speed_cap", cfg.push_speed_cap))
     cfg.push_cooldown = float(
         config.get("push_cooldown", cfg.push_cooldown))
+    # A transferência também é parte da física/recompensa do cenário: sem
+    # copiá-la, evaluate.py/play.py/duel rodariam o checkpoint t15 com o
+    # valor legado (5), medindo outro jogo.
+    cfg.push_coin_transfer = int(
+        config.get("push_coin_transfer", cfg.push_coin_transfer))
+    cfg.push_coin_reward = float(
+        config.get("push_coin_reward", cfg.push_coin_reward))
     return cfg
 
 

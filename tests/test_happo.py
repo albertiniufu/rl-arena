@@ -321,7 +321,8 @@ def test_happo_checkpoint_round_trip_and_env_config(tmp_path):
     cfg = ArenaConfig(n_agents=4, team_ids=scenario.team_ids,
                       agent_roles=scenario.roles, frame_stack=2,
                       frame_skip=3, push_impulse=436.36,
-                      push_speed_cap=1200.0, push_cooldown=2.0)
+                      push_speed_cap=1200.0, push_cooldown=2.0,
+                      push_coin_transfer=15)
     path = tmp_path / "happo.pt"
     save_checkpoint(path, agent, cfg, {"multi_agent": True}, episodes=3)
 
@@ -333,6 +334,8 @@ def test_happo_checkpoint_round_trip_and_env_config(tmp_path):
     assert restored.agent_roles == scenario.roles
     assert restored.push_impulse == pytest.approx(436.36)
     assert restored.push_cooldown == pytest.approx(2.0)
+    assert restored.push_coin_transfer == 15
+    assert restored.push_coin_reward == pytest.approx(1.0)
 
     other = HAPPOAgent(OBS_SHAPE, 6, n_agents=4,
                        team_ids=scenario.team_ids,

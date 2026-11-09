@@ -128,14 +128,16 @@ def record_frame(writer):
 def validate_pair(mappo_meta, ippo_meta):
     a = checkpoint_config(mappo_meta)
     b = checkpoint_config(ippo_meta)
-    if mappo_meta.get("algorithm") != "mappo":
-        raise SystemExit(
-            f"--mappo-checkpoint não é MAPPO "
-            f"(algorithm={mappo_meta.get('algorithm')!r})")
-    if ippo_meta.get("algorithm") != "ippo":
-        raise SystemExit(
-            f"--ippo-checkpoint não é IPPO "
-            f"(algorithm={ippo_meta.get('algorithm')!r})")
+    # O duelo nasceu como MAPPO x IPPO, mas serve para qualquer par de
+    # algoritmos multiagentes (ex.: MAPPO x HAPPO, HAPPO x IPPO).
+    allowed = {"mappo", "ippo", "happo"}
+    for flag, meta in (("--mappo-checkpoint", mappo_meta),
+                       ("--ippo-checkpoint", ippo_meta)):
+        algorithm = meta.get("algorithm")
+        if algorithm not in allowed:
+            raise SystemExit(
+                f"{flag} precisa ser multiagente ({sorted(allowed)}); "
+                f"algorithm={algorithm!r}")
     if a != b:
         diff = ", ".join(f"{k}: {a[k]!r} != {b[k]!r}"
                          for k in a if a[k] != b[k])
@@ -176,9 +178,11 @@ def main(argv=None):
         mappo_alg, args.mappo_checkpoint, env, scenario, args.device)
     ippo_agent = build_agent(
         ippo_alg, args.ippo_checkpoint, env, scenario, args.device)
-    print(f"duelo: MAPPO time {args.mappo_team} "
+    label_a = str(mappo_meta.get("algorithm", "A")).upper()
+    label_b = str(ippo_meta.get("algorithm", "B")).upper()
+    print(f"duelo: {label_a} time {args.mappo_team} "
           f"({expected['n_agents']} agentes, fs={expected['frame_stack']}, "
-          f"fk={expected['frame_skip']}) vs IPPO "
+          f"fk={expected['frame_skip']}) vs {label_b} "
           f"times {sorted(set(scenario.team_ids) - {args.mappo_team})}")
 
     video_writer = None
@@ -196,11 +200,15 @@ def main(argv=None):
                            "-movflags", "+faststart"])
 
     def actions_for(obs):
+        # Os dois agentes recebem o lote completo (n_agents, C, H, W): o
+        # HAPPO indexa atores/máscaras pelo índice global do agente, então
+        # passar só o subconjunto do time quebraria. Cada lado contribui só
+        # com as suas posições no vetor final.
+        actions_a = mappo_agent.act_batch(obs, greedy=True)
+        actions_b = ippo_agent.act_batch(obs, greedy=True)
         actions = np.empty(scenario.n_agents, dtype=np.int64)
-        actions[mappo_mask] = mappo_agent.act_batch(
-            obs[mappo_mask], greedy=True)
-        actions[~mappo_mask] = ippo_agent.act_batch(
-            obs[~mappo_mask], greedy=True)
+        actions[mappo_mask] = actions_a[mappo_mask]
+        actions[~mappo_mask] = actions_b[~mappo_mask]
         return actions
 
     results = []
@@ -231,12 +239,13 @@ def main(argv=None):
             # duelo usa o total acumulado no episódio.
             mappo_reward = float(totals[mappo_mask].mean())
             ippo_reward = float(totals[~mappo_mask].mean())
-            winner = ("MAPPO" if mappo_row["coins"] > ippo_coins else
-                      "IPPO" if ippo_coins > mappo_row["coins"] else "empate")
+            winner = (label_a if mappo_row["coins"] > ippo_coins else
+                      label_b if ippo_coins > mappo_row["coins"] else "empate")
             print(f"episódio {ep + 1} ({steps} passos): "
-                  f"MAPPO time {args.mappo_team} {mappo_row['coins']} moedas "
+                  f"{label_a} time {args.mappo_team} "
+                  f"{mappo_row['coins']} moedas "
                   f"(reward {mappo_reward:.2f}) | "
-                  f"IPPO {ippo_coins} moedas "
+                  f"{label_b} {ippo_coins} moedas "
                   f"(reward {ippo_reward:.2f}) -> {winner}")
             results.append({
                 "episode": ep + 1, "steps": steps,
