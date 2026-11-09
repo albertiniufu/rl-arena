@@ -65,35 +65,51 @@ def ratio_scenario(**cfg_kwargs):
 
 
 # ----------------------------------------------------------------- cenário
-def test_collectors_vs_pushers_assigns_half_teams():
+def test_collectors_vs_pushers_mixes_roles_inside_each_team():
     scenario = Scenario.collectors_vs_pushers(4, 2)
     assert scenario.team_ids == (0, 0, 1, 1)
+    # Cada time tem 1 coletor + 1 empurrador (papéis alternam por time).
     assert scenario.roles == (
-        COLLECTOR_ROLE, COLLECTOR_ROLE, PUSHER_ROLE, PUSHER_ROLE)
+        COLLECTOR_ROLE, PUSHER_ROLE, COLLECTOR_ROLE, PUSHER_ROLE)
     assert scenario.has_roles
-    assert scenario.collectors() == [0, 1]
-    assert scenario.pushers() == [2, 3]
+    assert scenario.collectors() == [0, 2]
+    assert scenario.pushers() == [1, 3]
     assert scenario.can_push(0) is False
     assert scenario.can_collect(0) is True
-    assert scenario.can_push(2) is True
-    assert scenario.can_collect(2) is False
+    assert scenario.can_push(1) is True
+    assert scenario.can_collect(1) is False
+    assert scenario.can_push(2) is False
+    assert scenario.can_collect(3) is False
 
     # Simétrico continua sem papéis.
     assert Scenario.teams(4, 2).role_of(0) is None
     assert Scenario.teams(4, 2).can_push(0) is True
 
+    # O tamanho do time precisa ser par; o número de times não.
     with pytest.raises(ValueError):
-        Scenario.collectors_vs_pushers(4, 3)   # times ímpares
+        Scenario.collectors_vs_pushers(4, 3)   # não divisível
     with pytest.raises(ValueError):
         Scenario.collectors_vs_pushers(5, 2)   # não divisível
+    with pytest.raises(ValueError):
+        Scenario.collectors_vs_pushers(6, 2)   # time de 3 (ímpar)
+    six = Scenario.collectors_vs_pushers(6, 3)
+    assert six.team_ids == (0, 0, 1, 1, 2, 2)
+    assert six.roles == (
+        COLLECTOR_ROLE, PUSHER_ROLE, COLLECTOR_ROLE, PUSHER_ROLE,
+        COLLECTOR_ROLE, PUSHER_ROLE)
     with pytest.raises(ValueError):
         Scenario(2, (0, 1), ("collector",))    # tamanho errado
 
 
-def test_role_spawn_keeps_collectors_left_and_pushers_right():
+def test_each_team_has_one_collector_and_one_pusher():
     scenario = Scenario.collectors_vs_pushers(4, 2)
+    for team in (0, 1):
+        members = [i for i, t in enumerate(scenario.team_ids) if t == team]
+        assert sorted(scenario.role_of(i) for i in members) == [
+            COLLECTOR_ROLE, PUSHER_ROLE]
     positions = scenario.spawn_positions(ArenaConfig())
     xs = [p[0] for p in positions]
+    assert len(set(xs)) == 4
     assert max(xs[0], xs[1]) < min(xs[2], xs[3])
 
 
@@ -104,26 +120,33 @@ def test_collector_cannot_push_and_pusher_cannot_collect():
     engine.reset(seed=0, n_characters=4,
                  spawn_positions=[(100, 320), (128, 320),
                                   (400, 320), (428, 320)])
-    collector, ally, pusher, target = engine.characters
+    # Papéis mistos: time 0 = (coletor, empurrador); time 1 = (coletor, empurrador).
+    collector0, pusher1, collector2, pusher3 = engine.characters
 
-    # Coletor tenta empurrar o vizinho: a ação é inerte.
+    # Coletor 0 tenta empurrar o empurrador 1 (inimigo): ação inerte.
     engine.step([PUSH_RIGHT, STOP, STOP, STOP], 1 / 30)
-    assert ally.vx == pytest.approx(0.0)
-    assert collector.push_cooldown == 0.0
+    assert pusher1.vx == pytest.approx(0.0)
+    assert collector0.push_cooldown == 0.0
 
-    # Empurrador empurra normalmente.
-    engine.step([STOP, STOP, PUSH_RIGHT, STOP], 1 / 30)
-    assert target.vx > 0
-    assert pusher.push_cooldown == pytest.approx(cfg.push_cooldown)
+    # Empurrador 1 empurra o coletor 0 (inimigo) normalmente.
+    pusher1.x, pusher1.y = 100.0, 320.0
+    collector0.x, collector0.y = 128.0, 320.0
+    pusher1.vx = collector0.vx = 0.0
+    engine.step([STOP, PUSH_RIGHT, STOP, STOP], 1 / 30)
+    assert collector0.vx > 0
+    assert pusher1.push_cooldown == pytest.approx(cfg.push_cooldown)
 
-    # Moeda em cima de cada um: só o coletor coleta do mapa.
+    # Moeda em cima de cada um: só coletores coletam do mapa.
     from arena.engine import Coin
-    collector.coins = pusher.coins = 0
-    engine.coins = [Coin(collector.x, collector.y - 12, 60.0),
-                    Coin(pusher.x, pusher.y - 12, 60.0)]
+    collector0.x, collector0.y = 200.0, 320.0
+    pusher1.x, pusher1.y = 300.0, 320.0
+    collector0.vx = pusher1.vx = 0.0
+    collector0.coins = pusher1.coins = 0
+    engine.coins = [Coin(collector0.x, collector0.y - 12, 60.0),
+                    Coin(pusher1.x, pusher1.y - 12, 60.0)]
     engine.step([STOP] * 4, 1 / 30)
-    assert collector.coins == 1
-    assert pusher.coins == 0
+    assert collector0.coins == 1
+    assert pusher1.coins == 0
 
 
 def test_strong_push_moves_half_arena_and_waits_two_seconds():
@@ -170,16 +193,16 @@ def test_multi_env_coerces_collector_push_and_reports_role():
     scenario, cfg = ratio_scenario(episode_seconds=1.0, frame_skip=1)
     env = ArenaMultiEnv(cfg, scenario=scenario)
     env.reset(seed=0)
-    # Coletor 0 com um inimigo em contato: mesmo pedindo PUSH_RIGHT, o
-    # ambiente executa STOP e não move o alvo.
-    actor, target = env.engine.characters[0], env.engine.characters[2]
+    # Coletor 0 com o empurrador 1 (inimigo) em contato: mesmo pedindo
+    # PUSH_RIGHT, o ambiente executa STOP e não move o alvo.
+    actor, target = env.engine.characters[0], env.engine.characters[1]
     actor.x, actor.y = 100.0, 320.0
     target.x, target.y = 128.0, 320.0
     target.vx = 0.0
     _, _, _, _, info = env.step([PUSH_RIGHT, STOP, STOP, STOP])
     assert target.vx == pytest.approx(0.0)
     assert [a["role"] for a in info["agents"]] == [
-        COLLECTOR_ROLE, COLLECTOR_ROLE, PUSHER_ROLE, PUSHER_ROLE]
+        COLLECTOR_ROLE, PUSHER_ROLE, COLLECTOR_ROLE, PUSHER_ROLE]
     env.close()
 
 
@@ -221,20 +244,26 @@ def test_happo_buffer_assembles_joint_steps():
 def test_happo_masks_push_actions_for_collectors():
     scenario = Scenario.collectors_vs_pushers(4, 2)
     agent = make_agent(n_agents=4, roles=scenario.roles)
+    # Papéis mistos: 0 e 2 coletores; 1 e 3 empurradores.
     assert agent.action_masks[0].tolist() == [
         True, True, True, True, False, False]
-    assert agent.action_masks[2].tolist() == [True] * 6
+    assert agent.action_masks[1].tolist() == [True] * 6
+    assert agent.action_masks[2].tolist() == [
+        True, True, True, True, False, False]
+    assert agent.action_masks[3].tolist() == [True] * 6
     obs = np.zeros((4, *OBS_SHAPE), dtype=np.float32)
     # Com os logits mascarados a -1e9, a amostragem nunca escolhe 4/5.
     for _ in range(20):
         actions = agent.act_batch(obs)
         assert actions[0] not in (4, 5)
-        assert actions[1] not in (4, 5)
+        assert actions[2] not in (4, 5)
     assert agent.act_batch(obs, greedy=True).shape == (4,)
 
 
 def test_happo_learn_waits_then_updates_independent_actors():
-    scenario = Scenario.collectors_vs_pushers(2, 2)
+    # 2 agentes, 2 times: cenário manual porque o cenário misto exige
+    # time de tamanho par (1 coletor + 1 empurrador dentro do time).
+    scenario = Scenario(2, (0, 1), (COLLECTOR_ROLE, PUSHER_ROLE))
     agent = make_agent(n_agents=2, roles=scenario.roles,
                        rollout_steps=3, batch_size=4)
     # Não há parâmetro compartilhado entre os atores.
@@ -361,11 +390,14 @@ def test_train_cli_accepts_happo_role_scenario():
                        "collectors-vs-pushers", "--teams", "2"])
     assert args.agents == 4
     validate_train_args(args)
-    # Times ímpares não separam metade coleta / metade empurra.
+    # O número de times não precisa ser par; o tamanho do time sim.
+    validate_train_args(parse_args(
+        ["--alg", "happo", "--scenario", "collectors-vs-pushers",
+         "--agents", "6", "--teams", "3"]))
     with pytest.raises(SystemExit):
         validate_train_args(parse_args(
             ["--alg", "happo", "--scenario", "collectors-vs-pushers",
-             "--teams", "3"]))
+             "--agents", "6", "--teams", "2"]))
     # Cenário com papéis continua exigindo algoritmo multiagente.
     with pytest.raises(SystemExit):
         validate_train_args(parse_args(

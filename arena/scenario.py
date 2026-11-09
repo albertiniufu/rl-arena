@@ -62,23 +62,28 @@ class Scenario:
 
     @classmethod
     def collectors_vs_pushers(cls, n_agents, n_teams):
-        """Times assimétricos: metade só coleta, metade só empurra.
+        """Times mistos: dentro de cada time, metade coleta e metade empurra.
 
-        Os times são os mesmos de `teams` (contíguos e iguais); a diferença é
-        o papel atribuído a cada um. `n_teams` precisa ser par para que a
-        metade "coletores" e a metade "empurradores" tenham o mesmo tamanho.
+        Os times são os mesmos de `teams` (contíguos e iguais); os papéis
+        alternam **dentro** de cada time, então um time de 2 fica com 1
+        coletor + 1 empurrador. Por isso o tamanho de cada time precisa ser
+        par (`n_agents / n_teams` par), não o número de times.
         """
         n, k = int(n_agents), int(n_teams)
-        if k % 2:
-            raise ValueError(
-                f"n_teams deve ser par em coletores × empurradores "
-                f"(recebido {k})")
         base = cls.teams(n, k)
-        half = k // 2
-        roles = tuple(
-            COLLECTOR_ROLE if team < half else PUSHER_ROLE
-            for team in base.team_ids)
-        return cls(n, base.team_ids, roles)
+        team_size = n // k
+        if team_size % 2:
+            raise ValueError(
+                f"cada time precisa ter tamanho par em coletores × "
+                f"empurradores (n_agents/n_teams={team_size}); use, por "
+                f"exemplo, 4 agentes em 2 times ou 8 em 2/4 times")
+        position = {}
+        roles = []
+        for team in base.team_ids:
+            index = position.get(team, 0)
+            position[team] = index + 1
+            roles.append(COLLECTOR_ROLE if index % 2 == 0 else PUSHER_ROLE)
+        return cls(n, base.team_ids, tuple(roles))
 
     @classmethod
     def from_config(cls, cfg):

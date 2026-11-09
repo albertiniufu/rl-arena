@@ -294,12 +294,12 @@ def parse_args(argv=None):
         "--scenario", choices=["all-vs-all", "teams", "collectors-vs-pushers"],
         default="all-vs-all",
         help="cenário multiagente: todos-contra-todos (padrão), times ou "
-             "times assimétricos (metade só coleta, metade só empurra — usa "
-             "a força de empurrão de meia arena e recarga de 2 s)")
+             "times mistos (dentro de cada time, metade coleta e metade "
+             "empurra — usa a força de meia arena e recarga de 2 s)")
     ap.add_argument("--teams", type=int, default=2,
                     help="número de times com --scenario teams/"
-                         "collectors-vs-pushers; precisa ser par no cenário "
-                         "assimétrico (padrão 2)")
+                         "collectors-vs-pushers; no cenário assimétrico cada "
+                         "time precisa ter número par de membros (padrão 2)")
     ap.add_argument("--checkpoint-dir", default="checkpoints",
                     help="diretório de checkpoints (saves e leitura do adversário auto)")
     ap.add_argument("--stats", action="store_true",
@@ -481,10 +481,12 @@ def validate_train_args(args):
             if agents % teams:
                 raise SystemExit(
                     f"--agents ({agents}) deve ser divisível por --teams ({teams})")
-            if scenario == "collectors-vs-pushers" and teams % 2:
+            if (scenario == "collectors-vs-pushers"
+                    and (agents // teams) % 2):
                 raise SystemExit(
-                    "--scenario collectors-vs-pushers exige --teams par "
-                    f"(recebido {teams}): metade coleta, metade empurra")
+                    "--scenario collectors-vs-pushers exige times com número "
+                    f"par de membros (agents/teams={agents // teams}); "
+                    "ex.: 4 agentes em 2 times, 8 em 2 ou 4 times")
     elif scenario != "all-vs-all":
         raise SystemExit(
             "--scenario só se aplica ao modo multiagente "

@@ -46,12 +46,14 @@ heterogêneos, em que os papéis não têm o mesmo espaço de ação efetivo.
 Em `--scenario all-vs-all` cada agente é um time; em `--scenario teams --teams K` os
 agentes são divididos em K times de mesmo tamanho. Em times, a recompensa de cada
 membro é a média das recompensas do time.
-Em `--scenario collectors-vs-pushers --teams K` (K par) metade dos times só coleta
-moedas e metade só empurra os outros. Nesse cenário o empurrão é calibrado para
-deslocar o alvo por meia arena (320 px) e cada personagem espera **2 s** para
-empurrar de novo. Coletores têm `PUSH_LEFT`/`PUSH_RIGHT` mascarados (o ambiente
-também converte a ação em `STOP`); empurradores não coletam moedas do mapa e só
-ganham saldo pela transferência do empurrão.
+Em `--scenario collectors-vs-pushers --teams K` cada time é misto: dentro de
+cada time, metade dos membros só coleta e a outra metade só empurra (4 agentes /
+2 times → 1 coletor + 1 empurrador por time). O tamanho do time precisa ser par;
+o número de times não. Nesse cenário o empurrão é calibrado para deslocar o alvo
+por meia arena (320 px) e cada personagem espera **2 s** para empurrar de novo.
+Coletores têm `PUSH_LEFT`/`PUSH_RIGHT` mascarados (o ambiente também converte a
+ação em `STOP`); empurradores não coletam moedas do mapa e só ganham saldo pela
+transferência do empurrão (`--push-coin-transfer`, padrão 5).
 
 ```bash
 python train.py --alg ippo --agents 4 --scenario all-vs-all --checkpoint-dir checkpoints/all4

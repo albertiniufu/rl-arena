@@ -1396,7 +1396,7 @@
           <div class="cover-copy">
             <div class="eyebrow">aula 4 · multiagente heterogêneo</div>
             <h1 class="display">HAPPO no<br><span class="thin">rl-arena</span></h1>
-            <p class="lede">Um PPO para times que não fazem a mesma coisa: metade só coleta moedas, metade só empurra os outros. Atores separados, crítico centralizado e atualização em ordem.</p>
+            <p class="lede">Um PPO para times que não fazem a mesma coisa: dentro de cada time, um membro coleta moedas e o outro só empurra os adversários. Atores separados, crítico centralizado e atualização em ordem.</p>
             <div class="chips">
               <span class="chip green">atores heterogêneos</span>
               <span class="chip">update sequencial</span>
@@ -1428,14 +1428,14 @@
               <span class="platform" style="left:10%;top:58%;width:26%"></span>
               <span class="platform" style="left:56%;top:46%;width:30%"></span>
               <span class="unit player" style="left:18%;top:68%"></span>
-              <span class="unit player" style="left:30%;top:68%;background:var(--accent);opacity:.65"></span>
-              <span class="unit opponent" style="left:64%;top:68%;background:var(--reward);box-shadow:0 0 0 4px var(--reward-soft)"></span>
+              <span class="unit opponent" style="left:30%;top:68%;background:var(--reward);opacity:.65;box-shadow:0 0 0 4px var(--reward-soft)"></span>
+              <span class="unit player" style="left:64%;top:68%"></span>
               <span class="unit opponent" style="left:78%;top:68%;background:var(--reward);opacity:.65;box-shadow:0 0 0 4px var(--reward-soft)"></span>
               <span class="unit coin" style="left:46%;top:30%"></span>
               <span class="unit coin" style="left:84%;top:38%"></span>
               <span style="position:absolute;left:50%;top:16%;bottom:12%;border-left:1px dashed var(--line)"></span>
             </div>
-            <span class="mini-caption">2 coletores · 2 empurradores<br>atores separados, 1 crítico</span>
+            <span class="mini-caption">1 coletor + 1 empurrador por time<br>atores separados, 1 crítico</span>
           </div>
         </div>
       </div>
@@ -1448,7 +1448,7 @@
           <div class="eyebrow">cenário · coletores × empurradores</div>
           <h2 class="title">Dois papéis, um mapa</h2>
         </div>
-        <p class="lede">O novo cenário divide os times ao meio. Um lado só coleta moedas do mapa; o outro só ganha moedas empurrando. O mapa, a física e as recompensas continuam os mesmos.</p>
+        <p class="lede">O novo cenário divide <b>cada time</b> ao meio: um membro coleta moedas do mapa e o outro só ganha moedas empurrando. O mapa, a física e as recompensas continuam os mesmos.</p>
 
         <div class="role-grid">
           <div class="role-card collector">
@@ -1457,22 +1457,22 @@
             <p>Anda, pula e coleta. Não pode empurrar: as ações de empurrão são mascaradas e o ambiente as converte em STOP.</p>
             <span class="mini-acts"><b>ações:</b> STOP · ← · → · JUMP</span>
           </div>
-          <div class="role-card collector">
-            <span class="who">time 0 · agente 1</span>
-            <span class="what">coletor</span>
-            <p>Mesmo contrato do agente 0. A recompensa é a média do time; os dois cooperam para encher o saldo.</p>
-            <span class="mini-acts"><b>ações:</b> STOP · ← · → · JUMP</span>
-          </div>
           <div class="role-card pusher">
-            <span class="who">time 1 · agente 2</span>
+            <span class="who">time 0 · agente 1</span>
             <span class="what">empurrador</span>
-            <p>Anda, pula e empurra. Não coleta moedas do mapa: o saldo dele só cresce com a transferência do empurrão.</p>
+            <p>O par do coletor no time 0. Anda, pula e empurra; não coleta do mapa, só ganha pela transferência do empurrão.</p>
             <span class="mini-acts"><b>ações:</b> STOP · ← · → · JUMP · PUSH ←/→</span>
+          </div>
+          <div class="role-card collector">
+            <span class="who">time 1 · agente 2</span>
+            <span class="what">coletor</span>
+            <p>O time 1 também tem um coletor. A recompensa é a média do time: coletor e empurrador cooperam.</p>
+            <span class="mini-acts"><b>ações:</b> STOP · ← · → · JUMP</span>
           </div>
           <div class="role-card pusher">
             <span class="who">time 1 · agente 3</span>
             <span class="what">empurrador</span>
-            <p>Mesmo contrato do agente 2. O empurrão tira até 5 moedas do alvo e passa para quem empurrou.</p>
+            <p>Mesmo contrato do agente 1. Cada empurrão tira até `push_coin_transfer` moedas do alvo (padrão 5; o teste t15 usa 15).</p>
             <span class="mini-acts"><b>ações:</b> STOP · ← · → · JUMP · PUSH ←/→</span>
           </div>
         </div>
@@ -1684,13 +1684,13 @@ GAE_i ──► update sequencial de actors[i]</pre>
                 <span class="formula">—</span>
                 <span class="state">pendente</span>
               </div>
-              <div class="seq-row collector" data-agent="1">
-                <span class="agent">a1 · coletor</span>
+              <div class="seq-row pusher" data-agent="1">
+                <span class="agent">a1 · empurrador</span>
                 <span class="formula">—</span>
                 <span class="state">pendente</span>
               </div>
-              <div class="seq-row pusher" data-agent="2">
-                <span class="agent">a2 · empurrador</span>
+              <div class="seq-row collector" data-agent="2">
+                <span class="agent">a2 · coletor</span>
                 <span class="formula">—</span>
                 <span class="state">pendente</span>
               </div>
@@ -1750,7 +1750,7 @@ loss_i = policy_loss - c_ent * entropy(π_i)</pre>
               <div class="card"><h3 style="color:var(--value)">valor</h3><p>MSE por agente contra o retorno do GAE. Peso 0,5.</p></div>
               <div class="card"><h3 style="color:var(--reward)">entropia</h3><p>Bônus por ator, para não colapsar cedo. Peso 0,01.</p></div>
             </div>
-            <div class="note warn"><span class="mark">!</span><span><b>Ordem muda o resultado.</b> Trocar a ordem dos agentes gera outra sequência de updates. No código a ordem é a dos índices (0..n−1); em um cenário com papéis, isso significa primeiro os coletores, depois os empurradores.</span></div>
+            <div class="note warn"><span class="mark">!</span><span><b>Ordem muda o resultado.</b> Trocar a ordem dos agentes gera outra sequência de updates. No código a ordem é a dos índices (0..n−1); no cenário misto os papéis alternam (a0 coletor, a1 empurrador, a2 coletor, a3 empurrador).</span></div>
             <div class="note"><span class="mark">↔</span><span><b>Se todos os atores fossem idênticos</b>, M seria o produto de razões da mesma política e o HAPPO se aproximaria de um update conjunto. A diferença aparece justamente quando as políticas são heterogêneas.</span></div>
           </div>
         </div>
@@ -1771,8 +1771,8 @@ loss_i = policy_loss - c_ent * entropy(π_i)</pre>
             <thead><tr><th>agente</th><th>papel</th><th>STOP</th><th>←</th><th>→</th><th>JUMP</th><th>PUSH ←</th><th>PUSH →</th></tr></thead>
             <tbody>
               <tr><td>a0</td><td>coletor</td><td>✓</td><td>✓</td><td>✓</td><td>✓</td><td class="nope">×</td><td class="nope">×</td></tr>
-              <tr><td>a1</td><td>coletor</td><td>✓</td><td>✓</td><td>✓</td><td>✓</td><td class="nope">×</td><td class="nope">×</td></tr>
-              <tr><td>a2</td><td>empurrador</td><td>✓</td><td>✓</td><td>✓</td><td>✓</td><td>✓</td><td>✓</td></tr>
+              <tr><td>a1</td><td>empurrador</td><td>✓</td><td>✓</td><td>✓</td><td>✓</td><td>✓</td><td>✓</td></tr>
+              <tr><td>a2</td><td>coletor</td><td>✓</td><td>✓</td><td>✓</td><td>✓</td><td class="nope">×</td><td class="nope">×</td></tr>
               <tr><td>a3</td><td>empurrador</td><td>✓</td><td>✓</td><td>✓</td><td>✓</td><td>✓</td><td>✓</td></tr>
             </tbody>
           </table>
@@ -1973,7 +1973,7 @@ python play.py \
 
 <span class="c"># times precisam ser pares e --agents divisível por --teams</span>
 <span class="c"># papéis: times &lt; teams/2 = collector; o resto = pusher</span></pre>
-            <div class="note"><span class="mark">→</span><span><b>Com 6 agentes e 2 times:</b> 3 coletores, 3 empurradores. Com 8 e 4 times: times 0–1 coletores, times 2–3 empurradores, 2 membros por time.</span></div>
+            <div class="note"><span class="mark">→</span><span><b>Papéis dentro de cada time:</b> 4 agentes / 2 times = 1 coletor + 1 empurrador por time. 6 agentes / 3 times = 1 + 1 por time. 8 agentes / 2 times = 2 + 2 por time. O tamanho do time precisa ser par; o número de times pode ser qualquer um.</span></div>
           </div>
           <div class="stack">
             <div class="code-label">testar</div>
@@ -2054,7 +2054,7 @@ python train.py --alg happo \
         </div>
 
         <div class="takeaways">
-          <div class="takeaway"><span class="k">01 · cenário</span><b>Papéis assimétricos</b><p>Metade dos times só coleta; metade só empurra. O papel é dado do cenário e vai para o checkpoint.</p></div>
+          <div class="takeaway"><span class="k">01 · cenário</span><b>Papéis mistos por time</b><p>Cada time tem coletores e empurradores (1 + 1 em times de 2). O papel é dado do cenário e vai para o checkpoint.</p></div>
           <div class="takeaway"><span class="k">02 · física</span><b>Meia arena, 2 s de recarga</b><p>O impulso é calibrado por push_impulse_for_range; o cooldown é por personagem.</p></div>
           <div class="takeaway"><span class="k">03 · atores</span><b>n políticas independentes</b><p>Sem pesos compartilhados, cada papel pode se especializar sem competir pela mesma cabeça.</p></div>
           <div class="takeaway"><span class="k">04 · update</span><b>Sequencial com M</b><p>A razão do agente i é corrigida pelo produto das razões dos agentes já atualizados.</p></div>
