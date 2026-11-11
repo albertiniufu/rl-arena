@@ -65,6 +65,7 @@ def train_agent(env, agent, *, config, episodes: int, seed: int,
                 max_hours: float | None = None,
                 deadline_epoch: float | None = None,
                 save_every_minutes: float = 0.0,
+                best_cooldown_seconds: float = 60.0,
                 video_every_minutes: float = 0.0, video_fn=None,
                 video_dir=None) -> dict:
     """Treina `agent` em `env` e grava `best.pt`/`latest.pt`."""
@@ -104,6 +105,7 @@ def train_agent(env, agent, *, config, episodes: int, seed: int,
     new_file = not log_path.exists() or resume is None
 
     start_moment = time.monotonic()
+    last_best_save = start_moment - max(0.0, best_cooldown_seconds)
     budget_seconds = None
     if max_hours is not None:
         budget_seconds = float(max_hours) * 3600.0
@@ -192,11 +194,18 @@ def train_agent(env, agent, *, config, episodes: int, seed: int,
             last_episode, last_reward = episode, total
             if total > best:
                 best = total
-                save_checkpoint(
-                    checkpoint_dir / "best.pt", agent, config,
-                    {"episode": episode, "reward": total,
-                     "episodes_done": episode, "best_reward": best},
-                    episodes=episode)
+                now_best = time.monotonic()
+                # Episódios rápidos podem bater o recorde muitas vezes por
+                # segundo; grava best.pt no máximo a cada cooldown.
+                if (best_cooldown_seconds <= 0
+                        or now_best - last_best_save
+                        >= best_cooldown_seconds):
+                    save_checkpoint(
+                        checkpoint_dir / "best.pt", agent, config,
+                        {"episode": episode, "reward": total,
+                         "episodes_done": episode, "best_reward": best},
+                        episodes=episode)
+                    last_best_save = now_best
             if save_every > 0 and episode % save_every == 0:
                 save_checkpoint(
                     checkpoint_dir / "latest.pt", agent, config,

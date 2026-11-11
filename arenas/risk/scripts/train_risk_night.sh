@@ -25,11 +25,11 @@ for attempt in $(seq 1 20); do
     fi
     echo "=== tentativa $attempt $(date '+%F %T') ===" >> "$LOGS/run.log"
     PYTHONPATH="$ROOT" TORCH_CPP_LOG_LEVEL=ERROR "$PY" train.py \
-        --arena risk --alg dqn --episodes 100000 \
+        --arena risk --alg dqn --episodes 1000000 \
         --players 2 --armies 20 --max-turns 200 --seed 7 \
         --lr 0.001 --batch-size 64 --learn-every 4 \
-        --warmup 1000 --epsilon-min 0.1 --epsilon-ramp-episodes 300 \
-        --save-every 10 --save-every-minutes 30 \
+        --warmup 1000 --epsilon-min 0.1 --epsilon-ramp-episodes 5000 \
+        --save-every 0 --save-every-minutes 15 \
         --checkpoint-dir "$CKPT" --log-dir "$LOGS" \
         --tensorboard --tensorboard-dir "$LOGS/runs" \
         --run-name risk_dqn_night \
