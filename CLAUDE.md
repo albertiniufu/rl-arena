@@ -1,44 +1,55 @@
 # CLAUDE.md
 
-Monorepo de jogos/simuladores. Cada jogo tem o seu próprio `CLAUDE.md` com os
+Monorepo de arenas de RL. Cada arena tem o seu próprio `CLAUDE.md` com os
 detalhes de arquitetura e comandos; o Claude Code carrega o arquivo mais
 próximo ao diretório de trabalho.
 
 ## Estrutura
 
-- `games/default/` — o RL Arena original (plataforma 2D, `arena/`, `agents/`,
-  `algs/`, `train.py`, `evaluate.py`, `play.py`, testes). Leia
-  [`games/default/CLAUDE.md`](games/default/CLAUDE.md) antes de mexer nele.
-- `games/economy/` — simulador econômico (população, empresas, governo,
-  variabilidade macro) com dois agentes Gymnasium: `BankEnv` (principal —
-  banco decide aprovação, limite e spread por GH, recompensa por RAROC
-  líquido) e `EconomyEnv` (governo). Demos em texto em `bank_demo.py` e
-  `demo.py`.
-- `games/risk/` — jogo de conquista inspirado em War/Risk (territórios,
-  fases, combate por dados) + ambiente Gymnasium + modo jogável em texto.
-- `conftest.py` (raiz) — ajusta `sys.path` para os testes de todos os jogos.
-- `requirements.txt` (raiz) — dependências comuns (numpy, gymnasium, torch,
-  pygame, pytest, tensorboard, imageio).
+- `arenas/algs/` — algoritmos compartilhados: `alg_dqn`,
+  `alg_doubledqn_per_dueling`, `alg_ppo`, `alg_a2c`, `alg_ppo_continuous`,
+  `alg_ippo`, `alg_mappo` e `alg_registry` (descoberta, checkpoints,
+  `CheckpointPolicy`). Os modelos aceitam imagem `(C,H,W)` ou vetor `(N,)`.
+- `arenas/common/` — `agent_factory`, `trainer` (single-agent), `evaluator` e
+  `checkpoint` (reconstrução a partir do checkpoint).
+- `arenas/registry.py` — `ArenaSpec` de cada arena (entry points, algoritmo
+  padrão, tipo de ação).
+- `arenas/cli.py` + `train.py`/`evaluate.py`/`play.py` na raiz — CLI
+  unificado com `--arena` (padrão `seek_coin`).
+- `arenas/seek_coin/` — RL Arena original (plataforma 2D, `arena/`, `agents/`,
+  trainer completo com multiagente/vetorização/TensorBoard). Leia
+  [`arenas/seek_coin/CLAUDE.md`](arenas/seek_coin/CLAUDE.md).
+- `arenas/risk/` — conquista de territórios (War/Risk) + `RiskEnv`.
+- `arenas/economy/` — economia + `BankEnv` (banco-agente) e `EconomyEnv`
+  (governo).
 
 ## Comandos
 
 ```bash
-pytest -q                     # suíte completa
-pytest -q games/economy       # um jogo
-cd games/default && python train.py --episodes 300
-python -m games.economy.bank_demo --steps 24 --policy risk-aware
-python -m games.economy.demo --steps 24
-python -m games.risk.play
+pytest -q                                  # suíte completa
+pytest -q arenas/risk                      # uma arena
+pytest -q arenas/common                    # infraestrutura e CLI
+
+python train.py --arena seek_coin --alg dqn --episodes 300
+python train.py --arena risk --alg dqn --episodes 300
+python train.py --arena economy --alg ppo_continuous --episodes 200
+python evaluate.py --arena risk --checkpoint checkpoints/risk/best.pt
+python play.py --arena economy --checkpoint checkpoints/economy/best.pt
 ```
 
-Ao rodar o jogo default, entre em `games/default/` (ou passe
-`--checkpoint-dir`/caminhos absolutos) para que `checkpoints/` e `logs/`
-fiquem junto do jogo.
+As arenas têm `--help` próprio: `python train.py --arena risk --help`.
+O seek_coin também pode ser executado de dentro da pasta:
+`cd arenas/seek_coin && python train.py --episodes 300`.
 
 ## Convenções
 
 - Documentação e comentários em português.
-- Cada jogo é autocontido; dependências pesadas de RL ficam no default.
-- Novos ambientes: contrato Gymnasium (`reset` → `(obs, info)`, `step` →
+- `arenas/algs` e `arenas/common` são compartilhados; código específico de
+  uma arena fica dentro dela.
+- Ambientes novos: contrato Gymnasium (`reset` → `(obs, info)`, `step` →
   `(obs, reward, terminated, truncated, info)`), RNG injetável e seed
   reprodutível.
+- Observações vetoriais `(N,)` usam MLP; imagens `(C,H,W)` usam CNN.
+- Ações contínuas exigem `ppo_continuous`; DQN/PPO/A2C são para `Discrete`.
+- Checkpoints guardam `config` com os parâmetros da arena; `evaluate`/`play`
+  reconstroem o ambiente a partir dele.
