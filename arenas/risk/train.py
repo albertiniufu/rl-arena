@@ -58,6 +58,8 @@ def parse_args(argv=None):
     parser.add_argument("--tensorboard", action="store_true")
     parser.add_argument("--tensorboard-dir", default="logs/risk/runs")
     parser.add_argument("--run-name", default=None)
+    parser.add_argument("--tensorboard-every", type=int, default=10,
+                        help="grava escalares a cada N episódios")
     parser.add_argument("--video-every-minutes", type=float, default=0.0,
                         help="grava um MP4 guloso a cada N minutos")
     parser.add_argument("--video-dir", default=None,
@@ -134,6 +136,7 @@ def main(argv=None) -> None:
         tensorboard=args.tensorboard,
         tensorboard_dir=args.tensorboard_dir,
         run_name=args.run_name or f"risk_{args.alg}",
+        tensorboard_every=args.tensorboard_every,
         max_hours=args.max_hours,
         deadline_epoch=deadline_epoch,
         save_every_minutes=args.save_every_minutes,

@@ -62,6 +62,7 @@ def train_agent(env, agent, *, config, episodes: int, seed: int,
                 epsilon_ramp_episodes: int = 150, resume=None,
                 print_fn=print, tensorboard: bool = False,
                 tensorboard_dir="logs/runs", run_name=None,
+                tensorboard_every: int = 1,
                 max_hours: float | None = None,
                 deadline_epoch: float | None = None,
                 save_every_minutes: float = 0.0,
@@ -213,7 +214,9 @@ def train_agent(env, agent, *, config, episodes: int, seed: int,
                      "episodes_done": episode, "best_reward": best},
                     episodes=episode)
 
-            if writer is not None:
+            if (writer is not None
+                    and (tensorboard_every <= 1
+                         or episode % tensorboard_every == 0)):
                 writer.add_scalar("train/reward", total, episode)
                 writer.add_scalar("train/steps", steps, episode)
                 writer.add_scalar(
