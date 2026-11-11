@@ -1,6 +1,8 @@
 """Avaliação gulosa de um agente em qualquer arena."""
 from __future__ import annotations
 
+import inspect
+
 import numpy as np
 
 
@@ -13,8 +15,18 @@ def evaluate_agent(agent, env, episodes: int, seed: int,
         obs, info = env.reset(seed=seed + episode)
         total = 0.0
         done = (isinstance(info, dict) and info.get("winner") is not None)
+        accepts_mask = False
+        try:
+            accepts_mask = "action_mask" in inspect.signature(
+                agent.act).parameters
+        except (TypeError, ValueError):
+            accepts_mask = False
         while not done:
-            action = agent.act(obs, greedy=True)
+            if accepts_mask and hasattr(env, "action_masks"):
+                action = agent.act(
+                    obs, greedy=True, action_mask=env.action_masks())
+            else:
+                action = agent.act(obs, greedy=True)
             obs, reward, terminated, truncated, info = env.step(action)
             total += float(reward)
             done = bool(terminated or truncated)

@@ -1,5 +1,6 @@
 """Testes da infraestrutura comum e do CLI unificado."""
 import sys
+from pathlib import Path
 from types import SimpleNamespace
 
 import gymnasium as gym
@@ -152,3 +153,52 @@ def test_dispatch_global_help_without_arena(capsys):
     cli.dispatch("train", ["--help"])
     output = capsys.readouterr().out
     assert "economy" in output and "risk" in output
+
+
+def test_trainer_stops_by_budget_tensorboard_and_video(tmp_path):
+    env = TinyDiscrete()
+    agent = build_agent(
+        "dqn", env.observation_space.shape, env.action_space,
+        batch_size=2, warmup=0)
+    videos = []
+
+    def video_fn(episode, path):
+        videos.append(episode)
+        Path(path).write_bytes(b"x")
+
+    result = train_agent(
+        env, agent,
+        config=SimpleNamespace(nome="tiny"),
+        episodes=5,
+        seed=3,
+        checkpoint_dir=tmp_path,
+        log_path=tmp_path / "training.csv",
+        save_every=0,
+        max_hours=1e-9,
+        tensorboard=True,
+        tensorboard_dir=tmp_path / "tb",
+        run_name="run",
+        video_every_minutes=1e-9,
+        video_fn=video_fn,
+        video_dir=tmp_path / "videos",
+    )
+    assert result["stopped_by_budget"] is True
+    assert videos == [1]
+    assert (tmp_path / "latest.pt").exists()
+    assert (tmp_path / "tb" / "run").exists()
+
+
+def test_dqn_action_mask_restricts_selection_and_target():
+    from arenas.algs.alg_dqn.agent import DQNAgent
+
+    agent = DQNAgent((4,), 5, batch_size=2, warmup=0)
+    agent.epsilon = 1.0
+    mask = np.array([False, True, False, True, False])
+    for _ in range(30):
+        assert agent.act(
+            np.zeros(4, dtype=np.float32), action_mask=mask) in (1, 3)
+    for _ in range(4):
+        agent.buffer.add(
+            np.zeros(4, dtype=np.float32), 1, 0.0,
+            np.zeros(4, dtype=np.float32), False, next_mask=mask)
+    assert agent.learn() is not None

@@ -213,3 +213,28 @@ def test_invalid_action_falls_back_with_penalty():
     _, reward, terminated, truncated, info = env.step(invalid)
     assert info["invalid_action"] is True
     assert reward <= 0.0
+
+
+def test_renderer_frame_shape():
+    from arenas.risk.renderer import RiskRenderer
+
+    game = RiskGame(seed=0)
+    frame = RiskRenderer().frame(game)
+    assert frame.shape == (520, 900, 3)
+    assert frame.dtype == np.uint8
+
+
+def test_record_episode_writes_video(tmp_path):
+    pytest.importorskip("imageio")
+    from arenas.common.agent_factory import build_agent
+    from arenas.risk.config import RiskConfig
+    from arenas.risk.record import record_episode
+
+    config = RiskConfig(max_turns=3, seed=1)
+    env = RiskEnv(config=config)
+    agent = build_agent(
+        "dqn", env.observation_space.shape, env.action_space)
+    path = tmp_path / "risk.mp4"
+    result = record_episode(agent, config, path, seed=1, max_frames=2)
+    assert path.exists() and path.stat().st_size > 0
+    assert result["frames"] >= 1

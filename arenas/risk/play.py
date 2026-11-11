@@ -9,6 +9,7 @@ Uso (a partir da raiz do repositório):
 from __future__ import annotations
 
 import argparse
+import inspect
 
 from arenas.risk.agents import RiskBot
 from arenas.risk.board import (
@@ -157,7 +158,11 @@ def run_checkpoint(env, agent, seed: int) -> None:
     done = False
     while not done:
         print_status(env.game)
-        action = int(agent.act(obs, greedy=True))
+        if "action_mask" in inspect.signature(agent.act).parameters:
+            action = int(agent.act(
+                obs, greedy=True, action_mask=env.action_masks()))
+        else:
+            action = int(agent.act(obs, greedy=True))
         obs, reward, terminated, truncated, info = env.step(action)
         print(f"J1 ação={action} reward={reward:.2f}"
               + (" (ação inválida: fallback)"
