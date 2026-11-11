@@ -238,3 +238,16 @@ def test_record_episode_writes_video(tmp_path):
     result = record_episode(agent, config, path, seed=1, max_frames=2)
     assert path.exists() and path.stat().st_size > 0
     assert result["frames"] >= 1
+
+
+def test_four_player_env_contract():
+    env = RiskEnv(n_players=4, seed=2, max_turns=3)
+    obs, info = env.reset(seed=2)
+    assert obs.shape == env.observation_space.shape
+    assert obs.shape[0] == 24 * 5 + 6
+    mask = env.action_masks()
+    assert mask.any()
+    _, reward, terminated, truncated, info = env.step(
+        int(np.flatnonzero(mask)[0]))
+    assert isinstance(reward, float)
+    assert "winner" in info
