@@ -2,8 +2,10 @@
 
 O nível 0 é o mapa histórico (mapa fixo). O nível 1 acrescenta duas
 plataformas móveis: a mais alta (topo esquerdo), que sobe e desce, e uma
-central, que se desloca horizontalmente. A posição é uma função do tempo de
-simulação, então o nível é reproduzível por seed.
+central, que se desloca horizontalmente. Há também duas moedas fixas no alto,
+alcançáveis apenas quando a plataforma mais alta está no ponto máximo
+(y=145); na posição baixa (y=185) o pulo não chega. A posição é uma função do
+tempo de simulação, então o nível é reproduzível por seed.
 """
 from __future__ import annotations
 
@@ -47,6 +49,14 @@ STATIC_PLATFORMS = {
     ),
 }
 
+# Moedas fixas (x, y) no alto do nível 1. Com a plataforma no topo (y=145),
+# a subida até y=60 é ~85 px (dentro do pulo ~105 px); na posição baixa
+# (y=185) a subida é ~125 px (fora do alcance).
+FIXED_COIN_POSITIONS = {
+    0: (),
+    1: ((75.0, 60.0), (135.0, 60.0)),
+}
+
 MOVING_PLATFORMS = {
     0: (),
     # Entre as plataformas de y=215 e y=285; passa pelo corredor central.
@@ -73,3 +83,13 @@ def get_level(level: int):
             f"nível desconhecido: {level} "
             f"(disponíveis: {sorted(STATIC_PLATFORMS)})")
     return STATIC_PLATFORMS[level], MOVING_PLATFORMS[level]
+
+
+def get_fixed_coins(level: int):
+    """Moedas fixas do nível (posições no mapa, não presas a plataformas)."""
+    level = int(level)
+    if level not in STATIC_PLATFORMS:
+        raise ValueError(
+            f"nível desconhecido: {level} "
+            f"(disponíveis: {sorted(STATIC_PLATFORMS)})")
+    return FIXED_COIN_POSITIONS[level]

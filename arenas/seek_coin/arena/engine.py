@@ -3,7 +3,7 @@ import numpy as np
 from dataclasses import dataclass
 from .actions import JUMP, LEFT, PUSH_INTENSITY, PUSH_LEFT, PUSH_RIGHT, RIGHT, STOP
 from .config import ArenaConfig
-from .levels import get_level
+from .levels import get_fixed_coins, get_level
 
 @dataclass
 class Character:
@@ -78,18 +78,23 @@ class ArenaEngine:
             ]
         self.characters = [Character(x, y) for x, y in positions]
         self.coins = []
-        for _ in range(self.cfg.coin_count):
+        fixed = get_fixed_coins(self.level)
+        for x, y in fixed:
+            self.coins.append(Coin(float(x), float(y),
+                                   self.cfg.coin_lifetime))
+        for _ in range(max(0, self.cfg.coin_count - len(fixed))):
             self._spawn_coin()
         return self
 
     def _spawn_coin(self):
-        # Moedas só em plataformas estáticas: uma moeda presa a uma
-        # plataforma móvel ficaria em posição inválida durante o movimento.
+        # Moedas aleatórias só em plataformas estáticas; as moedas do alto
+        # são fixas (ver `levels.FIXED_COIN_POSITIONS`).
         surfaces = [(x, y, w) for x, y, w, h in self.static_platforms
                     if w > 50]
         x, y, width = surfaces[int(self.rng.integers(len(surfaces)))]
         coin_x = self.rng.uniform(x + 10, x + width - 10)
-        self.coins.append(Coin(float(coin_x), float(y - 18), self.cfg.coin_lifetime))
+        self.coins.append(Coin(float(coin_x), float(y - 18),
+                               self.cfg.coin_lifetime))
 
     def _rect(self, c):
         s = self.cfg.player_size

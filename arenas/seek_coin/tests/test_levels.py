@@ -3,7 +3,7 @@ from arenas.algs.alg_registry import apply_env_config
 from arenas.seek_coin.arena.actions import STOP
 from arenas.seek_coin.arena.config import ArenaConfig
 from arenas.seek_coin.arena.engine import ArenaEngine
-from arenas.seek_coin.arena.levels import STATIC_PLATFORMS
+from arenas.seek_coin.arena.levels import STATIC_PLATFORMS, get_fixed_coins
 from arenas.seek_coin.train import parse_args
 
 
@@ -69,13 +69,31 @@ def test_highest_platform_carries_the_character_vertically():
     assert character.platform_index == highest_index
 
 
-def test_coins_spawn_only_on_static_platforms():
+def test_high_fixed_coins_and_static_random_coins():
     engine = _engine(1)
+    fixed = get_fixed_coins(1)
+    assert len(engine.coins) == engine.cfg.coin_count
+    for x, y in fixed:
+        assert any(abs(coin.x - x) < 1e-9 and abs(coin.y - y) < 1e-9
+                   for coin in engine.coins)
     for coin in engine.coins:
+        if any(abs(coin.x - x) < 1e-9 and abs(coin.y - y) < 1e-9
+               for x, y in fixed):
+            continue
         assert any(
             x <= coin.x <= x + w and abs(coin.y - (y - 18)) < 1e-6
             for x, y, w, _ in engine.static_platforms
         )
+
+
+def test_high_coins_require_platform_at_its_top():
+    engine = _engine(1)
+    highest = engine.moving_specs[1]
+    top = highest.y                 # 145
+    bottom = highest.y + highest.amplitude  # 185
+    for _, coin_y in get_fixed_coins(1):
+        assert top - coin_y < 100       # alcançável no topo
+        assert bottom - coin_y > 110    # fora do alcance na posição baixa
 
 
 def test_checkpoint_config_applies_level():
