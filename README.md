@@ -7,7 +7,7 @@ arena com `--arena`.
 
 | Arena | Diretório | Descrição |
 | --- | --- | --- |
-| Seek Coin | [`arenas/seek_coin/`](arenas/seek_coin/README.md) | Plataforma 2D: coletar moedas e empurrar o adversário. DQN, Double DQN/PER/dueling, PPO, A2C, IPPO e MAPPO. |
+| Seek Coin | [`arenas/seek_coin/`](arenas/seek_coin/README.md) | Plataforma 2D: coletar moedas e empurrar o adversário. DQN, Double DQN/PER/dueling, PPO, A2C, IPPO, MAPPO e HAPPO. Nível 1 com plataforma móvel. |
 | Risk | [`arenas/risk/`](arenas/risk/README.md) | Conquista de territórios inspirada em War/Risk: reforço, ataque por dados e fortificação. |
 | Economy | [`arenas/economy/`](arenas/economy/README.md) | Banco-agente: aprovação, limite e spread por grupo homogêneo de risco (GH), com recompensa por RAROC líquido, sobre uma economia com população, empresas, governo e choques macro. |
 

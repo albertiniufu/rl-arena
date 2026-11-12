@@ -1,5 +1,9 @@
 from dataclasses import dataclass
 
+COLLECTOR_ROLE = "collector"
+PUSHER_ROLE = "pusher"
+ROLES = (COLLECTOR_ROLE, PUSHER_ROLE)
+
 @dataclass
 class ArenaConfig:
     width: int = 640
@@ -34,3 +38,4 @@ class ArenaConfig:
     frame_skip: int = 1 # quantos substeps de física cada step do agente executa
     map_version: str = "arena-v1"
     level: int = 0  # 0 = mapa histórico; 1 = plataforma móvel
+    agent_roles: tuple = ()  # papéis por agente (HAPPO); () = simétrico

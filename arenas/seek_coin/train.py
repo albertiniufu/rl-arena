@@ -295,7 +295,7 @@ def parse_args(argv=None):
                     help="política do adversário (auto = currículo que alterna "
                          "random, coins, rule e checkpoints)")
     ap.add_argument("--agents", type=int, default=None,
-                    help="número de agentes no modo multiagente (IPPO/MAPPO); "
+                    help="número de agentes no modo multiagente (IPPO/MAPPO/HAPPO); "
                          "omitido = 4 com um algoritmo multiagente e 1 nos demais")
     ap.add_argument("--scenario", choices=["all-vs-all", "teams"],
                     default="all-vs-all",
@@ -360,7 +360,7 @@ def parse_args(argv=None):
                     help="algoritmo de RL: pacote alg_<nome> em algs/ "
                          "(dqn = DQN enxuto; doubledqn_per_dueling = Double DQN "
                          "+ PER + dueling; ppo = PPO; a2c = A2C; "
-                         "ippo/mappo = multiagente)")
+                         "ippo/mappo/happo = multiagente)")
     ap.add_argument("--lr", type=float, default=2.5e-4,
                     help="taxa de aprendizado do Adam (na retomada, o otimizador "
                          "restaurado do checkpoint sobrepõe este valor)")
@@ -462,7 +462,7 @@ def validate_train_args(args):
         raise SystemExit(f"--agents deve ser >= 1 (recebido {agents})")
     if agents > 1 and not multi_agent_alg:
         raise SystemExit(
-            "--agents > 1 exige um algoritmo multiagente (--alg ippo/mappo)")
+            "--agents > 1 exige um algoritmo multiagente (--alg ippo/mappo/happo)")
     if multi_agent_alg:
         if agents < 2:
             raise SystemExit(
@@ -485,7 +485,7 @@ def validate_train_args(args):
                     f"--agents ({agents}) deve ser divisível por --teams ({teams})")
     elif scenario != "all-vs-all":
         raise SystemExit(
-            "--scenario só se aplica ao modo multiagente (--alg ippo/mappo)")
+            "--scenario só se aplica ao modo multiagente (--alg ippo/mappo/happo)")
     if getattr(args, "save_every_minutes", 0) < 0:
         raise SystemExit("--save-every-minutes deve ser >= 0")
     if getattr(args, "video_every_minutes", 0) < 0:

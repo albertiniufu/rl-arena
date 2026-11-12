@@ -32,8 +32,9 @@ Nomes de territórios aceitam prefixo único (ex.: `ala` → `Alaska`).
 
 ## Regras
 
-- Tabuleiro: 6 continentes × 4 territórios = 24 territórios (ver
-  `board.py`). Cada continente dá um bônus de reforço.
+- Tabuleiro: 6 continentes com 48 territórios/regiões (10 na América do
+  Norte, 7 na América do Sul, 9 na Europa, 9 na África, 9 na Ásia e 4 na
+  Oceania; ver `board.py`). Cada continente dá um bônus de reforço.
 - Cada jogador recebe `initial_armies` exércitos no início (1 por território
   + distribuição aleatória do restante).
 - Reforço por turno: `max(3, territórios // 3)` + bônus de continentes.
