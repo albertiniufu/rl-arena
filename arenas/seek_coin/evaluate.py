@@ -22,6 +22,8 @@ def parse_args(argv=None):
     ap.add_argument("--episodes", type=int, default=20)
     ap.add_argument("--render", action="store_true")
     ap.add_argument("--seed", type=int, default=1000)
+    ap.add_argument("--level", type=int, default=None,
+                    help="sobrescreve o nível gravado no checkpoint")
     ap.add_argument("--opponent", choices=["rule", "random", "coins"], default="rule",
                     help="política do adversário na avaliação (padrão: rule)")
     ap.add_argument("--skin", choices=list_skins(), default=None,
@@ -88,6 +90,8 @@ def main():
         raise SystemExit(f"Checkpoint inválido: {exc}") from exc
     cfg = ArenaConfig()
     apply_env_config(cfg, meta)
+    if args.level is not None:
+        cfg.level = args.level
     if getattr(alg.Agent, "multi_agent", False) or cfg.n_agents > 1:
         _evaluate_multi(args, alg, cfg)
         return

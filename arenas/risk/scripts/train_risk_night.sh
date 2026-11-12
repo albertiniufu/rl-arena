@@ -11,8 +11,8 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)"
 cd "$ROOT"
 
 PY="${PY:-$HOME/venvs/main/bin/python}"
-CKPT="${CKPT:-checkpoints/risk_night}"
-LOGS="${LOGS:-logs/risk_night}"
+CKPT="${CKPT:-checkpoints/risk_world}"
+LOGS="${LOGS:-logs/risk_world}"
 DEADLINE="${DEADLINE:-2026-11-12 07:00}"
 mkdir -p "$CKPT/videos" "$LOGS"
 echo "=== inicio $(date '+%F %T') deadline=$DEADLINE ===" >> "$LOGS/run.log"
@@ -32,7 +32,7 @@ for attempt in $(seq 1 20); do
         --save-every 0 --save-every-minutes 15 \
         --checkpoint-dir "$CKPT" --log-dir "$LOGS" \
         --tensorboard --tensorboard-dir "$LOGS/runs" \
-        --run-name risk_dqn_night_4p --tensorboard-every 10 \
+        --run-name risk_dqn_world_4p --tensorboard-every 10 \
         --video-every-minutes 60 --video-dir "$CKPT/videos" \
         --video-fps 4 \
         --deadline "$DEADLINE" \

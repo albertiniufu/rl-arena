@@ -109,6 +109,9 @@ def parse_args(argv=None):
                     help="modo multiagente com --player human: índice do agente "
                          "controlado pelo humano (padrão: 0). O colega de time e "
                          "os demais agentes usam o checkpoint")
+    ap.add_argument("--level", type=int, default=None,
+                    help="nível do mapa (0 = histórico; 1 = plataforma móvel); "
+                         "sem o argumento, usa o nível do checkpoint")
     ap.add_argument("--record", default=None, metavar="ARQUIVO.mp4",
                     help="grava a sessão em vídeo (ativa o render; com "
                          "SDL_VIDEODRIVER=dummy grava sem janela)")
@@ -212,6 +215,8 @@ def main():
     validate_play_args(args)
     render_mode = "human" if needs_render(args) else None
     cfg = ArenaConfig()
+    if args.level is not None:
+        cfg.level = args.level
     alg = meta = None
     player_frame = None
     if args.player == "human":
@@ -226,6 +231,8 @@ def main():
         if cand_alg is not None and getattr(
                 cand_alg.Agent, "multi_agent", False):
             apply_env_config(cfg, cand_meta)
+            if args.level is not None:
+                cfg.level = args.level
             _play_multi(args, cand_alg, cfg, render_mode)
             return
     if args.player is None:
@@ -238,6 +245,8 @@ def main():
         except (ValueError, OSError) as exc:
             raise SystemExit(f"Checkpoint inválido: {exc}") from exc
         apply_env_config(cfg, meta)
+        if args.level is not None:
+            cfg.level = args.level
         if getattr(alg.Agent, "multi_agent", False) or cfg.n_agents > 1:
             _play_multi(args, alg, cfg, render_mode)
             return

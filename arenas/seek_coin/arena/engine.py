@@ -3,6 +3,7 @@ import numpy as np
 from dataclasses import dataclass
 from .actions import JUMP, LEFT, PUSH_INTENSITY, PUSH_LEFT, PUSH_RIGHT, RIGHT, STOP
 from .config import ArenaConfig
+from .levels import get_level
 
 @dataclass
 class Character:
@@ -15,6 +16,7 @@ class Character:
     coins: int = 0
     deaths: int = 0
     on_ground: bool = False
+    platform_index: int | None = None
 
 @dataclass
 class Coin:
@@ -27,15 +29,29 @@ class ArenaEngine:
     def __init__(self, config=None):
         self.cfg = config or ArenaConfig()
         self.rng = np.random.default_rng()
-        self.platforms = [
-            (0, 360, 220, 20), (280, 360, 360, 20),
-            (70, 285, 160, 14), (350, 285, 150, 14),
-            (210, 215, 180, 14), (35, 145, 130, 14),
-            (445, 155, 150, 14),
-        ]
+        self.level = int(self.cfg.level)
+        self.static_platforms, self.moving_specs = get_level(self.level)
+        self._set_platforms_at(0.0)
         self.characters = []
         self.coins = []
         self.sim_time = 0.0
+
+    def _platforms_at(self, t: float):
+        return (list(self.static_platforms)
+                + [spec.at(t) for spec in self.moving_specs])
+
+    def _set_platforms_at(self, t: float) -> None:
+        self.platforms = self._platforms_at(t)
+        self.platform_deltas = [(0.0, 0.0)] * len(self.platforms)
+
+    def _advance_platforms(self, t: float) -> None:
+        old = self.platforms
+        new = self._platforms_at(t)
+        self.platform_deltas = [
+            (nx - ox, ny - oy) for (ox, oy, _, _), (nx, ny, _, _)
+            in zip(old, new)
+        ]
+        self.platforms = new
 
     def reset(self, seed=None, n_characters=None, spawn_positions=None):
         # Sem seed, continua o RNG existente em vez de criar outro com entropia:
@@ -46,6 +62,7 @@ class ArenaEngine:
         if seed is not None:
             self.rng = np.random.default_rng(seed)
         self.sim_time = 0.0
+        self._set_platforms_at(0.0)
         count = (int(n_characters) if n_characters is not None
                  else 1 + self.cfg.opponent_count)
         if spawn_positions is not None:
@@ -66,7 +83,10 @@ class ArenaEngine:
         return self
 
     def _spawn_coin(self):
-        surfaces = [(x, y, w) for x, y, w, h in self.platforms if w > 50]
+        # Moedas só em plataformas estáticas: uma moeda presa a uma
+        # plataforma móvel ficaria em posição inválida durante o movimento.
+        surfaces = [(x, y, w) for x, y, w, h in self.static_platforms
+                    if w > 50]
         x, y, width = surfaces[int(self.rng.integers(len(surfaces)))]
         coin_x = self.rng.uniform(x + 10, x + width - 10)
         self.coins.append(Coin(float(coin_x), float(y - 18), self.cfg.coin_lifetime))
@@ -128,15 +148,24 @@ class ArenaEngine:
             c.respawn_timer -= dt
             if c.respawn_timer <= 0:
                 # Respawn on a randomly selected platform, not outside the map.
-                valid = [(x, y, w, h) for x, y, w, h in self.platforms if w > self.cfg.player_size * 2]
-                px, py, pw, _ = valid[int(self.rng.integers(len(valid)))]
+                valid = [(i, x, y, w, h)
+                         for i, (x, y, w, h) in enumerate(self.platforms)
+                         if w > self.cfg.player_size * 2]
+                index, px, py, pw, _ = valid[
+                    int(self.rng.integers(len(valid)))]
                 c.x = float(self.rng.uniform(px + self.cfg.player_size, px + pw - self.cfg.player_size))
                 c.y = float(py)
                 c.vx = 0.0
                 c.vy = 0.0
                 c.alive = True
                 c.on_ground = True
+                c.platform_index = index
             return
+        # Carrega o personagem junto com a plataforma em que ele estava.
+        if c.on_ground and c.platform_index is not None:
+            dx, dy = self.platform_deltas[c.platform_index]
+            c.x += dx
+            c.y += dy
         # Ações: LEFT/RIGHT andam, JUMP pula; empurrões são resolvidos no step.
         if action == LEFT:
             c.vx -= self.cfg.move_accel * dt
@@ -154,12 +183,14 @@ class ArenaEngine:
         half = self.cfg.player_size / 2
         c.x = float(np.clip(c.x, half, self.cfg.width - half))
         c.on_ground = False
+        c.platform_index = None
         # Land on platform tops while descending.
-        for px, py, pw, ph in self.platforms:
+        for index, (px, py, pw, ph) in enumerate(self.platforms):
             if c.vy >= 0 and old_bottom <= py and c.y >= py and c.x + half > px and c.x - half < px + pw:
                 c.y = float(py)
                 c.vy = 0.0
                 c.on_ground = True
+                c.platform_index = index
         # Fatal region below the lowest floor.
         if c.y > self.cfg.height + 30:
             c.alive = False
@@ -171,6 +202,7 @@ class ArenaEngine:
 
     def step(self, actions, dt):
         self.sim_time += dt
+        self._advance_platforms(self.sim_time)
         before_deaths = [c.deaths for c in self.characters]
         # Saldo antes dos empurrões: o delta isola a transferência de moedas
         # (a morte também mexe no saldo, mas acontece depois).

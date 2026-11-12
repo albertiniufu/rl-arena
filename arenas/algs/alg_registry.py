@@ -163,6 +163,8 @@ def apply_env_config(cfg, meta):
     do `ArenaConfig` (0 e ()) mantêm o caminho single-agent.
     """
     config = (meta or {}).get("config") or {}
+    if hasattr(cfg, "level"):
+        cfg.level = int(config.get("level", cfg.level))
     cfg.frame_stack = int(config.get("frame_stack", cfg.frame_stack))
     cfg.frame_skip = int(config.get("frame_skip", cfg.frame_skip))
     cfg.n_agents = int(config.get("n_agents", cfg.n_agents))

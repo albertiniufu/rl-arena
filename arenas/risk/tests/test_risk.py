@@ -15,7 +15,7 @@ from arenas.risk.env import RiskEnv
 from arenas.risk.game import RiskGame
 
 
-def _scenario(src_name="Alaska", dst_name="Canada"):
+def _scenario(src_name="Alaska", dst_name="Yukon"):
     game = RiskGame(n_players=2, seed=0)
     src = TERRITORY_INDEX[src_name]
     dst = TERRITORY_INDEX[dst_name]
@@ -220,7 +220,7 @@ def test_renderer_frame_shape():
 
     game = RiskGame(seed=0)
     frame = RiskRenderer().frame(game)
-    assert frame.shape == (520, 900, 3)
+    assert frame.shape == (700, 1200, 3)
     assert frame.dtype == np.uint8
 
 
@@ -244,7 +244,7 @@ def test_four_player_env_contract():
     env = RiskEnv(n_players=4, seed=2, max_turns=3)
     obs, info = env.reset(seed=2)
     assert obs.shape == env.observation_space.shape
-    assert obs.shape[0] == 24 * 5 + 6
+    assert obs.shape[0] == len(TERRITORIES) * 5 + 6
     mask = env.action_masks()
     assert mask.any()
     _, reward, terminated, truncated, info = env.step(

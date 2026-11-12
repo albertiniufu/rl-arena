@@ -33,3 +33,4 @@ class ArenaConfig:
     frame_stack: int = 1 # quantos frames compõem a observação
     frame_skip: int = 1 # quantos substeps de física cada step do agente executa
     map_version: str = "arena-v1"
+    level: int = 0  # 0 = mapa histórico; 1 = plataforma móvel

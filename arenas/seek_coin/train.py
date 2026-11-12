@@ -281,6 +281,8 @@ def parse_args(argv=None):
     ap = argparse.ArgumentParser(formatter_class=_DefaultHelpFormatter)
     ap.add_argument("--episodes", type=int, default=300,
                     help="episódios de treino (adicionais ao retomar)")
+    ap.add_argument("--level", type=int, default=0,
+                    help="nível do mapa (0 = mapa histórico; 1 = plataforma móvel)")
     ap.add_argument("--render", action="store_true",
                     help="abre a janela do renderer durante o treino")
     ap.add_argument("--resume", type=str, default=None,
@@ -1372,6 +1374,7 @@ def main():
     np.random.seed(args.seed)
     torch.manual_seed(args.seed)
     cfg = ArenaConfig()
+    cfg.level = args.level
     cfg.frame_stack, cfg.frame_skip = args.frame_stack, args.frame_skip
     if args.push_coin_transfer is not None:
         cfg.push_coin_transfer = args.push_coin_transfer
@@ -1427,6 +1430,11 @@ def main():
             episodes_done = payload.get("extra", {}).get("episodes_done", 0)
         start_ep = int(episodes_done) + 1
         best = float(payload.get("extra", {}).get("best_reward", -float("inf")))
+        saved_level = int((payload.get("config") or {}).get("level", 0))
+        if saved_level != int(cfg.level):
+            raise SystemExit(
+                f"Nível do checkpoint ({saved_level}) difere do --level "
+                f"({cfg.level}); retome com o mesmo nível.")
         if multi_agent:
             # O cenário não pode mudar entre execuções: os buffers e a
             # interpretação dos canais de aliados/inimigos dependem dele.
