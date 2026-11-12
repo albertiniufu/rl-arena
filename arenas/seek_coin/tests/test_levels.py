@@ -1,6 +1,4 @@
-"""Testes do sistema de níveis e da plataforma móvel (nível 1)."""
-import numpy as np
-
+"""Testes do sistema de níveis e das plataformas móveis (nível 1)."""
 from arenas.algs.alg_registry import apply_env_config
 from arenas.seek_coin.arena.actions import STOP
 from arenas.seek_coin.arena.config import ArenaConfig
@@ -21,29 +19,54 @@ def test_level_zero_keeps_the_historical_map():
     assert engine.moving_specs == ()
 
 
-def test_level_one_has_a_moving_platform():
+def test_level_one_has_two_moving_platforms():
     engine = _engine(1)
+    assert len(engine.static_platforms) == len(STATIC_PLATFORMS[0]) - 1
+    assert len(engine.moving_specs) == 2
     assert len(engine.platforms) == len(STATIC_PLATFORMS[0]) + 1
-    moving = engine.platforms[-1]
-    assert moving[1] == 250 and moving[1] == engine.moving_specs[0].y
-    x0 = moving[0]
+
+    central, highest = engine.moving_specs
+    assert central.axis == "x" and central.y == 250
+    assert highest.axis == "y" and highest.y == 145
+
+    central_index = len(engine.static_platforms)
+    highest_index = central_index + 1
+    x0 = engine.platforms[central_index][0]
+    y0 = engine.platforms[highest_index][1]
     engine.step([STOP], 0.1)
-    assert engine.platforms[-1][0] > x0
+    assert engine.platforms[central_index][0] > x0
+    assert engine.platforms[highest_index][1] > y0
 
 
-def test_moving_platform_carries_the_character():
+def test_central_platform_carries_the_character():
     engine = _engine(1)
-    moving_index = len(STATIC_PLATFORMS[0])
+    central_index = len(engine.static_platforms)
     character = engine.characters[0]
     character.x = 300.0
     character.y = float(engine.moving_specs[0].y)
     character.vx = character.vy = 0.0
     character.on_ground = True
-    character.platform_index = moving_index
+    character.platform_index = central_index
     engine.step([STOP], 0.1)
     assert character.x > 300.05
     assert character.on_ground is True
-    assert character.platform_index == moving_index
+    assert character.platform_index == central_index
+
+
+def test_highest_platform_carries_the_character_vertically():
+    engine = _engine(1)
+    highest_index = len(engine.static_platforms) + 1
+    spec = engine.moving_specs[1]
+    character = engine.characters[0]
+    character.x = 100.0
+    character.y = float(spec.y)
+    character.vx = character.vy = 0.0
+    character.on_ground = True
+    character.platform_index = highest_index
+    engine.step([STOP], 0.1)
+    assert character.y > spec.y + 0.05
+    assert character.on_ground is True
+    assert character.platform_index == highest_index
 
 
 def test_coins_spawn_only_on_static_platforms():

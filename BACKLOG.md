@@ -2,7 +2,7 @@
 
 ## Níveis do cenário
 
-> Implementado: `arenas/seek_coin/arena/levels.py` (nível 0 = mapa histórico; nível 1 = plataforma móvel), `--level` nos entry points e nível gravado/validado no checkpoint.
+> Implementado: `arenas/seek_coin/arena/levels.py` (nível 0 = mapa histórico; nível 1 = plataforma móvel), `--level` nos entry points e nível gravado/validado no checkpoint; o nível 1 tem duas plataformas móveis (a mais alta, vertical, e a central, horizontal).
 
 - [x] **Sistema de níveis** — transformar o mapa fixo em níveis selecionáveis. O nível 0 é o mapa atual (`arena-v1`, plataformas fixas em `arenas/seek_coin/arena/engine.py`); o nível 1 introduz uma **plataforma flutuante móvel**.
   - Extrair a lista `self.platforms` (hoje fixa em `ArenaEngine.__init__`) para definições de nível, ex.: `arenas/seek_coin/arena/levels.py` com `LEVELS = {0: ..., 1: ...}`.
