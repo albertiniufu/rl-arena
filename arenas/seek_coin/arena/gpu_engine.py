@@ -1,17 +1,13 @@
 """PoC de engine vetorizado do seek_coin rodando em GPU (PyTorch).
 
-Este módulo **não** substitui o `ArenaEngine` da arena: ele é um experimento
-de throughput. A física é reimplementada em tensores com lote de `n_envs`
-ambientes, permitindo milhares de passos em paralelo na GPU. Simplificações
-deliberadas em relação ao engine canônico:
+A física é reimplementada em tensores com lote de `n_envs` ambientes,
+permitindo milhares de passos em paralelo na GPU. Inclui empurrões,
+transferência de moedas, plataformas móveis, moedas fixas/móveis/aleatórias,
+respawn e eventos por substep. O RNG não é bit a bit igual ao NumPy.
 
-- empurrões entre personagens não são simulados (ações de push viram STOP);
-- a observação semântica é opcional e cobre personagens/moedas/plataformas
-  de forma aproximada;
-- o reset/respawn e as moedas seguem o nível 1 (plataformas móveis, moedas
-  fixas, móveis e aleatórias), mas sem o RNG bit a bit do NumPy.
-
-O objetivo é medir passos de ambiente por segundo contra o engine de CPU.
+O contrato de ambiente completo — observação semântica 5/6 canais,
+frame_skip/frame_stack, recompensas, penalidades e PBRS — está em
+`gpu_env.GpuArenaVecEnv`. Este módulo é a camada de física.
 """
 from __future__ import annotations
 
@@ -19,7 +15,8 @@ import math
 
 import torch
 
-from .actions import JUMP, LEFT, PUSH_LEFT, PUSH_RIGHT, RIGHT, STOP
+from .actions import (
+    JUMP, LEFT, PUSH_INTENSITY, PUSH_LEFT, PUSH_RIGHT, RIGHT, STOP)
 from .config import ArenaConfig
 from .levels import get_fixed_coins, get_level, get_moving_coins
 
@@ -28,12 +25,24 @@ class GpuSeekCoin:
     """Lote de ambientes seek_coin com estado e física em tensores."""
 
     def __init__(self, n_envs: int = 256, n_chars: int = 2, level: int = 1,
-                 device: str = "cuda", seed: int = 0, coin_count: int = 10):
+                 device: str = "cuda", seed: int = 0, coin_count: int = 10,
+                 team_ids=None):
         if device == "cuda" and not torch.cuda.is_available():
             device = "cpu"
         self.device = torch.device(device)
         self.n_envs = int(n_envs)
         self.n_chars = int(n_chars)
+        self.team_ids = (None if team_ids is None
+                         else tuple(int(t) for t in team_ids))
+        if self.team_ids is not None and len(self.team_ids) != self.n_chars:
+            raise ValueError(
+                f"team_ids deve ter {self.n_chars} entradas")
+        if self.team_ids is None:
+            self._pair_allowed = ~torch.eye(
+                self.n_chars, dtype=torch.bool, device=self.device)
+        else:
+            teams = torch.tensor(self.team_ids, device=self.device)
+            self._pair_allowed = teams[:, None] != teams[None, :]
         self.cfg = ArenaConfig(level=level, opponent_count=self.n_chars - 1)
         self.dt = 1.0 / self.cfg.fps
         self.level = int(level)
@@ -176,6 +185,87 @@ class GpuSeekCoin:
         self.coin_platform[:, index] = -1
 
     # ------------------------------------------------------------------ #
+    # Empurrões
+    # ------------------------------------------------------------------ #
+    def _touching_pair(self, i: int, j: int) -> torch.Tensor:
+        """Contato horizontal/vertical entre os personagens i e j."""
+        s = self.cfg.player_size
+        xi, yi = self.x[:, i], self.y[:, i]
+        xj, yj = self.x[:, j], self.y[:, j]
+        vertical = (yi - s < yj) & (yi > yj - s)
+        gap = torch.clamp(torch.maximum(xj - xi - s, xi - xj - s), min=0.0)
+        return vertical & (gap <= 3.0)
+
+    def _push_targets(self, actions: torch.Tensor):
+        """Alvo mais próximo elegível por atacante e por ambiente."""
+        e, c = self.n_envs, self.n_chars
+        targets = torch.full(
+            (e, c), -1, dtype=torch.int64, device=self.device)
+        has = torch.zeros((e, c), dtype=torch.bool, device=self.device)
+        for i in range(c):
+            is_push = ((actions[:, i] == PUSH_LEFT)
+                       | (actions[:, i] == PUSH_RIGHT))
+            candidates = torch.zeros(
+                (e, c), dtype=torch.bool, device=self.device)
+            for j in range(c):
+                if i == j or not bool(self._pair_allowed[i, j]):
+                    continue
+                candidates[:, j] = (
+                    self._touching_pair(i, j) & self.alive[:, j])
+            candidates &= (self.alive[:, i].unsqueeze(1))
+            dist = torch.abs(self.x - self.x[:, i:i + 1])
+            dist = torch.where(
+                candidates, dist,
+                torch.full_like(dist, 1e9))
+            min_dist, idx = dist.min(dim=1)
+            valid = (is_push & self.alive[:, i]
+                     & candidates.any(dim=1) & (min_dist < 1e8))
+            targets[:, i] = torch.where(
+                valid, idx, torch.full_like(idx, -1))
+            has[:, i] = valid
+        return targets, has
+
+    def _apply_pushes(self, actions: torch.Tensor,
+                      targets: torch.Tensor, has: torch.Tensor) -> None:
+        """Aplica impulso e transferência de moedas, em ordem de atacante."""
+        e = self.n_envs
+        env = torch.arange(e, device=self.device)
+        for i in range(self.n_chars):
+            mask = has[:, i]
+            if not bool(mask.any()):
+                continue
+            target = targets[:, i].clamp(min=0)
+            target_coins = self.coins.gather(
+                1, target.unsqueeze(1)).squeeze(1)
+            amount = torch.clamp(
+                target_coins, max=int(self.cfg.push_coin_transfer))
+            amount = torch.where(mask, amount, torch.zeros_like(amount))
+            self.coins[env, target] = target_coins - amount
+            actor_coins = self.coins[:, i]
+            self.coins[env, i] = actor_coins + amount
+            direction = torch.where(
+                actions[:, i] == PUSH_LEFT,
+                torch.full_like(self.vx[:, i], -1.0),
+                torch.full_like(self.vx[:, i], 1.0))
+            impulse = direction * self.cfg.push_impulse * PUSH_INTENSITY
+            new_vx = torch.clamp(
+                self.vx[env, target] + impulse,
+                -self.cfg.max_speed * 2, self.cfg.max_speed * 2)
+            self.vx[env, target] = torch.where(
+                mask, new_vx, self.vx[env, target])
+            new_vy = torch.minimum(
+                self.vy[env, target],
+                torch.full_like(self.vy[env, target], -45.0))
+            self.vy[env, target] = torch.where(
+                mask, new_vy, self.vy[env, target])
+
+    def push_missed(self, actions: torch.Tensor) -> torch.Tensor:
+        """Empurrão sem alvo no início do step (para a penalidade)."""
+        _, has = self._push_targets(actions)
+        is_push = ((actions == PUSH_LEFT) | (actions == PUSH_RIGHT))
+        return is_push & ~has
+
+    # ------------------------------------------------------------------ #
     # Passo
     # ------------------------------------------------------------------ #
     @torch.no_grad()
@@ -201,6 +291,13 @@ class GpuSeekCoin:
                 live, dx, torch.zeros_like(dx))
             self.coin_y[:, slots] += torch.where(
                 live, dy, torch.zeros_like(dy))
+
+        # Empurrões usam as posições do início do substep.
+        before_push_coins = self.coins.clone()
+        targets, has = self._push_targets(actions)
+        self._apply_pushes(actions, targets, has)
+        coins_transferred = self.coins - before_push_coins
+        push_missed = self.push_missed(actions)
 
         # Carrega personagens em cima de plataformas móveis.
         idx = self.platform_index.clamp(min=0)
@@ -301,6 +398,9 @@ class GpuSeekCoin:
 
         return {
             "collected": collected,
+            "deaths_delta": dead.long(),
+            "coins_transferred": coins_transferred,
+            "push_missed": push_missed,
             **self.readout(),
         }
 

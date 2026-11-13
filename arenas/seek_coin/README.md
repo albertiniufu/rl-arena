@@ -338,18 +338,24 @@ rl-arena/
 ```
 
 
-## PoC GPU (benchmark de throughput)
+## Ambiente GPU (vetorizado)
 
-`arena/gpu_engine.py` reimplementa a física em tensores PyTorch, com lote
-de ambientes e física na GPU (nível 1, plataformas móveis e moedas). É um
-PoC de desempenho, não um substituto do `ArenaEngine`: empurrões não são
-simulados e a observação é aproximada.
+- `arena/gpu_engine.py` — física em tensores PyTorch: empurrões,
+  transferência de moedas, plataformas móveis, moedas fixas/móveis e
+  respawn, em lote de ambientes.
+- `arena/gpu_env.py` — `GpuArenaVecEnv`: contrato multiagente completo
+  (`reset`/`step`), observação egocêntrica 5/6 canais, frame_skip e
+  frame_stack, recompensas, penalidades, PBRS e médias por time. A
+  observação foi validada contra `render_grid` da CPU.
+- `scripts/benchmark_gpu_env.py` — compara CPU × GPU em `--mode physics`
+  (só física) e `--mode full` (física + observação + recompensa).
 
 ```bash
-python arenas/seek_coin/scripts/benchmark_gpu_env.py --envs 64,256,1024,8192
+python arenas/seek_coin/scripts/benchmark_gpu_env.py --mode physics --envs 64,256,1024,8192
+python arenas/seek_coin/scripts/benchmark_gpu_env.py --mode full --envs 64,128,256
 ```
 
-O baseline de CPU usa um `ArenaEngine` por ambiente. Abaixo de ~128
-ambientes o custo de lançamento de kernels domina; acima disso a GPU escala
-(medição local, sob carga do HAPPO: 13,7x em 1.024 e ~140x em 8.192
-env-steps/s).
+Medição local sob carga do HAPPO: física ~13,7x em 1.024 e ~143x em 8.192
+env-steps/s; passo completo ~5,8x em 256 e ~8,3 mil env-steps/s em 512
+(a construção da observação/frame stack é o gargalo). Ainda não há renderer
+GPU nem políticas baseline embutidas; o treino é controlado externamente.
