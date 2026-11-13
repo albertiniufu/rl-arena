@@ -336,3 +336,20 @@ rl-arena/
 ├── requirements.txt
 └── README.md
 ```
+
+
+## PoC GPU (benchmark de throughput)
+
+`arena/gpu_engine.py` reimplementa a física em tensores PyTorch, com lote
+de ambientes e física na GPU (nível 1, plataformas móveis e moedas). É um
+PoC de desempenho, não um substituto do `ArenaEngine`: empurrões não são
+simulados e a observação é aproximada.
+
+```bash
+python arenas/seek_coin/scripts/benchmark_gpu_env.py --envs 64,256,1024,8192
+```
+
+O baseline de CPU usa um `ArenaEngine` por ambiente. Abaixo de ~128
+ambientes o custo de lançamento de kernels domina; acima disso a GPU escala
+(medição local, sob carga do HAPPO: 13,7x em 1.024 e ~140x em 8.192
+env-steps/s).
