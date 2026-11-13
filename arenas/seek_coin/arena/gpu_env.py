@@ -52,6 +52,19 @@ class GpuArenaVecEnv(GpuSeekCoin):
         self.grid_h = cfg.height // cfg.cell
         self.grid_w = cfg.width // cfg.cell
         self._frames = deque(maxlen=self.frame_stack)
+        resolved = ("cpu" if device == "cuda"
+                    and not torch.cuda.is_available() else device)
+        self._char_channels = torch.full(
+            (self.n_agents, self.n_agents), 2,
+            dtype=torch.long, device=resolved)
+        self._char_channels.fill_diagonal_(1)
+        if self.team_ids is not None:
+            for i in range(self.n_agents):
+                for j in range(self.n_agents):
+                    if (i != j
+                            and self.team_ids[i] == self.team_ids[j]):
+                        self._char_channels[i, j] = (
+                            5 if self.channels > 5 else 2)
         super().__init__(
             n_envs=n_envs, n_chars=self.n_agents, level=int(cfg.level),
             device=device, seed=seed, coin_count=int(cfg.coin_count),
@@ -136,14 +149,35 @@ class GpuArenaVecEnv(GpuSeekCoin):
     # ------------------------------------------------------------------ #
     # Observação
     # ------------------------------------------------------------------ #
-    def _platform_mask(self) -> torch.Tensor:
+    def _build_static_mask(self) -> torch.Tensor:
         cfg = self.cfg
         cell, gh, gw = cfg.cell, self.grid_h, self.grid_w
-        mask = torch.zeros(
-            (self.n_envs, gh, gw), dtype=torch.bool, device=self.device)
-        rows = torch.arange(gh, device=self.device)[None, :, None]
-        cols = torch.arange(gw, device=self.device)[None, None, :]
-        for p in range(self.platform_count):
+        mask = torch.zeros((gh, gw), dtype=torch.bool)
+        for x, y, w, h in self.static:
+            c0 = max(0, int(x // cell))
+            c1 = min(gw, int((x + w) // cell))
+            r0 = max(0, int(y // cell))
+            r1 = min(gh, max(int((y + h) // cell), int(y // cell) + 1))
+            mask[r0:r1, c0:c1] = True
+        return mask.to(self.device)
+
+    def _platform_mask(self) -> torch.Tensor:
+        if not hasattr(self, "_static_mask"):
+            self._static_mask = self._build_static_mask()
+        cfg = self.cfg
+        cell, gh, gw = cfg.cell, self.grid_h, self.grid_w
+        mask = self._static_mask.unsqueeze(0).expand(
+            self.n_envs, -1, -1).clone()
+        if not self.moving_specs:
+            return mask
+        if not hasattr(self, "_rows"):
+            self._rows = torch.arange(
+                gh, device=self.device)[None, :, None]
+            self._cols = torch.arange(
+                gw, device=self.device)[None, None, :]
+        rows, cols = self._rows, self._cols
+        for m in range(len(self.moving_specs)):
+            p = self.static_count + m
             px = self.platforms[:, p, 0]
             py = self.platforms[:, p, 1]
             pw = self.platforms[:, p, 2]
@@ -166,41 +200,34 @@ class GpuArenaVecEnv(GpuSeekCoin):
         e, a = self.n_envs, self.n_agents
         cell, gh, gw = cfg.cell, self.grid_h, self.grid_w
         grid = self._zeros(e, a, self.channels, gh, gw)
-        platform_mask = self._platform_mask()
+        grid[:, :, 0] = self._platform_mask().unsqueeze(1)
+
         env = torch.arange(e, device=self.device)
+        viewers = torch.arange(a, device=self.device)
+        for i in range(a):
+            alive = self.alive[:, i]
+            col = (self.x[:, i] / cell).long().clamp(0, gw - 1)
+            y = self.y[:, i] - cfg.player_size / 2.0
+            row = (y / cell).long().clamp(0, gh - 1)
+            if bool(alive.any()):
+                e_idx = env[alive]
+                r = row[alive]
+                c = col[alive]
+                grid[e_idx[:, None], viewers[None, :],
+                     self._char_channels[i][None, :],
+                     r[:, None], c[:, None]] = 1.0
+            dead = ~alive
+            if bool(dead.any()):
+                e_idx = env[dead]
+                c = col[dead]
+                r = torch.full_like(c, gh - 1)
+                grid[e_idx[:, None], viewers[None, :], 4,
+                     r[:, None], c[:, None]] = 1.0
+
         coin_col = (self.coin_x / cell).long().clamp(0, gw - 1)
         coin_row = (self.coin_y / cell).long().clamp(0, gh - 1)
-
-        for viewer in range(a):
-            grid[:, viewer, 0] = platform_mask
-            for i in range(a):
-                if bool(self.alive[:, i].any()):
-                    alive = self.alive[:, i]
-                    if self.team_ids is None:
-                        channel = 1 if i == viewer else 2
-                    elif i == viewer:
-                        channel = 1
-                    elif self.team_ids[i] == self.team_ids[viewer]:
-                        channel = 5 if self.channels > 5 else 2
-                    else:
-                        channel = 2
-                    y = self.y[:, i] - cfg.player_size / 2.0
-                    col = (self.x[:, i] / cell).long().clamp(0, gw - 1)
-                    row = (y / cell).long().clamp(0, gh - 1)
-                    grid[env[alive], viewer, channel,
-                         row[alive], col[alive]] = 1.0
-                    dead = ~alive
-                    if bool(dead.any()):
-                        dead_row = torch.full_like(
-                            col, gh - 1, device=self.device)
-                        grid[env[dead], viewer, 4,
-                             dead_row[dead], col[dead]] = 1.0
-                else:
-                    col = (self.x[:, i] / cell).long().clamp(0, gw - 1)
-                    dead_row = torch.full_like(col, gh - 1)
-                    grid[env, viewer, 4, dead_row, col] = 1.0
-            grid[env.unsqueeze(1), viewer, 3,
-                 coin_row, coin_col] = 1.0
+        grid[env[:, None, None], viewers[None, :, None], 3,
+             coin_row[:, None, :], coin_col[:, None, :]] = 1.0
         return grid
 
     def _stacked(self) -> torch.Tensor:

@@ -357,5 +357,13 @@ python arenas/seek_coin/scripts/benchmark_gpu_env.py --mode full --envs 64,128,2
 
 Medição local sob carga do HAPPO: física ~4,5x em 1.024 e ~44x em 8.192
 env-steps/s; passo completo ~5,8x em 256 e ~8,3 mil env-steps/s em 512
-(a construção da observação/frame stack é o gargalo). Ainda não há renderer
-GPU nem políticas baseline embutidas; o treino é controlado externamente.
+(a construção da observação/frame stack é o gargalo). A observação usa máscara estática pré-computada e atribuições vetorizadas
+por viewer. O treinador PPO GPU fica em `scripts/train_gpu_ppo.py`:
+
+```bash
+python arenas/seek_coin/scripts/train_gpu_ppo.py --envs 16 --rollout-steps 16 --updates 100
+```
+
+O checkpoint é compatível com `evaluate.py`/`play.py` no modo multiagente
+(`--arena seek_coin`, config com `n_agents`/`team_ids`). Ainda não há
+renderer GPU nem políticas baseline embutidas.

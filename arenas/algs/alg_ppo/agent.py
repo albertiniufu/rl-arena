@@ -46,7 +46,8 @@ class PPOAgent:
     def __init__(self, obs_shape, n_actions, lr=2.5e-4, gamma=.99,
                  batch_size=64, rollout_steps=1024, epochs=4, clip=0.2,
                  gae_lambda=.95, value_coef=.5, entropy_coef=.01,
-                 max_grad_norm=10.0, device=None):
+                 max_grad_norm=10.0, device=None, n_agents=None,
+                 team_ids=None):
         self.device = torch.device(
             device or ("cuda" if torch.cuda.is_available() else "cpu"))
         self.obs_shape = tuple(obs_shape)
@@ -60,6 +61,10 @@ class PPOAgent:
         self.value_coef = float(value_coef)
         self.entropy_coef = float(entropy_coef)
         self.max_grad_norm = float(max_grad_norm)
+        # Aceitos para checkpoints/avaliação multiagente com política
+        # compartilhada; o PPO em si não usa esses campos.
+        self.n_agents = n_agents
+        self.team_ids = tuple(team_ids) if team_ids else ()
         self.online = ActorCriticNetwork(self.obs_shape, self.n_actions).to(self.device)
         # O contrato de checkpoint pede uma rede `target`; o PPO não tem
         # rede-alvo, então o alias evita duplicar parâmetros e o checkpoint
