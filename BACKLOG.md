@@ -24,3 +24,14 @@
   - Checkpoint: gravar `algorithm`, `arch_version`, conjunto de opções, vetores `w` de treino e `obs_shape`; retomada com o mesmo conjunto.
   - Testes: reprodutibilidade por seed, GPI ≥ cada opção individual no conjunto de treino, formato de observação/ação e retomada.
   - CLI: `--alg option_keyboard`, opções para pesos/cumulantes de treino e `--eval-weights` para as tarefas retidas.
+
+
+## Nível 2 — areia e gelo
+
+- [ ] **Nível 2 com hazards temporários** — áreas de areia e gelo aparecem em posições aleatórias sobre as plataformas por alguns segundos e desaparecem/renascem.
+  - Areia: personagem que passa por cima tem a aceleração/velocidade máxima reduzida (ex.: 30%).
+  - Gelo: ao pisar, escorrega na horizontal numa direção aleatória por ~1/5 da largura da tela (128 px), com cooldown para não re-disparar.
+  - Engine: `Hazard` (tipo, retângulo, timer, plataforma), spawn/respawn com RNG, acompanhar plataformas móveis e serializar em `get_state`/`set_state`.
+  - Observação: canais extras só no nível 2 (areia/gelo) para não mudar o shape dos níveis 0/1; renderer default desenha os hazards.
+  - Testes: spawn/timers, efeito da areia, distância do escorregão, canais de observação, shapes e checkpoint com `--level 2`.
+  - Documentar no README/CLAUDE.
