@@ -57,6 +57,18 @@ FIXED_COIN_POSITIONS = {
     1: ((75.0, 60.0), (135.0, 60.0)),
 }
 
+# Moedas presas a uma plataforma móvel: (índice em MOVING_PLATFORMS, dx, dy)
+# em relação ao centro/topo da plataforma. A moeda acompanha o movimento.
+# No nível 1, o índice 1 é a plataforma mais alta.
+MOVING_COIN_SPECS = {
+    0: (),
+    1: (
+        (1, -40.0, -30.0),
+        (1, 0.0, -30.0),
+        (1, 40.0, -30.0),
+    ),
+}
+
 MOVING_PLATFORMS = {
     0: (),
     # Entre as plataformas de y=215 e y=285; passa pelo corredor central.
@@ -93,3 +105,13 @@ def get_fixed_coins(level: int):
             f"nível desconhecido: {level} "
             f"(disponíveis: {sorted(STATIC_PLATFORMS)})")
     return FIXED_COIN_POSITIONS[level]
+
+
+def get_moving_coins(level: int):
+    """Moedas presas a plataformas móveis: `(moving_index, dx, dy)`."""
+    level = int(level)
+    if level not in STATIC_PLATFORMS:
+        raise ValueError(
+            f"nível desconhecido: {level} "
+            f"(disponíveis: {sorted(STATIC_PLATFORMS)})")
+    return MOVING_COIN_SPECS[level]

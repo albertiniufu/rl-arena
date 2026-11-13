@@ -3,7 +3,8 @@ from arenas.algs.alg_registry import apply_env_config
 from arenas.seek_coin.arena.actions import STOP
 from arenas.seek_coin.arena.config import ArenaConfig
 from arenas.seek_coin.arena.engine import ArenaEngine
-from arenas.seek_coin.arena.levels import STATIC_PLATFORMS, get_fixed_coins
+from arenas.seek_coin.arena.levels import (
+    STATIC_PLATFORMS, get_fixed_coins, get_moving_coins)
 from arenas.seek_coin.train import parse_args
 
 
@@ -72,11 +73,14 @@ def test_highest_platform_carries_the_character_vertically():
 def test_high_fixed_coins_and_static_random_coins():
     engine = _engine(1)
     fixed = get_fixed_coins(1)
-    assert len(engine.coins) == engine.cfg.coin_count
+    assert len(engine.coins) == (
+        engine.cfg.coin_count + len(get_moving_coins(1)))
     for x, y in fixed:
         assert any(abs(coin.x - x) < 1e-9 and abs(coin.y - y) < 1e-9
                    for coin in engine.coins)
     for coin in engine.coins:
+        if coin.platform_index is not None:
+            continue
         if any(abs(coin.x - x) < 1e-9 and abs(coin.y - y) < 1e-9
                for x, y in fixed):
             continue
@@ -104,3 +108,15 @@ def test_checkpoint_config_applies_level():
 
 def test_train_cli_accepts_level():
     assert parse_args(["--level", "1"]).level == 1
+
+
+def test_moving_coins_follow_highest_platform():
+    engine = _engine(1)
+    moving = [coin for coin in engine.coins
+              if coin.platform_index is not None]
+    assert len(moving) == 3
+    highest_index = len(engine.static_platforms) + 1
+    assert all(coin.platform_index == highest_index for coin in moving)
+    y0 = [coin.y for coin in moving]
+    engine.step([STOP], 0.1)
+    assert all(coin.y > y0[i] for i, coin in enumerate(moving))

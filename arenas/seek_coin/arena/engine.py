@@ -3,7 +3,7 @@ import numpy as np
 from dataclasses import dataclass
 from .actions import JUMP, LEFT, PUSH_INTENSITY, PUSH_LEFT, PUSH_RIGHT, RIGHT, STOP
 from .config import ArenaConfig
-from .levels import get_fixed_coins, get_level
+from .levels import get_fixed_coins, get_level, get_moving_coins
 
 @dataclass
 class Character:
@@ -23,6 +23,8 @@ class Coin:
     x: float
     y: float
     timer: float
+    # Plataforma à qual a moeda está presa (None = moeda solta/estática).
+    platform_index: int | None = None
 
 class ArenaEngine:
     """Small fixed-map platformer physics engine. Coordinates are pixels."""
@@ -82,6 +84,13 @@ class ArenaEngine:
         for x, y in fixed:
             self.coins.append(Coin(float(x), float(y),
                                    self.cfg.coin_lifetime))
+        static_count = len(self.static_platforms)
+        for moving_index, dx, dy in get_moving_coins(self.level):
+            platform_index = static_count + moving_index
+            px, py, pw, _ = self.platforms[platform_index]
+            self.coins.append(Coin(
+                px + pw / 2.0 + dx, py + dy, self.cfg.coin_lifetime,
+                platform_index=platform_index))
         for _ in range(max(0, self.cfg.coin_count - len(fixed))):
             self._spawn_coin()
         return self
@@ -208,6 +217,12 @@ class ArenaEngine:
     def step(self, actions, dt):
         self.sim_time += dt
         self._advance_platforms(self.sim_time)
+        # Moedas presas às plataformas móveis acompanham o deslocamento.
+        for coin in self.coins:
+            if coin.platform_index is not None:
+                dx, dy = self.platform_deltas[coin.platform_index]
+                coin.x += dx
+                coin.y += dy
         before_deaths = [c.deaths for c in self.characters]
         # Saldo antes dos empurrões: o delta isola a transferência de moedas
         # (a morte também mexe no saldo, mas acontece depois).
