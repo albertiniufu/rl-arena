@@ -355,7 +355,7 @@ python arenas/seek_coin/scripts/benchmark_gpu_env.py --mode physics --envs 64,25
 python arenas/seek_coin/scripts/benchmark_gpu_env.py --mode full --envs 64,128,256
 ```
 
-Medição local sob carga do HAPPO: física ~13,7x em 1.024 e ~143x em 8.192
+Medição local sob carga do HAPPO: física ~4,5x em 1.024 e ~44x em 8.192
 env-steps/s; passo completo ~5,8x em 256 e ~8,3 mil env-steps/s em 512
 (a construção da observação/frame stack é o gargalo). Ainda não há renderer
 GPU nem políticas baseline embutidas; o treino é controlado externamente.
