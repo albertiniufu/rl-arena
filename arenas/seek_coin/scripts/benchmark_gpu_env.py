@@ -46,6 +46,9 @@ def parse_args(argv=None):
                         help="agentes no modo full")
     parser.add_argument("--frame-skip", type=int, default=3)
     parser.add_argument("--frame-stack", type=int, default=4)
+    parser.add_argument("--obs-dtype",
+                        choices=["float32", "float16", "bfloat16", "uint8"],
+                        default="float32")
     parser.add_argument("--device", default="cuda")
     parser.add_argument("--seed", type=int, default=0)
     return parser.parse_args(argv)
@@ -115,11 +118,12 @@ def bench_cpu_full(n_envs, steps, level, agents, frame_skip, frame_stack,
 
 
 def bench_gpu_full(n_envs, steps, level, agents, frame_skip, frame_stack,
-                   seed, device, warmup):
+                   seed, device, warmup, obs_dtype="float32"):
     cfg = full_config(level, agents, frame_skip, frame_stack)
     env = GpuArenaVecEnv(
         config=cfg, n_envs=n_envs, n_agents=agents,
-        team_ids=tuple(range(agents)), device=device, seed=seed)
+        team_ids=tuple(range(agents)), device=device, seed=seed,
+        obs_dtype=obs_dtype)
     env.reset(seed=seed)
     actions = torch.randint(
         0, 6, (n_envs, agents), device=env.device)
@@ -163,7 +167,7 @@ def main(argv=None) -> None:
             gpu_rate = bench_gpu_full(
                 n, args.steps, args.level, args.agents,
                 args.frame_skip, args.frame_stack, args.seed,
-                device, args.warmup)
+                device, args.warmup, args.obs_dtype)
         else:
             cpu_rate = bench_cpu_physics(
                 n, args.steps, args.level, args.chars, args.seed)

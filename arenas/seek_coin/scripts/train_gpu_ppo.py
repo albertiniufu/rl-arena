@@ -52,6 +52,13 @@ def parse_args(argv=None):
     parser.add_argument("--frame-stack", type=int, default=4)
     parser.add_argument("--coin-count", type=int, default=10)
     parser.add_argument("--episode-seconds", type=float, default=45.0)
+    parser.add_argument("--obs-dtype",
+                        choices=["float32", "float16", "bfloat16", "uint8"],
+                        default="float32")
+    parser.add_argument("--amp", action="store_true",
+                        help="forward/update em autocast fp16/bf16")
+    parser.add_argument("--compile", action="store_true",
+                        help="torch.compile no modelo (exige compilador C)")
     parser.add_argument("--seed", type=int, default=7)
     parser.add_argument("--device", default="cuda")
     parser.add_argument("--checkpoint-dir", default="checkpoints/gpu_ppo")
@@ -65,6 +72,9 @@ def main(argv=None) -> None:
     args = parse_args(argv)
     torch.manual_seed(args.seed)
     np.random.seed(args.seed)
+    torch.backends.cudnn.benchmark = True
+    torch.backends.cuda.matmul.allow_tf32 = True
+    torch.set_float32_matmul_precision("high")
     device = args.device
     if device == "cuda" and not torch.cuda.is_available():
         device = "cpu"
@@ -77,7 +87,8 @@ def main(argv=None) -> None:
         coin_count=args.coin_count, episode_seconds=args.episode_seconds)
     env = GpuArenaVecEnv(
         config=cfg, n_envs=args.envs, n_agents=args.n_agents,
-        team_ids=team_ids, device=device, seed=args.seed)
+        team_ids=team_ids, device=device, seed=args.seed,
+        obs_dtype=args.obs_dtype)
     obs, _ = env.reset(seed=args.seed)
     obs_shape = (env.channels * env.frame_stack,
                  env.grid_h, env.grid_w)
@@ -88,19 +99,42 @@ def main(argv=None) -> None:
         max_grad_norm=args.max_grad_norm,
         device=device, n_agents=args.n_agents, team_ids=team_ids)
     model = agent.online.train()
+    if args.compile:
+        model = torch.compile(agent.online)
+        model.train()
     optimizer = agent.optimizer
+    amp_dtype = (torch.bfloat16 if args.obs_dtype == "bfloat16"
+                 else torch.float16)
+    amp_enabled = bool(args.amp and env.device.type == "cuda")
+    try:
+        scaler = torch.amp.GradScaler(
+            "cuda", enabled=amp_enabled and amp_dtype == torch.float16)
+    except (AttributeError, TypeError):
+        scaler = torch.cuda.amp.GradScaler(
+            enabled=amp_enabled and amp_dtype == torch.float16)
+
+    model_dtype = amp_dtype if amp_enabled else torch.float32
+
+    def autocast():
+        return torch.autocast(
+            device_type=env.device.type, dtype=amp_dtype,
+            enabled=amp_enabled)
 
     e, a = args.envs, args.n_agents
     n = e * a
     t_steps = args.rollout_steps
     states = torch.empty(
-        (t_steps, n, *obs_shape), device=env.device)
+        (t_steps, n, *obs_shape), dtype=env.obs_dtype,
+        device=env.device)
     actions = torch.empty(
         (t_steps, n), dtype=torch.long, device=env.device)
     log_probs = torch.empty((t_steps, n), device=env.device)
     values = torch.empty((t_steps, n), device=env.device)
     rewards = torch.empty((t_steps, n), device=env.device)
     next_values = torch.empty((t_steps, n), device=env.device)
+    terminal_values = torch.zeros((t_steps, n), device=env.device)
+    terminal_mask = torch.zeros(
+        (t_steps, n), dtype=torch.bool, device=env.device)
     ends = torch.empty(
         (t_steps, n), dtype=torch.bool, device=env.device)
 
@@ -118,36 +152,53 @@ def main(argv=None) -> None:
     total_env_steps = 0
     start = time.monotonic()
     print(f"gpu_ppo device={env.device} envs={e} agents={a} "
-          f"obs={obs_shape} rollout={t_steps} updates={args.updates}")
+          f"obs={obs_shape} rollout={t_steps} updates={args.updates} "
+          f"obs_dtype={env.obs_dtype} amp={amp_enabled} "
+          f"compile={args.compile}")
 
     for update in range(1, args.updates + 1):
+        terminal_values.zero_()
+        terminal_mask.zero_()
         for t in range(t_steps):
-            flat = obs.reshape(n, *obs_shape)
-            with torch.no_grad():
-                logits, value = model(flat)
+            obs_flat = obs.reshape(n, *obs_shape)
+            model_flat = obs_flat.to(model_dtype)
+            with torch.no_grad(), autocast():
+                logits, value = model(model_flat)
                 dist = Categorical(logits=logits)
                 action = dist.sample()
                 log_prob = dist.log_prob(action)
             next_obs, rew, terminated, truncated, info = env.step(
                 action.view(e, a))
-            with torch.no_grad():
-                _, next_value = model(next_obs.reshape(n, *obs_shape))
-            states[t] = flat
+            states[t] = obs_flat
             actions[t] = action
-            log_probs[t] = log_prob
-            values[t] = value
+            log_probs[t] = log_prob.float()
+            values[t] = value.float()
             rewards[t] = rew.reshape(n)
-            next_values[t] = next_value
             ends[t] = truncated.reshape(n)
             running += rew
             obs = next_obs
             total_env_steps += e
             if bool(truncated.all()):
+                # V(s_T) do estado terminal, antes do reset.
+                with torch.no_grad(), autocast():
+                    _, terminal_value = model(
+                        next_obs.reshape(n, *obs_shape).to(model_dtype))
+                terminal_values[t] = terminal_value.float()
+                terminal_mask[t] = True
                 episode_returns.extend(
                     running.mean(dim=1).detach().cpu().tolist())
                 running.zero_()
                 obs, _ = env.reset(seed=args.seed + update * 1000 + t)
 
+        # next_values[t] = V(obs_{t+1}); só o passo terminal/último precisa
+        # de um forward extra.
+        if t_steps > 1:
+            next_values[:-1] = values[1:]
+        with torch.no_grad(), autocast():
+            _, final_value = model(
+                obs.reshape(n, *obs_shape).to(model_dtype))
+        next_values[-1] = final_value.float()
+        next_values[terminal_mask] = terminal_values[terminal_mask]
         zeros_term = torch.zeros_like(ends)
         adv, ret = compute_gae(
             rewards.cpu(), values.cpu(), next_values.cpu(),
@@ -167,25 +218,30 @@ def main(argv=None) -> None:
             order = torch.randperm(t_steps * n, device=env.device)
             for start_idx in range(0, t_steps * n, args.batch_size):
                 idx = order[start_idx:start_idx + args.batch_size]
-                logits, value = model(states_flat[idx])
-                dist = Categorical(logits=logits)
-                new_logp = dist.log_prob(actions_flat[idx])
-                ratio = torch.exp(new_logp - old_logp_flat[idx])
-                advantage = adv_flat[idx]
-                unclipped = ratio * advantage
-                clipped = torch.clamp(
-                    ratio, 1.0 - args.clip, 1.0 + args.clip) * advantage
-                policy_loss = -torch.min(unclipped, clipped).mean()
-                value_loss = torch.nn.functional.mse_loss(
-                    value, ret_flat[idx])
-                entropy = dist.entropy().mean()
-                loss = (policy_loss + args.value_coef * value_loss
-                        - args.entropy_coef * entropy)
                 optimizer.zero_grad(set_to_none=True)
-                loss.backward()
+                with autocast():
+                    logits, value = model(
+                        states_flat[idx].to(model_dtype))
+                    dist = Categorical(logits=logits)
+                    new_logp = dist.log_prob(actions_flat[idx])
+                    ratio = torch.exp(new_logp - old_logp_flat[idx])
+                    advantage = adv_flat[idx]
+                    unclipped = ratio * advantage
+                    clipped = torch.clamp(
+                        ratio, 1.0 - args.clip,
+                        1.0 + args.clip) * advantage
+                    policy_loss = -torch.min(unclipped, clipped).mean()
+                    value_loss = torch.nn.functional.mse_loss(
+                        value, ret_flat[idx])
+                    entropy = dist.entropy().mean()
+                    loss = (policy_loss + args.value_coef * value_loss
+                            - args.entropy_coef * entropy)
+                scaler.scale(loss).backward()
+                scaler.unscale_(optimizer)
                 torch.nn.utils.clip_grad_norm_(
                     model.parameters(), args.max_grad_norm)
-                optimizer.step()
+                scaler.step(optimizer)
+                scaler.update()
                 last_policy = float(policy_loss.item())
                 last_value = float(value_loss.item())
                 last_entropy = float(entropy.item())

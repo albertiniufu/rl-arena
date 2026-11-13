@@ -70,3 +70,17 @@ def test_gpu_observation_matches_cpu_render_grid():
         cpu, cfg, viewer=0, channels=6, team_ids=(0, 1, 2, 3))
     got = env._observation_all()[0, 0].numpy()
     assert np.allclose(got, expected)
+
+
+def test_gpu_env_uint8_observation_dtype():
+    cfg = ArenaConfig(
+        level=1, n_agents=4, team_ids=(0, 1, 2, 3),
+        frame_skip=1, frame_stack=2, episode_seconds=1.0)
+    env = GpuArenaVecEnv(
+        config=cfg, n_envs=2, n_agents=4, team_ids=(0, 1, 2, 3),
+        device="cpu", seed=0, obs_dtype="uint8")
+    obs, _ = env.reset(seed=0)
+    assert obs.dtype == torch.uint8
+    assert obs.shape == (2, 4, 12, 20, 32)
+    obs, *_ = env.step(torch.zeros((2, 4), dtype=torch.int64))
+    assert obs.dtype == torch.uint8

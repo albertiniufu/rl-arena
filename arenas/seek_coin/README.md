@@ -356,14 +356,24 @@ python arenas/seek_coin/scripts/benchmark_gpu_env.py --mode full --envs 64,128,2
 ```
 
 Medição local sob carga do HAPPO: física ~4,5x em 1.024 e ~44x em 8.192
-env-steps/s; passo completo ~5,8x em 256 e ~8,3 mil env-steps/s em 512
-(a construção da observação/frame stack é o gargalo). A observação usa máscara estática pré-computada e atribuições vetorizadas
-por viewer. O treinador PPO GPU fica em `scripts/train_gpu_ppo.py`:
+env-steps/s. Com observação `uint8` (a grade é binária), o passo completo
+chega a ~5,4 mil env-steps/s em 128, ~5,9 mil em 256 e ~17,4 mil em 512.
+
+Otimizações da observação: máscara de plataformas estáticas pré-computada,
+atribuições vetorizadas por viewer/canais/moedas, `frame_stack` sem novos
+loops por viewer e opção de dtype (`float32`, `float16`, `bfloat16` ou
+`uint8`). O treinador PPO GPU fica em `scripts/train_gpu_ppo.py`:
 
 ```bash
-python arenas/seek_coin/scripts/train_gpu_ppo.py --envs 16 --rollout-steps 16 --updates 100
+python arenas/seek_coin/scripts/train_gpu_ppo.py \
+  --envs 128 --rollout-steps 64 --batch-size 2048 \
+  --obs-dtype uint8 --amp --updates 100
 ```
 
-O checkpoint é compatível com `evaluate.py`/`play.py` no modo multiagente
-(`--arena seek_coin`, config com `n_agents`/`team_ids`). Ainda não há
-renderer GPU nem políticas baseline embutidas.
+`--amp` usa autocast fp16/bf16 e `--obs-dtype uint8` corta 8x a memória da
+observação/rollout. Sob carga do HAPPO o treinador ficou em ~1,3–3,0 mil
+env-steps/s (dependendo de envs/batch); o ambiente isolado faz ~17 mil. O
+checkpoint é compatível com `evaluate.py`/`play.py` no modo multiagente
+(`--arena seek_coin`, config com `n_agents`/`team_ids`). `--compile` existe
+mas exige um compilador C (indisponível nesta máquina). Ainda não há renderer
+GPU nem políticas baseline embutidas.

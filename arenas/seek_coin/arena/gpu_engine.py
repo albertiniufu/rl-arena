@@ -297,7 +297,8 @@ class GpuSeekCoin:
         targets, has = self._push_targets(actions)
         self._apply_pushes(actions, targets, has)
         coins_transferred = self.coins - before_push_coins
-        push_missed = self.push_missed(actions)
+        is_push = ((actions == PUSH_LEFT) | (actions == PUSH_RIGHT))
+        push_missed = is_push & ~has
 
         # Carrega personagens em cima de plataformas móveis.
         idx = self.platform_index.clamp(min=0)

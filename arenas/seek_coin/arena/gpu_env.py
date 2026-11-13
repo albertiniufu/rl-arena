@@ -5,9 +5,10 @@ multiagente vetorizado:
 
 - `reset(seed)` → `(obs, info)`;
 - `step(actions (E, A))` → `(obs, rewards (E, A), terminated, truncated, info)`;
-- observações egocêntricas `(E, A, C*frame_stack, gh, gw)` — 5 canais no modo
+- observações egêntricas `(E, A, C*frame_stack, gh, gw)` — 5 canais no modo
   legado (sem `team_ids`) ou 6 canais no multiagente (`self`, inimigos,
-  aliados, mortos);
+  aliados, mortos); dtype configurável (`float32/float16/bfloat16/uint8`,
+  sendo `uint8` ideal para a grade binária);
 - `frame_skip` substeps por decisão, `frame_stack` frames empilhados;
 - recompensas por agente (moedas, mortes, transferências de empurrão),
   penalidades de STOP/empurrão perdido uma vez por passo e PBRS opcional;
@@ -33,12 +34,21 @@ class GpuArenaVecEnv(GpuSeekCoin):
 
     def __init__(self, config: ArenaConfig | None = None, n_envs: int = 256,
                  n_agents: int = 4, level: int = 1, team_ids=None,
-                 device: str = "cuda", seed: int = 0):
+                 device: str = "cuda", seed: int = 0,
+                 obs_dtype=torch.float32):
         cfg = config or ArenaConfig(
             level=level, n_agents=n_agents,
             team_ids=tuple(team_ids or range(n_agents)))
         self.cfg = cfg
         self.n_agents = int(n_agents)
+        if isinstance(obs_dtype, str):
+            obs_dtype = {
+                "float32": torch.float32,
+                "float16": torch.float16,
+                "bfloat16": torch.bfloat16,
+                "uint8": torch.uint8,
+            }[obs_dtype]
+        self.obs_dtype = obs_dtype
         self.team_ids = (None if team_ids is None
                          else tuple(int(t) for t in team_ids))
         if self.team_ids is None and getattr(cfg, "team_ids", ()):
@@ -90,7 +100,6 @@ class GpuArenaVecEnv(GpuSeekCoin):
         actions = torch.as_tensor(
             actions, dtype=torch.int64, device=self.device
         ).reshape(self.n_envs, self.n_agents)
-        push_missed = self.push_missed(actions)
         phi_before = self._potential() if self.pbrs_coef else None
 
         raw = self._zeros(self.n_envs, self.n_agents)
@@ -99,8 +108,11 @@ class GpuArenaVecEnv(GpuSeekCoin):
             device=self.device)
         deaths = torch.zeros_like(collected)
         transferred = torch.zeros_like(collected)
+        first_push_missed = None
         for _ in range(self.frame_skip):
             event = super().step(actions)
+            if first_push_missed is None:
+                first_push_missed = event["push_missed"]
             raw += (event["collected"].float() * self.cfg.coin_reward
                     + event["deaths_delta"].float()
                     * self.cfg.death_penalty
@@ -122,7 +134,7 @@ class GpuArenaVecEnv(GpuSeekCoin):
             torch.full_like(raw, self.cfg.stop_penalty),
             torch.zeros_like(raw))
         raw += torch.where(
-            push_missed,
+            first_push_missed,
             torch.full_like(raw, self.cfg.push_miss_penalty),
             torch.zeros_like(raw))
         rewards = self._aggregate_rewards(raw)
@@ -199,7 +211,9 @@ class GpuArenaVecEnv(GpuSeekCoin):
         cfg = self.cfg
         e, a = self.n_envs, self.n_agents
         cell, gh, gw = cfg.cell, self.grid_h, self.grid_w
-        grid = self._zeros(e, a, self.channels, gh, gw)
+        grid = torch.zeros(
+            (e, a, self.channels, gh, gw),
+            dtype=self.obs_dtype, device=self.device)
         grid[:, :, 0] = self._platform_mask().unsqueeze(1)
 
         env = torch.arange(e, device=self.device)
