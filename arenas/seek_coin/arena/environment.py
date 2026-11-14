@@ -8,7 +8,8 @@ from gymnasium import spaces
 from arenas.seek_coin.agents.baseline import PolicyContext, make_policy
 from .actions import N_ACTIONS, PUSH_LEFT, PUSH_RIGHT, STOP
 from .config import ArenaConfig
-from .engine import ArenaEngine, Character, Coin
+from .engine import ArenaEngine, Character, Coin, Hazard
+from .levels import get_hazard_kinds
 from .observations import render_grid
 from .reward_shaping import coin_potential
 from .skins import load_renderer_class
@@ -34,9 +35,11 @@ class ArenaEnv(gym.Env):
         self.action_space = spaces.Discrete(N_ACTIONS)
         self.grid_h = self.cfg.height // self.cfg.cell
         self.grid_w = self.cfg.width // self.cfg.cell
+        self.hazard_channels = len(get_hazard_kinds(self.cfg.level))
         self.observation_space = spaces.Box(
             0.0, 1.0,
-            shape=(5 * self.cfg.frame_stack, self.grid_h, self.grid_w),
+            shape=((5 + self.hazard_channels) * self.cfg.frame_stack,
+                   self.grid_h, self.grid_w),
             dtype=np.float32,
         )
         # Pilha de frames: cada elemento é um frame único (5, H, W).
@@ -52,7 +55,9 @@ class ArenaEnv(gym.Env):
         o ambiente multiagente (que usa uma grade egocêntrica de 6 canais).
         Os defaults reproduzem exatamente a grade legada.
         """
-        return render_grid(self.engine, self.cfg)
+        return render_grid(
+            self.engine, self.cfg,
+            channels=5 + self.hazard_channels)
 
     def _stacked(self):
         """Observação do agente: pilha de frames (5 * frame_stack, H, W), do mais antigo ao mais novo."""
@@ -169,6 +174,7 @@ class ArenaEnv(gym.Env):
             "sim_time": self.engine.sim_time,
             "characters": [asdict(c) for c in self.engine.characters],
             "coins": [asdict(c) for c in self.engine.coins],
+            "hazards": [asdict(h) for h in self.engine.hazards],
         }
 
     def set_state(self, state):
@@ -176,6 +182,8 @@ class ArenaEnv(gym.Env):
         self.engine.sim_time = float(state["sim_time"])
         self.engine.characters = [Character(**s) for s in state["characters"]]
         self.engine.coins = [Coin(**c) for c in state["coins"]]
+        self.engine.hazards = [
+            Hazard(**h) for h in state.get("hazards", [])]
 
     def render(self):
         if self._renderer is None:

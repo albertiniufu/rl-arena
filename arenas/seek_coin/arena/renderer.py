@@ -311,6 +311,22 @@ class ArenaRenderer:
             pygame.draw.rect(surf, (140, 215, 150), (x, y, w, min(5, h)), border_radius=3)    # "grama"
             pygame.draw.line(surf, (190, 245, 195), (x + 3, y + 1), (x + w - 4, y + 1), 1)
 
+    def _draw_hazards(self, surf, engine):
+        for hazard in getattr(engine, "hazards", ()):
+            if hazard.kind == "sand":
+                body, top, edge = (196, 164, 88), (232, 205, 125), (150, 120, 60)
+            elif hazard.kind == "ice":
+                body, top, edge = (120, 198, 232), (205, 244, 255), (80, 150, 190)
+            else:
+                continue
+            rect = pygame.Rect(
+                int(hazard.x), int(hazard.y),
+                max(1, int(hazard.w)), max(1, int(hazard.h)))
+            pygame.draw.rect(surf, body, rect, border_radius=3)
+            pygame.draw.line(surf, top, (rect.x + 2, rect.y + 1),
+                             (rect.right - 2, rect.y + 1), 1)
+            pygame.draw.rect(surf, edge, rect, 1, border_radius=3)
+
     def _draw_coins(self, surf, engine):
         for co in engine.coins:
             ph = (co.x * 0.05) % 6.28
@@ -497,6 +513,7 @@ class ArenaRenderer:
         self.fx.fill((0, 0, 0, 0))
         self._draw_background(self.world)
         self._draw_platforms(self.world, engine)
+        self._draw_hazards(self.world, engine)
         self._draw_coins(self.world, engine)
         coins = [c.coins for c in engine.characters]
         leader = coins.index(max(coins)) if coins and max(coins) > 0 and coins.count(max(coins)) == 1 else None

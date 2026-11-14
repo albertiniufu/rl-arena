@@ -22,6 +22,7 @@ from gymnasium import spaces
 from .actions import N_ACTIONS, PUSH_LEFT, PUSH_RIGHT, STOP
 from .config import ArenaConfig
 from .engine import ArenaEngine
+from .levels import get_hazard_kinds
 from .observations import render_grid
 from .reward_shaping import coin_potential
 from .scenario import Scenario
@@ -49,9 +50,11 @@ class ArenaMultiEnv:
         self.action_space = spaces.Discrete(N_ACTIONS)
         self.grid_h = self.cfg.height // self.cfg.cell
         self.grid_w = self.cfg.width // self.cfg.cell
+        self.hazard_channels = len(get_hazard_kinds(self.cfg.level))
         self.observation_space = spaces.Box(
             0.0, 1.0,
-            shape=(N_CHANNELS * self.cfg.frame_stack, self.grid_h, self.grid_w),
+            shape=((N_CHANNELS + self.hazard_channels)
+                   * self.cfg.frame_stack, self.grid_h, self.grid_w),
             dtype=np.float32,
         )
         # Um frame stack por agente: a visão é egocêntrica, então cada um tem
@@ -64,7 +67,8 @@ class ArenaMultiEnv:
 
     def _observation(self, viewer):
         return render_grid(
-            self.engine, self.cfg, viewer=viewer, channels=N_CHANNELS,
+            self.engine, self.cfg, viewer=viewer,
+            channels=N_CHANNELS + self.hazard_channels,
             team_ids=self.scenario.team_ids)
 
     def _stacked(self):

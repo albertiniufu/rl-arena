@@ -37,5 +37,17 @@ class ArenaConfig:
     frame_stack: int = 1 # quantos frames compõem a observação
     frame_skip: int = 1 # quantos substeps de física cada step do agente executa
     map_version: str = "arena-v1"
-    level: int = 0  # 0 = mapa histórico; 1 = plataforma móvel
+    level: int = 0  # 0 = mapa histórico; 1 = plataformas móveis; 2 = areia/gelo
     agent_roles: tuple = ()  # papéis por agente (HAPPO); () = simétrico
+
+    # Hazards temporários do nível 2 (ignorados nos níveis 0/1)
+    hazard_count: int = 2  # por tipo (areia e gelo)
+    hazard_width_min: float = 50.0
+    hazard_width_max: float = 110.0
+    hazard_height: float = 6.0
+    hazard_min_seconds: float = 3.0
+    hazard_max_seconds: float = 6.0
+    sand_speed_factor: float = 0.3
+    ice_slide_fraction: float = 0.2  # 1/5 da largura da tela
+    ice_slide_seconds: float = 0.6
+    ice_cooldown: float = 1.0

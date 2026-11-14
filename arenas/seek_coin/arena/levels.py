@@ -4,8 +4,9 @@ O nível 0 é o mapa histórico (mapa fixo). O nível 1 acrescenta duas
 plataformas móveis: a mais alta (topo esquerdo), que sobe e desce, e uma
 central, que se desloca horizontalmente. Há também duas moedas fixas no alto,
 alcançáveis apenas quando a plataforma mais alta está no ponto máximo
-(y=145); na posição baixa (y=185) o pulo não chega. A posição é uma função do
-tempo de simulação, então o nível é reproduzível por seed.
+(y=145); na posição baixa (y=185) o pulo não chega. O nível 2 usa o mesmo
+mapa do nível 1 e acrescenta hazards temporários: areia (reduz a velocidade)
+e gelo (escorrega ~1/5 da largura da tela numa direção aleatória).
 """
 from __future__ import annotations
 
@@ -86,6 +87,18 @@ MOVING_PLATFORMS = {
     ),
 }
 
+# Nível 2: mesmo mapa/moedas do nível 1, com hazards temporários.
+STATIC_PLATFORMS[2] = STATIC_PLATFORMS[1]
+FIXED_COIN_POSITIONS[2] = FIXED_COIN_POSITIONS[1]
+MOVING_COIN_SPECS[2] = MOVING_COIN_SPECS[1]
+MOVING_PLATFORMS[2] = MOVING_PLATFORMS[1]
+
+HAZARD_KINDS = {
+    0: (),
+    1: (),
+    2: ("sand", "ice"),
+}
+
 
 def get_level(level: int):
     """Devolve `(plataformas_estáticas, plataformas_móveis)` do nível."""
@@ -115,3 +128,13 @@ def get_moving_coins(level: int):
             f"nível desconhecido: {level} "
             f"(disponíveis: {sorted(STATIC_PLATFORMS)})")
     return MOVING_COIN_SPECS[level]
+
+
+def get_hazard_kinds(level: int):
+    """Tipos de hazard que aparecem no nível (vazio nos níveis 0/1)."""
+    level = int(level)
+    if level not in STATIC_PLATFORMS:
+        raise ValueError(
+            f"nível desconhecido: {level} "
+            f"(disponíveis: {sorted(STATIC_PLATFORMS)})")
+    return HAZARD_KINDS[level]

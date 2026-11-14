@@ -2,9 +2,14 @@
 from arenas.algs.alg_registry import apply_env_config
 from arenas.seek_coin.arena.actions import STOP
 from arenas.seek_coin.arena.config import ArenaConfig
-from arenas.seek_coin.arena.engine import ArenaEngine
+from arenas.seek_coin.arena.engine import ArenaEngine, Hazard
 from arenas.seek_coin.arena.levels import (
-    STATIC_PLATFORMS, get_fixed_coins, get_moving_coins)
+    STATIC_PLATFORMS, get_fixed_coins, get_hazard_kinds,
+    get_moving_coins)
+from arenas.seek_coin.arena.environment import ArenaEnv
+from arenas.seek_coin.arena.multi_environment import ArenaMultiEnv
+from arenas.seek_coin.arena.observations import render_grid
+from arenas.seek_coin.arena.scenario import Scenario
 from arenas.seek_coin.train import parse_args
 
 
@@ -120,3 +125,74 @@ def test_moving_coins_follow_highest_platform():
     y0 = [coin.y for coin in moving]
     engine.step([STOP], 0.1)
     assert all(coin.y > y0[i] for i, coin in enumerate(moving))
+
+
+def test_level_two_has_hazards():
+    engine = _engine(2)
+    assert get_hazard_kinds(2) == ("sand", "ice")
+    assert len(engine.hazards) == 2 * engine.cfg.hazard_count
+    assert {h.kind for h in engine.hazards} == {"sand", "ice"}
+    for hazard in engine.hazards:
+        assert engine.cfg.hazard_min_seconds <= hazard.timer
+        assert hazard.timer <= engine.cfg.hazard_max_seconds
+        assert 0 <= hazard.platform_index < len(engine.platforms)
+
+
+def test_sand_reduces_speed():
+    engine = _engine(2)
+    engine.hazards = [Hazard("sand", 350.0, 354.0, 120.0, 6.0, 1, 10.0)]
+    c = engine.characters[0]
+    c.x, c.y = 400.0, 360.0
+    c.vx = c.vy = 0.0
+    c.on_ground = True
+    c.platform_index = 1
+    engine.step([2], 1.0 / engine.cfg.fps)  # RIGHT
+    sand_vx = abs(c.vx)
+
+    free = _engine(2)
+    free.hazards = []
+    c = free.characters[0]
+    c.x, c.y = 400.0, 360.0
+    c.vx = c.vy = 0.0
+    c.on_ground = True
+    c.platform_index = 1
+    free.step([2], 1.0 / free.cfg.fps)
+    assert sand_vx < abs(c.vx)
+
+
+def test_ice_slides_about_one_fifth_of_screen():
+    engine = _engine(2)
+    engine.hazards = [Hazard("ice", 350.0, 354.0, 120.0, 6.0, 1, 10.0)]
+    c = engine.characters[0]
+    c.x, c.y = 400.0, 360.0
+    c.vx = c.vy = 0.0
+    c.on_ground = True
+    c.platform_index = 1
+    x0 = c.x
+    steps = int(engine.cfg.ice_slide_seconds * engine.cfg.fps) + 2
+    for _ in range(steps):
+        engine.step([0], 1.0 / engine.cfg.fps)
+    distance = abs(engine.characters[0].x - x0)
+    target = engine.cfg.width * engine.cfg.ice_slide_fraction
+    assert 0.5 * target < distance < 1.6 * target
+
+
+def test_hazard_channels_and_env_shapes():
+    engine = _engine(2)
+    cfg = engine.cfg
+    grid = render_grid(engine, cfg, channels=7)
+    assert grid.shape == (7, 20, 32)
+    assert grid[5].any() and grid[6].any()
+
+    env = ArenaEnv(ArenaConfig(level=2, opponent_count=0))
+    obs, _ = env.reset(seed=3)
+    assert obs.shape == (7, 20, 32)   # 5 base + areia + gelo
+    env.close()
+
+    scenario = Scenario.all_vs_all(2)
+    multi_cfg = ArenaConfig(
+        level=2, n_agents=2, team_ids=scenario.team_ids)
+    multi = ArenaMultiEnv(multi_cfg, scenario=scenario)
+    obs, _ = multi.reset(seed=3)
+    assert obs.shape == (2, 8, 20, 32)  # 6 base + areia + gelo
+    multi.close()

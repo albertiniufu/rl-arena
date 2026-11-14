@@ -51,4 +51,16 @@ def render_grid(engine, cfg, viewer=0, channels=5, team_ids=None):
         col = 0 if col < 0 else (gw - 1 if col >= gw else col)
         row = 0 if row < 0 else (gh - 1 if row >= gh else row)
         g[3, row, col] = 1.0
+    # Hazards do nível 2: canais extras logo após os canais base.
+    base_channels = 6 if team_ids is not None else 5
+    for hazard in getattr(engine, "hazards", ()):
+        channel = base_channels + (0 if hazard.kind == "sand" else 1)
+        if hazard.kind not in ("sand", "ice") or channel >= channels:
+            continue
+        c0 = max(0, int(hazard.x // cell))
+        c1 = min(gw, int((hazard.x + hazard.w) // cell))
+        r0 = max(0, int(hazard.y // cell))
+        r1 = min(gh, max(int((hazard.y + hazard.h) // cell),
+                         int(hazard.y // cell) + 1))
+        g[channel, r0:r1, c0:c1] = 1.0
     return g

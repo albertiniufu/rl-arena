@@ -7,8 +7,9 @@ set -u
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)"
 cd "$ROOT"
 PY="${PY:-$HOME/venvs/main/bin/python}"
-OUT="checkpoints/overnight/videos"
-LOG="logs/overnight/videos.log"
+TAG="${TAG:-overnight}"
+OUT="checkpoints/$TAG/videos"
+LOG="logs/$TAG/videos.log"
 DEADLINE_EPOCH="${DEADLINE_EPOCH:-$(date -d '2026-11-14 08:00:00' +%s)}"
 mkdir -p "$OUT" "$(dirname "$LOG")"
 echo "=== watcher inicio $(date '+%F %T') ===" >> "$LOG"
@@ -20,14 +21,14 @@ while true; do
         echo "=== watcher deadline $(date '+%F %T') ===" >> "$LOG"
         break
     fi
-    active=$(cat logs/overnight/active 2>/dev/null || echo ppo)
+    active=$(cat "logs/$TAG/active" 2>/dev/null || echo ppo)
     if [ "$active" = "done" ]; then
         echo "=== watcher done $(date '+%F %T') ===" >> "$LOG"
         break
     fi
     ts=$(date '+%Y%m%d_%H%M')
     if [ "$active" = "ppo" ]; then
-        ckpt="checkpoints/overnight/ppo/latest.pt"
+        ckpt="checkpoints/$TAG/ppo/latest.pt"
         out="$OUT/ppo_${ts}.mp4"
         for _ in 1 2 3; do
             if [ -f "$ckpt" ] && SDL_VIDEODRIVER=dummy \
@@ -40,7 +41,7 @@ while true; do
             sleep 10
         done
     elif [ "$active" = "ippo" ]; then
-        ckpt="checkpoints/overnight/ippo/latest.pt"
+        ckpt="checkpoints/$TAG/ippo/latest.pt"
         out="$OUT/ippo_${ts}.mp4"
         for _ in 1 2 3; do
             if [ -f "$ckpt" ] && SDL_VIDEODRIVER=dummy \

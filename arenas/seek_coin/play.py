@@ -16,6 +16,7 @@ from arenas.seek_coin.arena.environment import ArenaEnv
 from arenas.seek_coin.arena.multi_environment import ArenaMultiEnv
 from arenas.seek_coin.arena.scenario import Scenario
 from arenas.seek_coin.arena.config import ArenaConfig
+from arenas.seek_coin.arena.levels import get_hazard_kinds
 from arenas.seek_coin.arena.skins import list_skins
 from arenas.algs.alg_registry import (
     CheckpointPolicy,
@@ -83,7 +84,8 @@ def resolve_opponent(spec, cfg, player_frame=None):
             "use checkpoints com o mesmo formato de observação.")
 
     apply_env_config(cfg, meta)
-    obs_shape = (5 * cfg.frame_stack, cfg.height // cfg.cell, cfg.width // cfg.cell)
+    obs_shape = ((5 + len(get_hazard_kinds(cfg.level))) * cfg.frame_stack,
+                 cfg.height // cfg.cell, cfg.width // cfg.cell)
     agent = opp_alg.Agent(obs_shape, N_ACTIONS)
     load_checkpoint(spec, agent, resume=False)
     agent.epsilon = 0.0

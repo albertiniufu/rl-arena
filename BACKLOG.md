@@ -28,7 +28,9 @@
 
 ## Nível 2 — areia e gelo
 
-- [ ] **Nível 2 com hazards temporários** — áreas de areia e gelo aparecem em posições aleatórias sobre as plataformas por alguns segundos e desaparecem/renascem.
+> Implementado: `--level 2`, hazards de areia/gelo com spawn aleatório, canais de observação extras e renderer default. Testes e smoke PPO/IPPO ok; treino noturno em `logs/overnight_l2`.
+
+- [x] **Nível 2 com hazards temporários** — áreas de areia e gelo aparecem em posições aleatórias sobre as plataformas por alguns segundos e desaparecem/renascem.
   - Areia: personagem que passa por cima tem a aceleração/velocidade máxima reduzida (ex.: 30%).
   - Gelo: ao pisar, escorrega na horizontal numa direção aleatória por ~1/5 da largura da tela (128 px), com cooldown para não re-disparar.
   - Engine: `Hazard` (tipo, retângulo, timer, plataforma), spawn/respawn com RNG, acompanhar plataformas móveis e serializar em `get_state`/`set_state`.

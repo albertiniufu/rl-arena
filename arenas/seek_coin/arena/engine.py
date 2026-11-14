@@ -3,7 +3,8 @@ import numpy as np
 from dataclasses import dataclass
 from .actions import JUMP, LEFT, PUSH_INTENSITY, PUSH_LEFT, PUSH_RIGHT, RIGHT, STOP
 from .config import ArenaConfig
-from .levels import get_fixed_coins, get_level, get_moving_coins
+from .levels import (
+    get_fixed_coins, get_hazard_kinds, get_level, get_moving_coins)
 
 @dataclass
 class Character:
@@ -17,6 +18,9 @@ class Character:
     deaths: int = 0
     on_ground: bool = False
     platform_index: int | None = None
+    slide_timer: float = 0.0
+    slide_vx: float = 0.0
+    ice_cooldown: float = 0.0
 
 @dataclass
 class Coin:
@@ -26,6 +30,18 @@ class Coin:
     # Plataforma à qual a moeda está presa (None = moeda solta/estática).
     platform_index: int | None = None
 
+
+@dataclass
+class Hazard:
+    """Área temporária de areia ou gelo sobre uma plataforma."""
+    kind: str
+    x: float
+    y: float
+    w: float
+    h: float
+    platform_index: int
+    timer: float
+
 class ArenaEngine:
     """Small fixed-map platformer physics engine. Coordinates are pixels."""
     def __init__(self, config=None):
@@ -34,8 +50,10 @@ class ArenaEngine:
         self.level = int(self.cfg.level)
         self.static_platforms, self.moving_specs = get_level(self.level)
         self._set_platforms_at(0.0)
+        self.hazard_kinds = get_hazard_kinds(self.level)
         self.characters = []
         self.coins = []
+        self.hazards = []
         self.sim_time = 0.0
 
     def _platforms_at(self, t: float):
@@ -93,6 +111,10 @@ class ArenaEngine:
                 platform_index=platform_index))
         for _ in range(max(0, self.cfg.coin_count - len(fixed))):
             self._spawn_coin()
+        self.hazards = []
+        for kind in self.hazard_kinds:
+            for _ in range(max(0, int(self.cfg.hazard_count))):
+                self._spawn_hazard(kind)
         return self
 
     def _spawn_coin(self):
@@ -104,6 +126,60 @@ class ArenaEngine:
         coin_x = self.rng.uniform(x + 10, x + width - 10)
         self.coins.append(Coin(float(coin_x), float(y - 18),
                                self.cfg.coin_lifetime))
+
+    def _spawn_hazard(self, kind: str):
+        """Cria um hazard em uma plataforma aleatória; devolve ou None."""
+        min_w = self.cfg.hazard_width_min
+        candidates = [(i, x, y, w)
+                      for i, (x, y, w, h) in enumerate(self.platforms)
+                      if w >= min_w + 4]
+        if not candidates:
+            return None
+        index, x, y, width = candidates[
+            int(self.rng.integers(len(candidates)))]
+        max_w = min(self.cfg.hazard_width_max, width - 4)
+        hazard_w = float(self.rng.uniform(min_w, max(min_w, max_w)))
+        hazard_x = float(self.rng.uniform(
+            x + 2, max(x + 2, x + width - 2 - hazard_w)))
+        hazard = Hazard(
+            kind=kind,
+            x=hazard_x,
+            y=float(y - self.cfg.hazard_height),
+            w=hazard_w,
+            h=float(self.cfg.hazard_height),
+            platform_index=index,
+            timer=float(self.rng.uniform(
+                self.cfg.hazard_min_seconds, self.cfg.hazard_max_seconds)),
+        )
+        self.hazards.append(hazard)
+        return hazard
+
+    def _advance_hazards(self, dt: float) -> None:
+        if not self.hazards:
+            return
+        for hazard in self.hazards:
+            if 0 <= hazard.platform_index < len(self.platforms):
+                dx, dy = self.platform_deltas[hazard.platform_index]
+                hazard.x += dx
+                hazard.y += dy
+            hazard.timer -= dt
+        for i in range(len(self.hazards) - 1, -1, -1):
+            if self.hazards[i].timer <= 0.0:
+                kind = self.hazards[i].kind
+                self.hazards.pop(i)
+                self._spawn_hazard(kind)
+
+    def _hazard_under(self, c: Character, kind: str):
+        if not c.alive or not c.on_ground or c.platform_index is None:
+            return None
+        half = self.cfg.player_size / 2
+        for hazard in self.hazards:
+            if (hazard.kind != kind
+                    or hazard.platform_index != c.platform_index):
+                continue
+            if c.x + half > hazard.x and c.x - half < hazard.x + hazard.w:
+                return hazard
+        return None
 
     def _rect(self, c):
         s = self.cfg.player_size
@@ -171,6 +247,9 @@ class ArenaEngine:
                 c.y = float(py)
                 c.vx = 0.0
                 c.vy = 0.0
+                c.slide_timer = 0.0
+                c.slide_vx = 0.0
+                c.ice_cooldown = 0.0
                 c.alive = True
                 c.on_ground = True
                 c.platform_index = index
@@ -180,16 +259,40 @@ class ArenaEngine:
             dx, dy = self.platform_deltas[c.platform_index]
             c.x += dx
             c.y += dy
+        c.ice_cooldown = max(0.0, c.ice_cooldown - dt)
+        sliding = c.slide_timer > 0.0
+        if sliding:
+            c.slide_timer = max(0.0, c.slide_timer - dt)
+            c.vx = c.slide_vx
+        else:
+            ice = self._hazard_under(c, "ice")
+            if ice is not None and c.ice_cooldown <= 0.0:
+                direction = -1.0 if self.rng.random() < 0.5 else 1.0
+                distance = self.cfg.width * self.cfg.ice_slide_fraction
+                c.slide_vx = direction * distance / max(
+                    self.cfg.ice_slide_seconds, 1e-6)
+                c.slide_timer = self.cfg.ice_slide_seconds
+                c.ice_cooldown = (self.cfg.ice_slide_seconds
+                                  + self.cfg.ice_cooldown)
+                c.vx = c.slide_vx
+                sliding = True
+        sand_factor = (self.cfg.sand_speed_factor
+                       if self._hazard_under(c, "sand") is not None else 1.0)
         # Ações: LEFT/RIGHT andam, JUMP pula; empurrões são resolvidos no step.
-        if action == LEFT:
-            c.vx -= self.cfg.move_accel * dt
-        elif action == RIGHT:
-            c.vx += self.cfg.move_accel * dt
-        elif action == JUMP and c.on_ground:
-            c.vy = -self.cfg.jump_speed
-            c.on_ground = False
-        c.vx *= 0.88 ** (dt * self.cfg.fps)
+        if not sliding:
+            if action == LEFT:
+                c.vx -= self.cfg.move_accel * sand_factor * dt
+            elif action == RIGHT:
+                c.vx += self.cfg.move_accel * sand_factor * dt
+            elif action == JUMP and c.on_ground:
+                c.vy = -self.cfg.jump_speed
+                c.on_ground = False
+            c.vx *= 0.88 ** (dt * self.cfg.fps)
         c.vx = float(np.clip(c.vx, -self.cfg.max_speed * 2, self.cfg.max_speed * 2))
+        if sand_factor < 1.0:
+            c.vx = float(np.clip(c.vx,
+                                 -self.cfg.max_speed * sand_factor,
+                                 self.cfg.max_speed * sand_factor))
         c.vy += self.cfg.gravity * dt
         old_bottom = c.y
         c.x += c.vx * dt
@@ -213,6 +316,9 @@ class ArenaEngine:
             # Death costs 10 in-game coins, never allowing a negative balance.
             c.coins = max(0, c.coins - 10)
             c.vx = c.vy = 0.0
+            c.slide_timer = 0.0
+            c.slide_vx = 0.0
+            c.ice_cooldown = 0.0
 
     def step(self, actions, dt):
         self.sim_time += dt
@@ -223,6 +329,7 @@ class ArenaEngine:
                 dx, dy = self.platform_deltas[coin.platform_index]
                 coin.x += dx
                 coin.y += dy
+        self._advance_hazards(dt)
         before_deaths = [c.deaths for c in self.characters]
         # Saldo antes dos empurrões: o delta isola a transferência de moedas
         # (a morte também mexe no saldo, mas acontece depois).
