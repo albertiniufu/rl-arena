@@ -196,3 +196,44 @@ def test_hazard_channels_and_env_shapes():
     obs, _ = multi.reset(seed=3)
     assert obs.shape == (2, 8, 20, 32)  # 6 base + areia + gelo
     multi.close()
+
+
+def test_sand_effect_persists_after_leaving():
+    engine = _engine(2)
+    engine.hazards = [Hazard("sand", 350.0, 354.0, 120.0, 6.0, 1, 10.0)]
+    c = engine.characters[0]
+    c.x, c.y = 400.0, 360.0
+    c.vx = c.vy = 0.0
+    c.on_ground = True
+    c.platform_index = 1
+    engine.step([0], 1.0 / engine.cfg.fps)  # pisa na areia
+    assert c.sand_timer > engine.cfg.sand_duration - 0.1
+
+    engine.hazards = []  # sai da areia
+    dt = 1.0 / engine.cfg.fps
+    elapsed = 0.0
+    for _ in range(30):
+        engine.step([2], dt)  # RIGHT
+        elapsed += dt
+    assert c.sand_timer > engine.cfg.sand_duration - 1.2
+
+    free = _engine(2)
+    free.hazards = []
+    c_free = free.characters[0]
+    c_free.x, c_free.y = 400.0, 360.0
+    c_free.vx = c_free.vy = 0.0
+    c_free.on_ground = True
+    c_free.platform_index = 1
+    for _ in range(30):
+        free.step([2], 1.0 / free.cfg.fps)
+    assert abs(c.vx) <= free.cfg.max_speed * free.cfg.sand_speed_factor + 1e-6
+    assert abs(c.vx) < abs(c_free.vx)
+
+    # O efeito dura os 5s completos mesmo fora do patch e só então termina.
+    while c.sand_timer > 0.0:
+        engine.step([0], dt)
+        elapsed += dt
+    assert abs(elapsed - engine.cfg.sand_duration) < 2 * dt
+    for _ in range(30):
+        engine.step([2], dt)  # RIGHT
+    assert abs(c.vx) > engine.cfg.max_speed * engine.cfg.sand_speed_factor + 1e-6

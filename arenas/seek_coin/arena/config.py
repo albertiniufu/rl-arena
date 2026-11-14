@@ -48,6 +48,7 @@ class ArenaConfig:
     hazard_min_seconds: float = 3.0
     hazard_max_seconds: float = 6.0
     sand_speed_factor: float = 0.3
+    sand_duration: float = 5.0
     ice_slide_fraction: float = 0.2  # 1/5 da largura da tela
     ice_slide_seconds: float = 0.6
     ice_cooldown: float = 1.0

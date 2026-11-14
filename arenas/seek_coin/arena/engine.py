@@ -21,6 +21,7 @@ class Character:
     slide_timer: float = 0.0
     slide_vx: float = 0.0
     ice_cooldown: float = 0.0
+    sand_timer: float = 0.0
 
 @dataclass
 class Coin:
@@ -250,6 +251,7 @@ class ArenaEngine:
                 c.slide_timer = 0.0
                 c.slide_vx = 0.0
                 c.ice_cooldown = 0.0
+                c.sand_timer = 0.0
                 c.alive = True
                 c.on_ground = True
                 c.platform_index = index
@@ -276,8 +278,13 @@ class ArenaEngine:
                                   + self.cfg.ice_cooldown)
                 c.vx = c.slide_vx
                 sliding = True
+        # Areia: ao tocar, o efeito dura cfg.sand_duration mesmo depois
+        # de sair do patch; tocá-la de novo renova o timer.
+        c.sand_timer = max(0.0, c.sand_timer - dt)
+        if self._hazard_under(c, "sand") is not None:
+            c.sand_timer = self.cfg.sand_duration
         sand_factor = (self.cfg.sand_speed_factor
-                       if self._hazard_under(c, "sand") is not None else 1.0)
+                       if c.sand_timer > 0.0 else 1.0)
         # Ações: LEFT/RIGHT andam, JUMP pula; empurrões são resolvidos no step.
         if not sliding:
             if action == LEFT:
@@ -319,6 +326,7 @@ class ArenaEngine:
             c.slide_timer = 0.0
             c.slide_vx = 0.0
             c.ice_cooldown = 0.0
+            c.sand_timer = 0.0
 
     def step(self, actions, dt):
         self.sim_time += dt
