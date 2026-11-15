@@ -7,9 +7,9 @@ próximo ao diretório de trabalho.
 ## Estrutura
 
 - `arenas/algs/` — algoritmos compartilhados: `alg_dqn`,
-  `alg_doubledqn_per_dueling`, `alg_ppo`, `alg_eppo`, `alg_a2c`,
-  `alg_ppo_continuous`, `alg_ippo`, `alg_mappo`, `alg_happo` e `alg_registry`
-  (descoberta, checkpoints,
+  `alg_doubledqn_per_dueling`, `alg_ppo`, `alg_eppo`, `alg_ppo_aes`, `alg_gtr`,
+  `alg_a2c`, `alg_ppo_continuous`, `alg_ippo`, `alg_mappo`, `alg_happo` e
+  `alg_registry` (descoberta, checkpoints,
   `CheckpointPolicy`). Os modelos aceitam imagem `(C,H,W)` ou vetor `(N,)`.
 - `arenas/common/` — `agent_factory`, `trainer` (single-agent), `evaluator` e
   `checkpoint` (reconstrução a partir do checkpoint).
