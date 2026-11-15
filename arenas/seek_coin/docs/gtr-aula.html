@@ -1,0 +1,345 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>GTR no rl-arena</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,600;12..96,700&family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
+<link rel="stylesheet" href="aula.css">
+</head>
+<body>
+<div class="app">
+  <div class="progress" aria-hidden="true"><span id="progress-fill"></span></div>
+  <header class="topbar">
+    <div class="brand">
+      <span class="dot"></span>
+      <span><b>GTR</b> // rl-arena</span>
+      <span class="sec-label" id="sec-label">abertura</span>
+    </div>
+    <div class="top-actions">
+      <button class="tb" id="btn-prev" type="button">←</button>
+      <button class="tb" id="btn-next" type="button">→</button>
+      <span class="counter" id="counter">01 / 10</span>
+    </div>
+  </header>
+  <main class="stage" id="stage">
+
+    <section class="slide" id="slide-1" data-section="abertura" data-title="GTR no rl-arena">
+      <div class="slide-inner">
+        <div class="cover-wrap">
+          <div class="cover-copy">
+            <div class="eyebrow">aula · aprendizado por reforço</div>
+            <h1 class="display">GTR no<br><span class="thin">rl-arena</span></h1>
+            <p class="lede">Gaussian-Reshaped Trust Region: uma região de confiança limitada e não monotônica que segura perto da política antiga, mas libera quando o update insiste em mudar.</p>
+            <div class="chips">
+              <span class="chip green">on-policy</span>
+              <span class="chip">penalidade gaussiana</span>
+              <span class="chip">K = 4 âncoras</span>
+              <span class="chip">η = |Â|/ε</span>
+            </div>
+            <div class="cover-foot">
+              <span class="mono">algs/alg_gtr/</span>
+              <span>Use <kbd>→</kbd> para começar</span>
+            </div>
+            <div class="cover-refs">
+              <div class="ref"><span class="ref-tag">paper</span>
+                <a href="https://arxiv.org/abs/2606.03382" target="_blank" rel="noopener">Liu et al., “Local Guidance, Global Impact: Gaussian-Reshaped Trust Region Unlocks Behavior Transitions” (2026) <span class="src">arXiv:2606.03382</span></a>
+              </div>
+              <div class="ref"><span class="ref-tag">notas</span>
+                <a href="https://en.papernotes.org/NeurIPS2026/robotics/local_guidance_global_impact_gaussian_reshaped_trust_region_unlocks_behavio/" target="_blank" rel="noopener">Resumo técnico com as equações do paper</a>
+              </div>
+            </div>
+          </div>
+          <div class="cover-art" aria-hidden="true">
+            <div class="mini-map">
+              <span class="platform" style="left:0;top:82%;width:100%"></span>
+              <span class="platform" style="left:8%;top:62%;width:27%"></span>
+              <span class="platform" style="left:56%;top:47%;width:31%"></span>
+              <span class="unit player" style="left:38%;top:56%"></span>
+              <span class="unit coin" style="left:58%;top:42%"></span>
+            </div>
+            <span class="mini-caption">perto: estável<br>longe: liberado</span>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="slide" id="slide-2" data-section="estrutura" data-title="Três arquivos">
+      <div class="slide-inner">
+        <div>
+          <div class="eyebrow">estrutura · contrato de agente</div>
+          <h2 class="title">PPO + uma penalidade de confiança</h2>
+        </div>
+        <p class="lede">O GTR não substitui o PPO: soma um termo à perda. A rede, o buffer e o GAE são os do PPO; o novo é a penalidade gaussiana misturada entre épocas.</p>
+        <div class="grid-3">
+          <div class="card file-card">
+            <div class="file-top"><span class="file-name">model.py</span><span class="file-lines">27 linhas</span></div>
+            <p class="role"><b>Rede do PPO.</b> Ator categórico + crítico escalar, sem nenhuma mudança de arquitetura.</p>
+            <span class="symbol">ActorCriticNetwork</span>
+          </div>
+          <div class="card file-card">
+            <div class="file-top"><span class="file-name">rollout_buffer.py</span><span class="file-lines">50 linhas</span></div>
+            <p class="role"><b>Fila on-policy.</b> Como o PPO: ordem, marca de episódio, sem amostragem.</p>
+            <span class="symbol">add · mark_episode_end</span>
+          </div>
+          <div class="card file-card">
+            <div class="file-top"><span class="file-name">agent.py</span><span class="file-lines">232 linhas</span></div>
+            <p class="role"><b>O algoritmo.</b> Âncoras por época, penalidade gaussiana, η adaptativo e o surrogate recortado.</p>
+            <span class="symbol">GTRAgent · gaussian_penalty</span>
+          </div>
+        </div>
+        <div class="split">
+          <div class="stack">
+            <pre class="code"><span class="k">class</span> <span class="hl">GTRAgent</span>:
+    algorithm = <span class="s">"gtr"</span>
+    arch_version = <span class="s">"alg-gtr-v1"</span>
+    on_policy = <span class="k">True</span>
+    anchor_count = <span class="n">4</span>   <span class="c"># K do mixture anchor</span></pre>
+          </div>
+          <div class="stack">
+            <div class="note"><span class="mark">→</span><span><b>Plug-and-play.</b> O paper descreve o GTR como um módulo para PPO, arquitetura-agnóstico. Aqui ele entra no PPO categórico do repo sem tocar na rede.</span></div>
+            <div class="note warn"><span class="mark">!</span><span><b>K é escolha nossa.</b> O paper deixa K simbólico e o repositório oficial está anonimizado; o default 4 espelha o número de épocas do PPO do repo. Está documentado como reconstrução.</span></div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="slide" id="slide-3" data-section="fundamentos" data-title="Por que não KL">
+      <div class="slide-inner">
+        <div>
+          <div class="eyebrow">fundamentos · a crítica do paper</div>
+          <h2 class="title">O problema de uma penalidade monotônica</h2>
+        </div>
+        <p class="lede">Regularizadores por divergência (KL, χ²) crescem quanto mais a política se afasta da referência. Isso segura o início do update, mas também impede mudanças grandes quando o ambiente exige uma transição de comportamento.</p>
+        <div class="grid-2">
+          <div class="card">
+            <h3>KL / χ²</h3>
+            <p>Penalidade monotônica: quanto maior o desvio, maior o custo. O gradiente cresce sempre na direção de voltar. Bom para estabilidade local, ruim para escapar de um modo estagnado.</p>
+          </div>
+          <div class="card">
+            <h3>Gaussiana</h3>
+            <p>Penalidade limitada e não monotônica no gradiente: forte perto de r=1, fraca para r→0 e para r grande. O update pode “insistir” e atravessar uma transição de comportamento.</p>
+          </div>
+        </div>
+        <div class="note"><span class="mark">→</span><span><b>A troca.</b> O GTR preserva a estabilidade local do trust region e adiciona uma porta de saída: quando o sinal de vantagem é forte e persistente, a política não fica presa ao recorte do PPO.</span></div>
+      </div>
+    </section>
+
+    <section class="slide" id="slide-4" data-section="fundamentos" data-title="A penalidade gaussiana">
+      <div class="slide-inner">
+        <div>
+          <div class="eyebrow">fundamentos · o kernel</div>
+          <h2 class="title">A forma gaussiana</h2>
+        </div>
+        <p class="lede">Para a razão <span class="mono">r = πθ(a|s)/π_ref(a|s)</span>, o GTR usa a antiderivada de um kernel gaussiano centrado em r=1. O valor é limitado por ½; o gradiente se anula nos extremos.</p>
+        <div class="formula-wrap"><div class="formula">λ<sub>G</sub>(r) = r(r−1)·e<sup>−(r−1)²</sup>&nbsp;&nbsp;&nbsp;&nbsp;<span class="dim">derivada da penalidade</span><br>L<sub>G</sub>(r) = ½·(1 − e<sup>−(r−1)²</sup>)&nbsp;&nbsp;&nbsp;&nbsp;<span class="dim">0 ≤ L<sub>G</sub> &lt; ½</span></div></div>
+        <div class="split">
+          <div class="stack">
+            <div class="table-wrap">
+              <table>
+                <thead><tr><th>r</th><th>L<sub>G</sub>(r)</th><th>λ<sub>G</sub>(r)</th></tr></thead>
+                <tbody>
+                  <tr><td class="mono">0</td><td class="mono">0,316</td><td class="mono">0</td></tr>
+                  <tr><td class="mono">1</td><td class="mono">0</td><td class="mono">0</td></tr>
+                  <tr><td class="mono">1,2</td><td class="mono">0,0198</td><td class="mono">0,231</td></tr>
+                  <tr><td class="mono">2</td><td class="mono">0,316</td><td class="mono">0,368</td></tr>
+                  <tr><td class="mono">3</td><td class="mono">0,491</td><td class="mono">0,0005</td></tr>
+                  <tr><td class="mono">→∞</td><td class="mono">0,5</td><td class="mono">0</td></tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+          <div class="stack">
+            <div class="note"><span class="mark">1±ε</span><span><b>Trust region local.</b> Perto de r=1, λ<sub>G</sub>(r)/r ≈ ±ε: o comportamento de primeira ordem é o de uma região de confiança.</span></div>
+            <div class="note warn"><span class="mark">0</span><span><b>Esquecimento.</b> Para r→0 (a política deixou de escolher a ação), o gradiente tende a zero: a penalidade não puxa de volta.</span></div>
+            <div class="note loss"><span class="mark">∞</span><span><b>Liberação.</b> Para r grande, a exponencial mata o gradiente: o update pode insistir na mudança de modo.</span></div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="slide" id="slide-5" data-section="âncoras" data-title="Mixture Gaussian Anchor">
+      <div class="slide-inner">
+        <div>
+          <div class="eyebrow">âncoras · mistura de referências</div>
+          <h2 class="title">Mais de uma referência, com peso de importância</h2>
+        </div>
+        <p class="lede">Usar só a política de comportamento μ fica obsoleto depois de várias épocas. O mixture anchor agrega K políticas recentes, cada uma pesada por <span class="mono">π_i/μ</span>.</p>
+        <div class="formula-wrap"><div class="formula">L<sub>Mix</sub> = (1/K) Σ<sub>i=1</sub><sup>K</sup> [ π<sub>i</sub>(a|s)/μ(a|s) · ½(1 − e<sup>−(πθ/π<sub>i</sub> − 1)²</sup>) ]<br><span class="dim">π<sub>1</sub> = μ; π<sub>i</sub> = política no início da época i</span></div></div>
+        <div class="split">
+          <div class="stack">
+            <div class="code-label">algs/alg_gtr/agent.py</div>
+            <pre class="code"><span class="k">def</span> <span class="hl">gaussian_penalty</span>(current_log_probs, anchor_log_probs,
+                     behavior_log_probs, log_clamp=<span class="n">20.0</span>):
+    total = torch.zeros_like(current_log_probs)
+    <span class="k">for</span> anchor <span class="k">in</span> anchor_log_probs:
+        r_anchor = torch.exp(
+            (anchor - behavior_log_probs).clamp(-log_clamp, log_clamp))
+        r_current = torch.exp(
+            (current_log_probs - anchor).clamp(-log_clamp, log_clamp))
+        total += r_anchor * <span class="n">0.5</span> * (
+            <span class="n">1.0</span> - torch.exp(-(r_current - <span class="n">1.0</span>) ** <span class="n">2</span>))
+    <span class="k">return</span> total / len(anchor_log_probs)</pre>
+          </div>
+          <div class="stack">
+            <div class="note"><span class="mark">K</span><span><b>Por que várias?</b> A referência única envelhece; agregar as políticas recentes reduz a variância do termo de confiança sob alto reuso de dados.</span></div>
+            <div class="note warn"><span class="mark">!</span><span><b>O que é guardado.</b> Só os log-probs das ações amostradas em cada início de época — vetores de tamanho do rollout, não K cópias da rede.</span></div>
+            <div class="note loss"><span class="mark">−</span><span><b>Clamp logarítmico.</b> As razões são calculadas em log e recortadas em ±20 antes do exp. É uma proteção numérica nossa, não está no paper.</span></div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="slide" id="slide-6" data-section="perda" data-title="A perda GTR">
+      <div class="slide-inner">
+        <div>
+          <div class="eyebrow">perda · η adaptativo</div>
+          <h2 class="title">A perda completa</h2>
+        </div>
+        <p class="lede">O surrogate recortado do PPO continua; a penalidade entra com um coeficiente por amostra proporcional ao módulo da vantagem. Updates com vantagem forte pagam mais confiança local.</p>
+        <div class="formula-wrap"><div class="formula">L<sub>GTR</sub> = E[ −min(r·Â, clip(r,1−ε,1+ε)·Â) + <span class="amber">η·L<sub>Mix</sub></span> ]<br>η = |Â| / ε&nbsp;&nbsp;&nbsp;&nbsp;<span class="dim">ε = 0,2</span></div></div>
+        <div class="split">
+          <div class="stack">
+            <pre class="code">policy_loss = -torch.min(unclipped, clipped).mean()
+mix = gaussian_penalty(
+    log_probs, [anchor[idx] <span class="k">for</span> anchor <span class="k">in</span> anchors],
+    old_log_probs[idx])
+eta = adv.abs().detach() / self.clip
+gtr_loss = (eta * mix).mean()
+value_loss = mse_loss(values, returns[idx])
+loss = (policy_loss + gtr_loss
+        + value_coef * value_loss - entropy_coef * entropy)</pre>
+          </div>
+          <div class="stack">
+            <div class="note"><span class="mark">η</span><span><b>Por amostra.</b> Não é um escalar do lote: cada transição tem o seu η, calculado com a vantagem normalizada daquela amostra.</span></div>
+            <div class="note warn"><span class="mark">!</span><span><b>O resto é PPO.</b> MSE do crítico, entropia 0,01 e grad clip 10 são os defaults do PPO do repo, não os do paper (que usa grad clip 0,5 no setup de controle).</span></div>
+            <div class="note loss"><span class="mark">−</span><span><b>Gradiente da penalidade.</b> Vem do autograd da forma fechada; não há um termo separado no ator. A mistura é uma perda, não um filtro de ações.</span></div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="slide" id="slide-7" data-section="implementação" data-title="Âncoras na prática">
+      <div class="slide-inner">
+        <div>
+          <div class="eyebrow">implementação · o loop de épocas</div>
+          <h2 class="title">Como as âncoras são coletadas</h2>
+        </div>
+        <ol class="list">
+          <li><span class="bullet"></span><span><b>Antes da época 0:</b> <span class="mono">anchors = [old_log_probs]</span> — π₁ = μ, a política de comportamento.</span></li>
+          <li><span class="bullet blue"></span><span><b>No início de cada época &gt; 0:</b> um forward <span class="mono">no_grad</span> sobre o rollout inteiro produz os log-probs da política naquele instante; ele vira a próxima âncora.</span></li>
+          <li><span class="bullet amber"></span><span><b>Limite K:</b> <span class="mono">if len(anchors) &gt; anchor_count: anchors.pop(0)</span>. Com 4 épocas e K=4, todas ficam.</span></li>
+          <li><span class="bullet red"></span><span><b>Dentro dos minibatches:</b> cada âncora é indexada pelo mesmo <span class="mono">idx</span> das amostras, alinhada à ação tomada.</span></li>
+        </ol>
+        <div class="split">
+          <div class="stack">
+            <pre class="code">anchors = [old_log_probs.detach()]
+<span class="k">for</span> epoch <span class="k">in</span> range(self.epochs):
+    <span class="k">if</span> epoch &gt; <span class="n">0</span>:
+        anchors.append(self._action_log_probs(s, a))
+        <span class="k">if</span> len(anchors) &gt; self.anchor_count:
+            anchors.pop(<span class="n">0</span>)
+    ...
+    mix = gaussian_penalty(log_probs,
+                           [anchor[idx] <span class="k">for</span> anchor <span class="k">in</span> anchors],
+                           old_log_probs[idx])</pre>
+          </div>
+          <div class="stack">
+            <div class="note"><span class="mark">!</span><span><b>Por que não guardar redes?</b> A penalidade só precisa da probabilidade da ação amostrada sob cada âncora. Um vetor por época basta e mantém o custo de memória em O(K·T).</span></div>
+            <div class="note warn"><span class="mark">→</span><span><b>π₁ é μ mesmo com <span class="mono">--overlap</span>.</b> Se o coletor gravou log-probs defasados, <span class="mono">old_log_probs</span> vem do buffer e representa a política de comportamento correta.</span></div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="slide" id="slide-8" data-section="hiperparâmetros" data-title="Hiperparâmetros">
+      <div class="slide-inner">
+        <div>
+          <div class="eyebrow">hiperparâmetros · defaults</div>
+          <h2 class="title">Hiperparâmetros</h2>
+        </div>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>Parâmetro</th><th>Default</th><th>Onde</th><th>Efeito</th></tr></thead>
+            <tbody>
+              <tr><td class="mono">anchor_count (K)</td><td class="mono">4</td><td class="mono">agent.py</td><td>Referências no mixture anchor.</td></tr>
+              <tr><td class="mono">epsilon (ε)</td><td class="mono">0,2</td><td class="mono">agent.py</td><td>Recorte do PPO e denominador de η.</td></tr>
+              <tr><td class="mono">lr</td><td class="mono">3e-4</td><td class="mono">agent.py</td><td>Adam; <span class="mono">--lr</span> sobrescreve.</td></tr>
+              <tr><td class="mono">rollout_steps</td><td class="mono">1024</td><td class="mono">agent.py</td><td>Horizonte de coleta.</td></tr>
+              <tr><td class="mono">epochs</td><td class="mono">4</td><td class="mono">agent.py</td><td>Épocas de minibatches.</td></tr>
+              <tr><td class="mono">gae_lambda</td><td class="mono">0,95</td><td class="mono">agent.py</td><td>GAE.</td></tr>
+              <tr><td class="mono">value_coef</td><td class="mono">0,5</td><td class="mono">agent.py</td><td>Perda do crítico.</td></tr>
+              <tr><td class="mono">entropy_coef</td><td class="mono">0,01</td><td class="mono">agent.py</td><td>Exploração por entropia.</td></tr>
+              <tr><td class="mono">max_grad_norm</td><td class="mono">10,0</td><td class="mono">agent.py</td><td>Clip do gradiente.</td></tr>
+              <tr><td class="mono">log_clamp</td><td class="mono">±20</td><td class="mono">agent.py</td><td>Estabilidade das razões.</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <div class="note"><span class="mark">→</span><span><b>Setup do paper.</b> lr 3e-4, γ=0,99, λ=0,95 e ε=0,2 coincidem com os defaults do agente; o paper não fixa K nem um coeficiente global extra.</span></div>
+      </div>
+    </section>
+
+    <section class="slide" id="slide-9" data-section="fidelidade" data-title="Fidelidade e limites">
+      <div class="slide-inner">
+        <div>
+          <div class="eyebrow">fidelidade · o que é reconstrução</div>
+          <h2 class="title">Fidelidade e limites do port</h2>
+        </div>
+        <div class="grid-2">
+          <div class="card">
+            <h3>Fiel ao paper</h3>
+            <p>Penalidade <span class="mono">½(1−e^{−(r−1)²})</span>; mixture anchor <span class="mono">(1/K)Σ π_i/μ·penalidade</span>; η = |Â|/ε; surrogate recortado do PPO; K políticas de época com π₁=μ.</p>
+          </div>
+          <div class="card">
+            <h3>Reconstrução</h3>
+            <p>O paper não dá K numérico nem detalha como armazenar as âncoras. O repositório oficial está anonimizado e não foi possível inspecionar o código. K=4 e o armazenamento por log-probs são escolhas deste port.</p>
+          </div>
+        </div>
+        <div class="split">
+          <div class="stack">
+            <div class="note warn"><span class="mark">!</span><span><b>Sem verificação cruzada.</b> Diferente do AES (cujo CleanRL oficial foi lido), o GTR foi implementado a partir das equações e notas do paper. Trate os defaults como ponto de partida, não como réplica oficial.</span></div>
+            <div class="note loss"><span class="mark">−</span><span><b>O que não está aqui.</b> O paper avalia LLM post-training com GRPO; este port cobre só o caso de controle com PPO categórico.</span></div>
+          </div>
+          <div class="stack">
+            <div class="spec"><span class="num">8</span><span class="unit">testes em test_gtr.py</span></div>
+            <div class="note"><span class="mark">→</span><span><b>Cobertura.</b> Valores e limites da penalidade, gradiente finito nos extremos, média ponderada das âncoras, update do agente e round-trip de checkpoint.</span></div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="slide" id="slide-10" data-section="prática" data-title="Rodando e a fila">
+      <div class="slide-inner">
+        <div>
+          <div class="eyebrow">prática · comandos e fila</div>
+          <h2 class="title">Rodando e a fila</h2>
+        </div>
+        <div class="split">
+          <div class="stack">
+            <pre class="code"><span class="c"># GTR no nível 2</span>
+python train.py --arena seek_coin --level 2 \
+    --alg gtr --opponent rule --episodes 1000000 \
+    --lr 3e-4 --batch-size 256 \
+    --frame-stack 4 --frame-skip 3 --seed 7 \
+    --checkpoint-dir checkpoints/overnight_l2/gtr \
+    --tensorboard --run-name overnight_l2_gtr --stats
+
+python evaluate.py --arena seek_coin \
+    --checkpoint checkpoints/overnight_l2/gtr/best.pt</pre>
+          </div>
+          <div class="stack">
+            <div class="note"><span class="mark">→</span><span><b>Fila.</b> Roda depois do <b>ppo_aes</b>, no script <span class="mono">train_aes_gtr_level2_queue.sh</span>: 5h25 cada. Log em <span class="mono">logs/overnight_l2/gtr.log</span>.</span></div>
+            <div class="note warn"><span class="mark">!</span><span><b>O que monitorar.</b> <span class="mono">last_penalty</span> (atributo do agente) mostra a magnitude da penalidade no último minibatch. Se ela dominar a perda, reduza K ou reavalie η.</span></div>
+            <div class="note loss"><span class="mark">−</span><span><b>Retomada.</b> Pesos, Adam e contadores são restaurados; âncoras, buffer e RNG não. O GTR não guarda estado extra no checkpoint.</span></div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+  </main>
+</div>
+<script src="aula.js"></script>
+</body>
+</html>

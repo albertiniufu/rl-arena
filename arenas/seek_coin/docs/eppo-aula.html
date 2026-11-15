@@ -1,0 +1,330 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>EPPO no rl-arena</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,600;12..96,700&family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
+<link rel="stylesheet" href="aula.css">
+</head>
+<body>
+<div class="app">
+  <div class="progress" aria-hidden="true"><span id="progress-fill"></span></div>
+  <header class="topbar">
+    <div class="brand">
+      <span class="dot"></span>
+      <span><b>EPPO</b> // rl-arena</span>
+      <span class="sec-label" id="sec-label">abertura</span>
+    </div>
+    <div class="top-actions">
+      <button class="tb" id="btn-prev" type="button">←</button>
+      <button class="tb" id="btn-next" type="button">→</button>
+      <span class="counter" id="counter">01 / 10</span>
+    </div>
+  </header>
+  <main class="stage" id="stage">
+
+    <section class="slide" id="slide-1" data-section="abertura" data-title="EPPO no rl-arena">
+      <div class="slide-inner">
+        <div class="cover-wrap">
+          <div class="cover-copy">
+            <div class="eyebrow">aula · aprendizado por reforço</div>
+            <h1 class="display">EPPO no<br><span class="thin">rl-arena</span></h1>
+            <p class="lede">PPO com crítico evidencial: uma Normal-Inverse-Gamma estima o valor <i>e</i> a incerteza dele. A incerteza entra no GAE e vira exploração dirigida na vantagem.</p>
+            <div class="chips">
+              <span class="chip green">on-policy</span>
+              <span class="chip">crítico NIG</span>
+              <span class="chip">variante cor</span>
+              <span class="chip">κ = 0,01</span>
+              <span class="chip">ξ = 0,01</span>
+            </div>
+            <div class="cover-foot">
+              <span class="mono">algs/alg_eppo/</span>
+              <span>Use <kbd>→</kbd> para começar</span>
+            </div>
+            <div class="cover-refs">
+              <div class="ref"><span class="ref-tag">paper</span>
+                <a href="https://arxiv.org/abs/2503.01468" target="_blank" rel="noopener">Akgül, Baykal, Haußmann e Kandemir, “Overcoming Non-stationary Dynamics with Evidential PPO” (TMLR 2025) <span class="src">arXiv:2503.01468</span></a>
+              </div>
+              <div class="ref"><span class="ref-tag">código</span>
+                <span class="mono">arenas/algs/alg_eppo/{agent,model,rollout_buffer}.py</span>
+              </div>
+            </div>
+          </div>
+          <div class="cover-art" aria-hidden="true">
+            <div class="mini-map">
+              <span class="platform" style="left:0;top:82%;width:100%"></span>
+              <span class="platform" style="left:8%;top:62%;width:27%"></span>
+              <span class="platform" style="left:56%;top:47%;width:31%"></span>
+              <span class="unit player" style="left:38%;top:56%"></span>
+              <span class="unit coin" style="left:58%;top:42%"></span>
+              <span class="unit coin" style="left:22%;top:57%"></span>
+            </div>
+            <span class="mini-caption">nível 2: areia e gelo<br>mudam a dinâmica no meio do episódio</span>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="slide" id="slide-2" data-section="estrutura" data-title="Três arquivos">
+      <div class="slide-inner">
+        <div>
+          <div class="eyebrow">estrutura · contrato de agente</div>
+          <h2 class="title">Um PPO com outra cabeça de crítico</h2>
+        </div>
+        <p class="lede">O EPPO herda o contrato do PPO: mesmo ator categórico, mesmo buffer on-policy, mesmo checkpoint. O que muda é o crítico (quatro números em vez de um), o GAE (variância) e a vantagem (UCB).</p>
+        <div class="grid-3">
+          <div class="card file-card">
+            <div class="file-top"><span class="file-name">model.py</span><span class="file-lines">74 linhas</span></div>
+            <p class="role"><b>Crítico NIG.</b> Encoder compartilhado + ator categórico + cabeça de 4 saídas (<span class="mono">ω, log ν, log(α−1), log β</span>).</p>
+            <span class="symbol">EvidentialActorCriticNetwork</span>
+          </div>
+          <div class="card file-card">
+            <div class="file-top"><span class="file-name">rollout_buffer.py</span><span class="file-lines">67 linhas</span></div>
+            <p class="role"><b>Fila on-policy.</b> Igual ao PPO: ordem de coleta, marca de episódio, sem amostragem.</p>
+            <span class="symbol">add · mark_episode_end · as_arrays</span>
+          </div>
+          <div class="card file-card">
+            <div class="file-top"><span class="file-name">agent.py</span><span class="file-lines">286 linhas</span></div>
+            <p class="role"><b>O algoritmo.</b> GAE com variância, NLL evidencial, vantagem UCB e surrogate recortado.</p>
+            <span class="symbol">EPPOAgent · compute_gae_with_uncertainty</span>
+          </div>
+        </div>
+        <div class="split">
+          <div class="stack">
+            <pre class="code"><span class="k">class</span> <span class="hl">EPPOAgent</span>:
+    algorithm = <span class="s">"eppo"</span>
+    arch_version = <span class="s">"alg-eppo-v1"</span>
+    on_policy = <span class="k">True</span>
+    target = online      <span class="c"># sem rede-alvo</span>
+    epsilon = <span class="n">0.0</span></pre>
+          </div>
+          <div class="stack">
+            <div class="note"><span class="mark">→</span><span><b>Descoberta automática.</b> <span class="mono">--alg eppo</span> importa <span class="mono">algs.alg_eppo</span>; <span class="mono">evaluate.py</span>/<span class="mono">play.py</span> reconstroem o agente pelo campo <span class="mono">algorithm</span> do checkpoint.</span></div>
+            <div class="note warn"><span class="mark">!</span><span><b>Adaptação.</b> O paper usa ator e crítico MLPs separados para controle contínuo. Aqui o encoder é compartilhado e o ator é categórico, como no resto do repo.</span></div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="slide" id="slide-3" data-section="crítico" data-title="O crítico NIG">
+      <div class="slide-inner">
+        <div>
+          <div class="eyebrow">crítico · Normal-Inverse-Gamma</div>
+          <h2 class="title">Quatro números em vez de um</h2>
+        </div>
+        <p class="lede">Em vez de <span class="mono">V(s)</span> escalar, o crítico prevê a distribuição do valor: uma NIG com localização <span class="mono">ω</span>, contagem <span class="mono">ν</span>, forma <span class="mono">α</span> e escala <span class="mono">β</span>.</p>
+        <div class="formula-wrap"><div class="formula">(μ, σ²) | m ~ NIG(ω, ν, α, β)&nbsp;&nbsp;&nbsp;&nbsp;V | μ, σ² ~ N(μ, σ²)<br>E[V | m] = ω&nbsp;&nbsp;&nbsp;&nbsp;Var[V | m] = <span class="blue">β/(α−1)</span> + <span class="amber">β/[ν(α−1)]</span><br><span class="dim">azul = incerteza aleatória (ruído do retorno); âmbar = epistêmica (ignorância sobre μ)</span></div></div>
+        <div class="split">
+          <div class="stack">
+            <div class="code-label">algs/alg_eppo/model.py — a parametrização</div>
+            <pre class="code"><span class="k">def</span> <span class="hl">evidential_parameters</span>(raw):
+    omega = raw[..., <span class="n">0</span>]                         <span class="c"># livre</span>
+    nu = raw[..., <span class="n">1</span>].clamp(<span class="n">-10</span>, <span class="n">10</span>).exp().clamp(min=<span class="n">1e-6</span>)
+    alpha_minus_one = raw[..., <span class="n">2</span>].clamp(<span class="n">-10</span>, <span class="n">10</span>) \
+        .exp().clamp(min=<span class="n">1e-3</span>)
+    beta = raw[..., <span class="n">3</span>].clamp(<span class="n">-10</span>, <span class="n">10</span>).exp().clamp(min=<span class="n">1e-6</span>)
+    <span class="k">return</span> omega, nu, alpha_minus_one + <span class="n">1.0</span>, beta</pre>
+          </div>
+          <div class="stack">
+            <div class="note"><span class="mark">α</span><span><b>α > 1 é obrigatório.</b> A média da NIG é finita só nesse caso. O <span class="mono">+1</span> depois do exp implementa a hiperprior <span class="mono">Gam(5,1)+1</span> do paper.</span></div>
+            <div class="note warn"><span class="mark">!</span><span><b>Pisos numéricos.</b> ν, α−1 e β ganham um piso pequeno para a variância não explodir quando α → 1. Os clamps em ±10 evitam <span class="mono">exp</span> estourando.</span></div>
+            <div class="note loss"><span class="mark">−</span><span><b>O que o agente usa.</b> O GAE usa <span class="mono">ω</span> como valor e <span class="mono">Var[V|m]</span> como incerteza; o update do crítico usa os quatro parâmetros na NLL.</span></div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="slide" id="slide-4" data-section="crítico" data-title="A perda evidencial">
+      <div class="slide-inner">
+        <div>
+          <div class="eyebrow">crítico · máxima verossimilhança tipo II</div>
+          <h2 class="title">A perda evidencial</h2>
+        </div>
+        <p class="lede">O crítico é treinado para explicar os retornos <span class="mono">G_t</span> com uma NIG, não com um erro quadrático. A NLL penaliza a localização errada e calibra as duas incertezas.</p>
+        <div class="formula-wrap"><div class="formula">Ω = 2β(1+ν)<br>L<sub>NLL</sub> = ½log(π/ν) − α·log Ω + (α+½)·log(ν(y−ω)² + Ω) + log Γ(α) − log Γ(α+½)<br>L<sub>EVL</sub> = L<sub>NLL</sub> − <span class="amber">ξ · log p(m)</span>&nbsp;&nbsp;&nbsp;&nbsp;<span class="dim">ξ = 0,01</span></div></div>
+        <div class="split">
+          <div class="stack">
+            <div class="code-label">algs/alg_eppo/agent.py</div>
+            <pre class="code"><span class="k">def</span> <span class="hl">evidential_nll</span>(targets, omega, nu, alpha, beta):
+    omega_scale = <span class="n">2.0</span> * beta * (<span class="n">1.0</span> + nu)
+    nll = (<span class="n">0.5</span> * math.log(math.pi) - <span class="n">0.5</span> * torch.log(nu)
+           - alpha * torch.log(omega_scale)
+           + (alpha + <span class="n">0.5</span>) * torch.log(
+               nu * (targets - omega) ** <span class="n">2</span> + omega_scale)
+           + torch.lgamma(alpha) - torch.lgamma(alpha + <span class="n">0.5</span>))
+    <span class="k">return</span> nll.mean()</pre>
+          </div>
+          <div class="stack">
+            <div class="note"><span class="mark">p(m)</span><span><b>As hiperpriors.</b> <span class="mono">ω ~ N(0,100²)</span>, <span class="mono">ν ~ Gam(5,1)</span>, <span class="mono">α−1 ~ Gam(5,1)</span> e <span class="mono">β ~ Gam(5,1)</span>. O termo <span class="mono">−ξ·log p(m)</span> puxa os parâmetros para a região das modas.</span></div>
+            <div class="note warn"><span class="mark">!</span><span><b>Sem MSE.</b> Não há <span class="mono">value_coef</span> no EPPO: a perda do crítico é a NLL regularizada. O ator continua com o surrogate recortado.</span></div>
+            <div class="note loss"><span class="mark">−</span><span><b>Por que incerteza calibrada?</b> Uma NLL correta faz <span class="mono">β</span> crescer em estados difíceis e diminuir em estados fáceis — exatamente o sinal que a vantagem UCB vai usar.</span></div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="slide" id="slide-5" data-section="gae" data-title="GAE com variância">
+      <div class="slide-inner">
+        <div>
+          <div class="eyebrow">alvo · GAE evidencial</div>
+          <h2 class="title">Propagar a incerteza junto com a vantagem</h2>
+        </div>
+        <p class="lede">A média do GAE é a de sempre, com <span class="mono">E[V]=ω</span>. A variância segue a mesma recursão exponencialmente ponderada, com duas variantes do paper.</p>
+        <div class="formula-wrap"><div class="formula">c<sub>next</sub> = ((1−λ)/λ)²&nbsp;&nbsp; c<sub>acc</sub> = (γλ)²&nbsp;&nbsp; c<sub>var</sub> = (1−λ)/(1+λ)<br>C<sub>t</sub> = c<sub>acc</sub>·(C<sub>t+1</sub>·propaga<sub>t</sub> + Var[V<sub>t+1</sub>])<br><span class="accent">cor:</span> Var[A<sub>t</sub>] = Var[V<sub>t</sub>] + c<sub>next</sub>·C<sub>t</sub>&nbsp;&nbsp;&nbsp;&nbsp;<span class="amber">ind:</span> c<sub>var</sub>·Var[V<sub>t</sub>] + c<sub>next</sub>·C<sub>t</sub></div></div>
+        <div class="split">
+          <div class="stack">
+            <pre class="code"><span class="k">for</span> t <span class="k">in</span> reversed(range(T)):
+    nonterminal = <span class="n">1.0</span> - terminated[t]
+    delta = r[t] + gamma * nonterminal * next_values[t] - values[t]
+    propagates = (<span class="n">1.0</span> - episode_ends[t]) * nonterminal
+    gae = delta + gamma * gae_lambda * propagates * gae
+    var_acc = c_acc * (propagates * var_acc + next_values_var[t])
+    advantages[t] = gae
+    variances[t] = values_var[t] + c_next * var_acc      <span class="c"># cor</span></pre>
+          </div>
+          <div class="stack">
+            <div class="note"><span class="mark">cor</span><span><b>Erros correlacionados.</b> Assume que os erros de valor se propagam juntos; é a variante padrão do agente (<span class="mono">gae_variant="cor"</span>).</span></div>
+            <div class="note warn"><span class="mark">ind</span><span><b>k-passos independentes.</b> Desconta o valor corrente por <span class="mono">(1−λ)/(1+λ)</span>; produz variâncias menores perto do início do horizonte.</span></div>
+            <div class="note loss"><span class="mark">!</span><span><b>Fronteiras.</b> A variância não atravessa o fim de episódio, mas o bootstrap do truncamento continua: <span class="mono">next_values_var[t]</span> entra mesmo no passo final.</span></div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="slide" id="slide-6" data-section="política" data-title="Vantagem UCB">
+      <div class="slide-inner">
+        <div>
+          <div class="eyebrow">política · exploração dirigida</div>
+          <h2 class="title">A vantagem otimista</h2>
+        </div>
+        <p class="lede">A política não otimiza a vantagem média: otimiza o limite superior de confiança. O bônus é proporcional ao desvio estimado da vantagem — ações onde o crítico está inseguro ganham otimismo.</p>
+        <div class="formula-wrap"><div class="formula">A<sub>UCB</sub> = E[A] + <span class="amber">κ · √Var[A]</span>&nbsp;&nbsp;&nbsp;&nbsp;κ = 0,01<br>L<sub>clip</sub> = −E[min(ρ·A<sub>UCB</sub>, clip(ρ, 1−ε, 1+ε)·A<sub>UCB</sub>)]</div></div>
+        <div class="split">
+          <div class="stack">
+            <pre class="code">advantages = mean_adv + self.ucb_radius * torch.sqrt(
+    adv_var.clamp_min(<span class="n">0.0</span>) + <span class="n">1e-12</span>)
+advantages = (advantages - advantages.mean()) / (
+    advantages.std(unbiased=<span class="k">False</span>) + <span class="n">1e-8</span>)
+...
+loss = policy_loss + critic_loss - entropy_coef * entropy</pre>
+          </div>
+          <div class="stack">
+            <div class="note"><span class="mark">→</span><span><b>Normalização depois.</b> O bônus é somado e só então a vantagem é centralizada/normalizada no rollout, como na implementação oficial. A normalização preserva o sinal relativo da incerteza.</span></div>
+            <div class="note warn"><span class="mark">!</span><span><b>κ é sensível à escala.</b> O default 0,01 vem do paper. Se as recompensas da arena mudarem de ordem de grandeza, revalide κ (a grade do paper vai até 0,25).</span></div>
+            <div class="note loss"><span class="mark">−</span><span><b>Sem entropia por padrão.</b> O EPPO confia a exploração ao UCB; <span class="mono">entropy_coef=0.0</span>. O parâmetro existe para permitir ajustes.</span></div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="slide" id="slide-7" data-section="update" data-title="O update completo">
+      <div class="slide-inner">
+        <div>
+          <div class="eyebrow">update · um rollout de 2048</div>
+          <h2 class="title">O update completo</h2>
+        </div>
+        <ol class="list">
+          <li><span class="bullet"></span><span><b>Coleta</b> 2048 transições; o buffer marca o fim de cada episódio e o train.py chama <span class="mono">learn()</span> quando enche.</span></li>
+          <li><span class="bullet blue"></span><span><b>Avalia</b> <span class="mono">s</span> e <span class="mono">s′</span> sob <span class="mono">no_grad</span>: <span class="mono">ω</span>, <span class="mono">ν</span>, <span class="mono">α</span>, <span class="mono">β</span> e as variâncias.</span></li>
+          <li><span class="bullet amber"></span><span><b>GAE</b> com média e variância em CPU (recorrência escalar); de volta ao device.</span></li>
+          <li><span class="bullet red"></span><span><b>Vantagem UCB</b>, normalização e 10 épocas de minibatches com recorte 0,2.</span></li>
+          <li><span class="bullet"></span><span><b>Perda</b> = surrogate + NLL − ξ·log p(m); grad clip 0,5; Adam; buffer limpo; <span class="mono">steps += 1</span>.</span></li>
+        </ol>
+        <div class="note"><span class="mark">→</span><span><b>Rabo do treino.</b> Se o número de episódios ou o <span class="mono">--max-hours</span> acabar antes de 2048, <span class="mono">finish_training()</span> consome o rollout parcial com o mesmo update.</span></div>
+      </div>
+    </section>
+
+    <section class="slide" id="slide-8" data-section="hiperparâmetros" data-title="Hiperparâmetros">
+      <div class="slide-inner">
+        <div>
+          <div class="eyebrow">hiperparâmetros · defaults do paper</div>
+          <h2 class="title">Hiperparâmetros</h2>
+        </div>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>Parâmetro</th><th>Default</th><th>Onde</th><th>Efeito</th></tr></thead>
+            <tbody>
+              <tr><td class="mono">lr</td><td class="mono">3e-4</td><td class="mono">agent.py</td><td>Adam; <span class="mono">--lr</span> sobrescreve.</td></tr>
+              <tr><td class="mono">rollout_steps</td><td class="mono">2048</td><td class="mono">agent.py</td><td>Horizonte de coleta (paper).</td></tr>
+              <tr><td class="mono">epochs</td><td class="mono">10</td><td class="mono">agent.py</td><td>Reuso do rollout (paper).</td></tr>
+              <tr><td class="mono">clip</td><td class="mono">0,2</td><td class="mono">agent.py</td><td>Recorte da razão.</td></tr>
+              <tr><td class="mono">gae_lambda</td><td class="mono">0,95</td><td class="mono">agent.py</td><td>Viés × variância do GAE.</td></tr>
+              <tr><td class="mono">max_grad_norm</td><td class="mono">0,5</td><td class="mono">agent.py</td><td>Clip do gradiente (paper).</td></tr>
+              <tr><td class="mono">ucb_radius (κ)</td><td class="mono">0,01</td><td class="mono">agent.py</td><td>Bônus de otimismo.</td></tr>
+              <tr><td class="mono">evidential_coef (ξ)</td><td class="mono">0,01</td><td class="mono">agent.py</td><td>Peso das hiperpriors.</td></tr>
+              <tr><td class="mono">gae_variant</td><td class="mono">"cor"</td><td class="mono">agent.py</td><td>Propagação da variância (cor/ind).</td></tr>
+              <tr><td class="mono">entropy_coef</td><td class="mono">0,0</td><td class="mono">agent.py</td><td>Sem bônus de entropia.</td></tr>
+              <tr><td class="mono">batch_size</td><td class="mono">64 (CLI)</td><td class="mono">train.py</td><td>Minibatch do update.</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <div class="note"><span class="mark">→</span><span><b>Arquitetura.</b> O crítico tem 256 unidades e 4 saídas; com 5 canais o total é 509.610 parâmetros (515.610 com frame stack 4), contra 344.743/350.743 do PPO.</span></div>
+      </div>
+    </section>
+
+    <section class="slide" id="slide-9" data-section="limitações" data-title="Fidelidade e limites">
+      <div class="slide-inner">
+        <div>
+          <div class="eyebrow">limitações · o que é adaptação</div>
+          <h2 class="title">Fidelidade ao paper e limites do port</h2>
+        </div>
+        <div class="grid-2">
+          <div class="card">
+            <h3>Fiel</h3>
+            <p>NIG com quatro parâmetros e α>1; NLL tipo II com as hiperpriors; GAE com variância nas variantes cor/ind; vantagem UCB e surrogate recortado; ξ=0,01, κ=0,01, lr 3e-4, 2048/10 épocas, grad clip 0,5.</p>
+          </div>
+          <div class="card">
+            <h3>Adaptado</h3>
+            <p>Ator categórico e encoder compartilhado (o paper usa MLPs separados para controle contínuo); o “batch” de residual é o rollout inteiro; a normalização da vantagem é feita no rollout, antes dos minibatches.</p>
+          </div>
+        </div>
+        <div class="split">
+          <div class="stack">
+            <div class="note warn"><span class="mark">!</span><span><b>Por que EPPO no nível 2?</b> Areia e gelo mudam a dinâmica dentro do episódio. A ideia do paper é justamente usar a incerteza do crítico para detectar e reagir a essas mudanças.</span></div>
+            <div class="note loss"><span class="mark">−</span><span><b>O que não foi implementado.</b> Não há reset de critic/actor entre “tarefas” (o paper avalia sequências de tarefas não estacionárias); aqui o nível 2 é uma única tarefa com hazards aleatórios.</span></div>
+          </div>
+          <div class="stack">
+            <div class="spec"><span class="num">14</span><span class="unit">testes em test_eppo.py</span></div>
+            <div class="note"><span class="mark">→</span><span><b>Cobertura.</b> Parâmetros NIG, NLL, priors, variância cor/ind com valores calculados à mão, fronteira de episódio, contrato e round-trip de checkpoint.</span></div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="slide" id="slide-10" data-section="prática" data-title="Rodando e a fila">
+      <div class="slide-inner">
+        <div>
+          <div class="eyebrow">prática · comandos e fila</div>
+          <h2 class="title">Rodando e a fila</h2>
+        </div>
+        <div class="split">
+          <div class="stack">
+            <pre class="code"><span class="c"># EPPO no nível 2</span>
+python train.py --arena seek_coin --level 2 \
+    --alg eppo --opponent rule --episodes 1000000 \
+    --lr 3e-4 --batch-size 256 \
+    --frame-stack 4 --frame-skip 3 --seed 7 \
+    --checkpoint-dir checkpoints/overnight_l2/eppo \
+    --tensorboard --run-name overnight_l2_eppo --stats
+
+<span class="c"># avaliar</span>
+python evaluate.py --arena seek_coin \
+    --checkpoint checkpoints/overnight_l2/eppo/best.pt</pre>
+          </div>
+          <div class="stack">
+            <div class="note"><span class="mark">→</span><span><b>Fila.</b> <span class="mono">train_eppo_level2_queue.sh</span> espera o bloco noturno (PPO+IPPO) terminar e treina o EPPO por 5h25 no mesmo protocolo. Log em <span class="mono">logs/overnight_l2/eppo.log</span>.</span></div>
+            <div class="note warn"><span class="mark">!</span><span><b>O que olhar.</b> No TensorBoard do EPPO acompanhe recompensa/moedas, perda total e a norma de gradiente. A incerteza média aparece em <span class="mono">last_uncertainty</span> (atributo do agente).</span></div>
+            <div class="note loss"><span class="mark">−</span><span><b>Retomada.</b> Pesos, Adam e contadores são restaurados; buffer e RNG não. O EPPO não guarda estado extra no checkpoint.</span></div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+  </main>
+</div>
+<script src="aula.js"></script>
+</body>
+</html>

@@ -1,0 +1,104 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Aulas dos algoritmos — rl-arena</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,600;12..96,700&family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
+<link rel="stylesheet" href="aula.css">
+</head>
+<body>
+<div class="app">
+  <div class="progress" aria-hidden="true"><span id="progress-fill" style="width:100%"></span></div>
+  <header class="topbar">
+    <div class="brand">
+      <span class="dot"></span>
+      <span><b>Aulas</b> // rl-arena</span>
+      <span class="sec-label" id="sec-label">índice</span>
+    </div>
+    <div class="top-actions">
+      <span class="counter" id="counter">01 / 01</span>
+    </div>
+  </header>
+  <main class="stage" id="stage">
+    <section class="slide active" id="slide-1" data-section="índice" data-title="Aulas dos algoritmos">
+      <div class="slide-inner">
+        <div>
+          <div class="eyebrow">documentação · algoritmos implementados</div>
+          <h1 class="title">Aulas dos algoritmos</h1>
+          <p class="lede">Cada página explica a matemática, a arquitetura, o código e os hiperparâmetros do que está implementado no repo — sem prometer mais do que o código faz.</p>
+        </div>
+
+        <div class="grid-3">
+          <a class="card file-card" href="dqn-aula.html" style="text-decoration:none">
+            <div class="file-top"><span class="file-name">DQN</span><span class="file-lines">off-policy</span></div>
+            <p class="role">Q-learning com replay uniforme e rede-alvo (C=1000). A base de comparação.</p>
+            <span class="symbol">alg_dqn</span>
+          </a>
+          <a class="card file-card" href="doubledqn-aula.html" style="text-decoration:none">
+            <div class="file-top"><span class="file-name">Double DQN + PER + dueling</span><span class="file-lines">off-policy</span></div>
+            <p class="role">Três correções: alvo Double, replay por rank com pesos de importância e Q = V + A.</p>
+            <span class="symbol">alg_doubledqn_per_dueling</span>
+          </a>
+          <a class="card file-card" href="mka-aula.html" style="text-decoration:none">
+            <div class="file-top"><span class="file-name">MKA</span><span class="file-lines">off-policy</span></div>
+            <p class="role">O DQN com modelo custom: CNN com GELU e encoder embutido. Experimento controlado.</p>
+            <span class="symbol">alg_mka</span>
+          </a>
+          <a class="card file-card" href="ppo-aula.html" style="text-decoration:none">
+            <div class="file-top"><span class="file-name">PPO</span><span class="file-lines">on-policy</span></div>
+            <p class="role">Surrogate recortado, GAE e política categórica; a referência on-policy do repo.</p>
+            <span class="symbol">alg_ppo</span>
+          </a>
+          <a class="card file-card" href="eppo-aula.html" style="text-decoration:none">
+            <div class="file-top"><span class="file-name">EPPO</span><span class="file-lines">on-policy</span></div>
+            <p class="role">Crítico evidencial NIG, GAE com variância e vantagem UCB. Incerteza como exploração.</p>
+            <span class="symbol">alg_eppo · arXiv:2503.01468</span>
+          </a>
+          <a class="card file-card" href="ppo_aes-aula.html" style="text-decoration:none">
+            <div class="file-top"><span class="file-name">PPO-AES</span><span class="file-lines">on-policy</span></div>
+            <p class="role">Coeficiente de entropia agendado pelo quantil 0,9 do erro de TD, com EMA e raiz quadrada.</p>
+            <span class="symbol">alg_ppo_aes · arXiv:2601.19624</span>
+          </a>
+          <a class="card file-card" href="gtr-aula.html" style="text-decoration:none">
+            <div class="file-top"><span class="file-name">GTR</span><span class="file-lines">on-policy</span></div>
+            <p class="role">Região de confiança gaussiana limitada e mistura de âncoras por época.</p>
+            <span class="symbol">alg_gtr · arXiv:2606.03382</span>
+          </a>
+          <a class="card file-card" href="a2c-aula.html" style="text-decoration:none">
+            <div class="file-top"><span class="file-name">A2C</span><span class="file-lines">on-policy</span></div>
+            <p class="role">Actor-critic com retornos n-step e um único passo de gradiente por rollout.</p>
+            <span class="symbol">alg_a2c</span>
+          </a>
+          <a class="card file-card" href="ppo_continuous-aula.html" style="text-decoration:none">
+            <div class="file-top"><span class="file-name">PPO contínuo</span><span class="file-lines">on-policy</span></div>
+            <p class="role">Política Gaussiana para ações Box; é o agente da arena economy.</p>
+            <span class="symbol">alg_ppo_continuous</span>
+          </a>
+          <a class="card file-card" href="ippo-aula.html" style="text-decoration:none">
+            <div class="file-top"><span class="file-name">IPPO</span><span class="file-lines">multiagente</span></div>
+            <p class="role">PPO independente com política compartilhada e crítico local por agente.</p>
+            <span class="symbol">alg_ippo</span>
+          </a>
+          <a class="card file-card" href="mappo-aula.html" style="text-decoration:none">
+            <div class="file-top"><span class="file-name">MAPPO</span><span class="file-lines">multiagente</span></div>
+            <p class="role">Crítico centralizado (CTDE) com ator compartilhado e execução local.</p>
+            <span class="symbol">alg_mappo</span>
+          </a>
+          <a class="card file-card" href="happo-aula.html" style="text-decoration:none">
+            <div class="file-top"><span class="file-name">HAPPO</span><span class="file-lines">multiagente</span></div>
+            <p class="role">Atores heterogêneos, crítico centralizado e update sequencial com razão acumulada.</p>
+            <span class="symbol">alg_happo</span>
+          </a>
+        </div>
+
+        <p class="caption">As aulas são páginas estáticas na pasta <span class="mono">arenas/seek_coin/docs/</span>. Use <kbd>←</kbd>/<kbd>→</kbd> para navegar entre os slides; a barra superior mostra a posição.</p>
+      </div>
+    </section>
+  </main>
+</div>
+<script src="aula.js"></script>
+</body>
+</html>

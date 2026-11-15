@@ -1,0 +1,348 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Double DQN + PER + dueling no rl-arena</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,600;12..96,700&family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
+<link rel="stylesheet" href="aula.css">
+</head>
+<body>
+<div class="app">
+  <div class="progress" aria-hidden="true"><span id="progress-fill"></span></div>
+  <header class="topbar">
+    <div class="brand">
+      <span class="dot"></span>
+      <span><b>Double DQN</b> // rl-arena</span>
+      <span class="sec-label" id="sec-label">abertura</span>
+    </div>
+    <div class="top-actions">
+      <button class="tb" id="btn-prev" type="button">←</button>
+      <button class="tb" id="btn-next" type="button">→</button>
+      <span class="counter" id="counter">01 / 10</span>
+    </div>
+  </header>
+  <main class="stage" id="stage">
+
+    <section class="slide" id="slide-1" data-section="abertura" data-title="Double DQN + PER + dueling">
+      <div class="slide-inner">
+        <div class="cover-wrap">
+          <div class="cover-copy">
+            <div class="eyebrow">aula · aprendizado por reforço</div>
+            <h1 class="display">Double DQN<br><span class="thin">+ PER + dueling</span></h1>
+            <p class="lede">Três correções cirúrgicas no DQN: um alvo menos otimista, um replay que prioriza o erro e uma rede que separa valor de vantagem.</p>
+            <div class="chips">
+              <span class="chip green">off-policy</span>
+              <span class="chip">α = 0,6</span>
+              <span class="chip">β de 0,4 → 1</span>
+              <span class="chip">Q = V + A − média(A)</span>
+            </div>
+            <div class="cover-foot">
+              <span class="mono">algs/alg_doubledqn_per_dueling/</span>
+              <span>Use <kbd>→</kbd> para começar</span>
+            </div>
+            <div class="cover-refs">
+              <div class="ref"><span class="ref-tag">paper</span>
+                <a href="https://arxiv.org/abs/1509.06461" target="_blank" rel="noopener">van Hasselt et al., “Deep Reinforcement Learning with Double Q-learning” (2016) <span class="src">arXiv:1509.06461</span></a>
+              </div>
+              <div class="ref"><span class="ref-tag">paper</span>
+                <a href="https://arxiv.org/abs/1511.05952" target="_blank" rel="noopener">Schaul et al., “Prioritized Experience Replay” (2016) <span class="src">arXiv:1511.05952</span></a>
+              </div>
+              <div class="ref"><span class="ref-tag">paper</span>
+                <a href="https://arxiv.org/abs/1511.06581" target="_blank" rel="noopener">Wang et al., “Dueling Network Architectures” (2016) <span class="src">arXiv:1511.06581</span></a>
+              </div>
+            </div>
+          </div>
+          <div class="cover-art" aria-hidden="true">
+            <div class="mini-map">
+              <span class="platform" style="left:0;top:82%;width:100%"></span>
+              <span class="platform" style="left:8%;top:62%;width:27%"></span>
+              <span class="platform" style="left:56%;top:47%;width:31%"></span>
+              <span class="unit player" style="left:38%;top:56%"></span>
+              <span class="unit opponent" style="left:71%;top:56%"></span>
+              <span class="unit coin" style="left:58%;top:42%"></span>
+              <span class="unit coin" style="left:22%;top:57%"></span>
+            </div>
+            <span class="mini-caption">mesmo agente, três melhorias<br>no alvo, no replay e na rede</span>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="slide" id="slide-2" data-section="estrutura" data-title="Um pacote, três ideias">
+      <div class="slide-inner">
+        <div>
+          <div class="eyebrow">estrutura · contrato de agente</div>
+          <h2 class="title">Um pacote, três ideias independentes</h2>
+        </div>
+        <p class="lede">O <span class="mono">alg_doubledqn_per_dueling</span> é o DQN com três trocas: a rede (dueling), o alvo (Double) e o replay (PER). O contrato com o <span class="mono">train.py</span> é exatamente o mesmo.</p>
+        <div class="grid-3">
+          <div class="card file-card">
+            <div class="file-top"><span class="file-name">model.py</span><span class="file-lines">27 linhas</span></div>
+            <p class="role"><b>Dueling.</b> Duas cabeças: <span class="mono">V(s)</span> escalar e <span class="mono">A(s,a)</span> por ação; o Q é a soma centralizada.</p>
+            <span class="symbol">DuelingQNetwork.forward → Q</span>
+          </div>
+          <div class="card file-card">
+            <div class="file-top"><span class="file-name">replay_buffer.py</span><span class="file-lines">82 linhas</span></div>
+            <p class="role"><b>PER rank-based.</b> Sorteia por <span class="mono">rank^-α</span>, devolve pesos de importância e atualiza prioridades com o erro de TD.</p>
+            <span class="symbol">sample → (…, indices, weights)</span>
+          </div>
+          <div class="card file-card">
+            <div class="file-top"><span class="file-name">agent.py</span><span class="file-lines">146 linhas</span></div>
+            <p class="role"><b>Double + loss.</b> Online escolhe a ação, target avalia; SmoothL1 por amostra × peso de importância.</p>
+            <span class="symbol">double_td_target · _beta · learn</span>
+          </div>
+        </div>
+        <div class="split">
+          <div class="stack">
+            <pre class="code"><span class="k">class</span> <span class="hl">DoubleDQNPerDuelingAgent</span>:
+    algorithm = <span class="s">"doubledqn_per_dueling"</span>
+    arch_version = <span class="s">"alg-ddqn-per-dueling-v1"</span>
+    C = <span class="n">1000</span>
+    <span class="c"># off-policy, como o DQN</span></pre>
+          </div>
+          <div class="stack">
+            <div class="note"><span class="mark">→</span><span><b>Compare com o DQN.</b> O arquivo <span class="mono">dqn-aula.html</span> explica a base; aqui só o que muda é detalhado. As três melhorias são ortogonais e poderiam ser ligadas separadamente.</span></div>
+            <div class="note warn"><span class="mark">C</span><span><b>Mesmo C = 1000.</b> A busca de hiperparâmetros do repo mostrou que C=10 é agressivo demais com PER: C=1000 coletou 7,35 moedas/episódio contra 4,65.</span></div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="slide" id="slide-3" data-section="dueling" data-title="Dueling: separar V de A">
+      <div class="slide-inner">
+        <div>
+          <div class="eyebrow">rede · dueling</div>
+          <h2 class="title">Separar o valor do estado da vantagem da ação</h2>
+        </div>
+        <p class="lede">Em muitos estados, a ação escolhida muda pouco o retorno. O dueling aprende <span class="mono">V(s)</span> uma vez e <span class="mono">A(s,a)</span> como desvio — mais eficiente em estados onde todas as ações são equivalentes.</p>
+        <div class="formula-wrap"><div class="formula">Q(s, a) = V(s) + A(s, a) − <span class="blue">média<sub>a′</sub> A(s, a′)</span><br><span class="dim">a subtração remove a ambiguidade: sem ela, V e A não são identificáveis separadamente</span></div></div>
+        <div class="split">
+          <div class="stack">
+            <pre class="code"><span class="k">class</span> <span class="hl">DuelingQNetwork</span>(nn.Module):
+    <span class="k">def</span> <span class="hl">forward</span>(self, x):
+        feats = self.features(x)
+        v = self.v_head(feats)          <span class="c"># (B, 1)</span>
+        a = self.a_head(feats)          <span class="c"># (B, A)</span>
+        <span class="k">return</span> v + a - a.mean(dim=<span class="n">1</span>, keepdim=<span class="k">True</span>)</pre>
+          </div>
+          <div class="stack">
+            <div class="note"><span class="mark">→</span><span><b>Mesmos parâmetros.</b> O encoder e as duas cabeças somam o mesmo total do DQN: 344.743 com 5 canais. A diferença é como a saída é composta.</span></div>
+            <div class="note warn"><span class="mark">!</span><span><b>O que o <span class="mono">argmax</span> vê.</b> Como a subtração da média é constante por estado, ela não muda o <span class="mono">argmax</span>; muda o gradiente e a escala dos valores.</span></div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="slide" id="slide-4" data-section="double" data-title="Double DQN">
+      <div class="slide-inner">
+        <div>
+          <div class="eyebrow">alvo · Double DQN</div>
+          <h2 class="title">O perigo do <span class="mono">max</span> enviesado</h2>
+        </div>
+        <p class="lede">O <span class="mono">max</span> de Q-valores ruidosos é, em média, maior que o máximo dos valores verdadeiros: o DQN superestima. Double DQN separa a escolha da ação da avaliação do valor.</p>
+        <div class="formula-wrap"><div class="formula">DQN:&nbsp;&nbsp;&nbsp; y = r + γ(1−d)·max<sub>a′</sub> Q<sub>alvo</sub>(s′, a′)<br><span class="accent">Double: y = r + γ(1−d)·Q<sub>alvo</sub>(s′, <span class="blue">argmax<sub>a′</sub> Q<sub>online</sub>(s′, a′)</span>)</span></div></div>
+        <div class="split">
+          <div class="stack">
+            <div class="code-label">algs/alg_doubledqn_per_dueling/agent.py</div>
+            <pre class="code"><span class="k">def</span> <span class="hl">double_td_target</span>(online, target, next_states,
+                     reward, terminated, gamma):
+    next_actions = online(next_states).argmax(dim=<span class="n">1</span>, keepdim=<span class="k">True</span>)
+    next_q = target(next_states).gather(<span class="n">1</span>, next_actions).squeeze(<span class="n">1</span>)
+    <span class="k">return</span> reward + gamma * (<span class="n">1.0</span> - terminated) * next_q</pre>
+          </div>
+          <div class="stack">
+            <div class="note"><span class="mark">→</span><span><b>Por que funciona.</b> O erro de estimativa da online deixa de contaminar o valor: ela só fornece o índice da ação, enquanto a target dá o número avaliado.</span></div>
+            <div class="note warn"><span class="mark">!</span><span><b>Sem custo extra de rede.</b> As mesmas duas redes do DQN são usadas; só a composição do alvo muda. A sincronização dura da target continua a cada C=1000 updates.</span></div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="slide" id="slide-5" data-section="per" data-title="Prioritized replay">
+      <div class="slide-inner">
+        <div>
+          <div class="eyebrow">memória · PER rank-based</div>
+          <h2 class="title">Priorizar o que ainda surpreende</h2>
+        </div>
+        <p class="lede">Transições com erro de TD grande são as mais informativas. O PER rank-based sorteia proporcionalmente a <span class="mono">rank^-α</span> e corrige o viés da amostragem com pesos de importância.</p>
+        <div class="formula-wrap"><div class="formula">p<sub>i</sub> ∝ rank(prioridade<sub>i</sub>)<sup>−α</sup>&nbsp;&nbsp;&nbsp;&nbsp;<span class="dim">α = 0,6</span><br>w<sub>i</sub> = (N · p<sub>i</sub>)<sup>−β</sup> / max<sub>j</sub>(N · p<sub>j</sub>)<sup>−β</sup>&nbsp;&nbsp;&nbsp;&nbsp;<span class="dim">β: 0,4 → 1</span></div></div>
+        <div class="split">
+          <div class="stack">
+            <div class="code-label">replay_buffer.py — a amostragem</div>
+            <pre class="code">order = np.argsort(-prios, kind=<span class="s">"stable"</span>)
+ranks[order] = np.arange(<span class="n">1</span>, len(prios) + <span class="n">1</span>)
+probs = ranks.astype(<span class="n">float</span>) ** (-alpha)
+probs /= probs.sum()
+idxs = np.random.choice(len(data), batch_size,
+                        replace=<span class="k">True</span>, p=probs)
+weights = (len(data) * probs[idxs]) ** (-beta)
+weights /= weights.max()</pre>
+          </div>
+          <div class="stack">
+            <div class="note"><span class="mark">α</span><span><b>Rank, não prioridade absoluta.</b> Rank-based é robusto a escala: a maior prioridade é sempre rank 1. Com α=1 o topo domina; α=0,6 espalha.</span></div>
+            <div class="note warn"><span class="mark">β</span><span><b>Importance sampling.</b> β começa em 0,4 e sobe linearmente até 1 em <span class="mono">beta_steps=100_000</span> updates: no começo aceitamos o viés para aprender rápido; no fim corrigimos quase totalmente.</span></div>
+            <div class="note loss"><span class="mark">+</span><span><b>Novas transições.</b> Entram com a maior prioridade atual (<span class="mono">max(priorities)</span>), para serem visitadas logo pelo menos uma vez.</span></div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="slide" id="slide-6" data-section="update" data-title="O update completo">
+      <div class="slide-inner">
+        <div>
+          <div class="eyebrow">update · um learn()</div>
+          <h2 class="title">O update completo</h2>
+        </div>
+        <ol class="list">
+          <li><span class="bullet"></span><span><b>Amostra priorizada</b> com <span class="mono">α=0,6</span> e <span class="mono">β=beta_atual</span>; recebe <span class="mono">indices</span> e <span class="mono">weights</span>.</span></li>
+          <li><span class="bullet blue"></span><span><b>Alvo Double</b> com <span class="mono">online.argmax</span> + <span class="mono">target.gather</span>.</span></li>
+          <li><span class="bullet amber"></span><span><b>Perda</b> <span class="mono">SmoothL1(q, y, reduction="none") * w</span>, média no lote.</span></li>
+          <li><span class="bullet red"></span><span><b>Prioridades:</b> <span class="mono">|y − q| + 1e-6</span> reescrito nos índices amostrados, antes de qualquer <span class="mono">add</span>.</span></li>
+          <li><span class="bullet"></span><span><b>Passo</b> do Adam com gradiente clipado em 10; ε decai; a target sincroniza a cada C updates.</span></li>
+        </ol>
+        <div class="split">
+          <div class="stack">
+            <pre class="code"><span class="c"># o ponto delicado do PER: atualizar prioridades</span>
+<span class="c"># com o erro de TD do batch, usando os índices do</span>
+<span class="c"># sample — e nenhum add entre os dois</span>
+self.buffer.update_priorities(
+    indices, (target - q).detach().abs().cpu().numpy())</pre>
+          </div>
+          <div class="stack">
+            <div class="note"><span class="mark">!</span><span><b>Invariante.</b> Os índices só valem enquanto o deque não mudar. O <span class="mono">learn()</span> garante que nenhum <span class="mono">add</span> acontece entre <span class="mono">sample</span> e <span class="mono">update_priorities</span>.</span></div>
+            <div class="note warn"><span class="mark">C</span><span><b>Buffer circular.</b> O deque tem <span class="mono">maxlen=capacity</span>; ao encher, a transição mais antiga sai e as posições deslizam. Por isso as prioridades andam em um deque paralelo com o mesmo <span class="mono">maxlen</span>.</span></div>
+            <div class="note loss"><span class="mark">−</span><span><b>O que não é salvo.</b> Checkpoint pesos-only: buffer e prioridades não vão para o disco; a retomada recomeça o replay.</span></div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="slide" id="slide-7" data-section="hiperparâmetros" data-title="Hiperparâmetros">
+      <div class="slide-inner">
+        <div>
+          <div class="eyebrow">hiperparâmetros · defaults e comparação</div>
+          <h2 class="title">O que é igual e o que muda em relação ao DQN</h2>
+        </div>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>Parâmetro</th><th>DQN</th><th>Double + PER + dueling</th><th>Efeito</th></tr></thead>
+            <tbody>
+              <tr><td class="mono">lr</td><td class="mono">1e-3</td><td class="mono">1e-3</td><td>Adam</td></tr>
+              <tr><td class="mono">gamma</td><td class="mono">0,99</td><td class="mono">0,99</td><td>desconto</td></tr>
+              <tr><td class="mono">epsilon</td><td class="mono">1 → 0,05</td><td class="mono">1 → 0,05</td><td>ε-greedy</td></tr>
+              <tr><td class="mono">batch_size</td><td class="mono">64</td><td class="mono">64</td><td>amostras/update</td></tr>
+              <tr><td class="mono">buffer</td><td class="mono">50.000</td><td class="mono">50.000</td><td>replay</td></tr>
+              <tr><td class="mono">C</td><td class="mono">1000</td><td class="mono">1000</td><td>sync da target</td></tr>
+              <tr><td class="mono">per_alpha</td><td>—</td><td class="mono">0,6</td><td>expoente do rank</td></tr>
+              <tr><td class="mono">beta_start</td><td>—</td><td class="mono">0,4</td><td>peso de IS inicial</td></tr>
+              <tr><td class="mono">beta_steps</td><td>—</td><td class="mono">100.000</td><td>updates até β=1</td></tr>
+              <tr><td class="mono">loss</td><td class="mono">SmoothL1</td><td class="mono">SmoothL1 × peso</td><td>viés do PER</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <div class="grid-2">
+          <div class="note"><span class="mark">→</span><span><b>Ganho esperado.</b> Em 300 episódios no mapa histórico, o relatório do repo (<span class="mono">docs/relatorio-dqn-ddqn.md</span>) compara as duas variantes com seed fixa e mostra o efeito combinado das três correções.</span></div>
+          <div class="note warn"><span class="mark">!</span><span><b>Custo.</b> O PER adiciona um sort por amostragem para calcular ranks (O(N log N) no buffer cheio) e um vetor de pesos no loss. O dueling não aumenta parâmetros.</span></div>
+        </div>
+      </div>
+    </section>
+
+    <section class="slide" id="slide-8" data-section="integração" data-title="Checkpoint e avaliação">
+      <div class="slide-inner">
+        <div>
+          <div class="eyebrow">integração · train, evaluate, play</div>
+          <h2 class="title">Checkpoint e avaliação</h2>
+        </div>
+        <div class="split">
+          <div class="stack">
+            <pre class="code"><span class="c"># o mesmo contrato do DQN</span>
+python train.py --arena seek_coin \
+    --alg doubledqn_per_dueling --episodes 300
+
+python evaluate.py --arena seek_coin \
+    --checkpoint checkpoints/best.pt --episodes 20
+
+python play.py --arena seek_coin \
+    --checkpoint checkpoints/best.pt --render</pre>
+            <div class="note"><span class="mark">→</span><span><b>Descoberta.</b> <span class="mono">--alg doubledqn_per_dueling</span> vem do nome do diretório. Nenhum outro lugar do repo precisa conhecer a sigla.</span></div>
+          </div>
+          <div class="stack">
+            <div class="card">
+              <h3>Checkpoint</h3>
+              <p><span class="mono">algorithm="doubledqn_per_dueling"</span>, <span class="mono">arch_version="alg-ddqn-per-dueling-v1"</span>, pesos online/target, Adam, <span class="mono">steps</span>, <span class="mono">epsilon</span>, <span class="mono">gamma</span> e a <span class="mono">ArenaConfig</span>. O buffer priorizado <b>não</b> é serializado.</p>
+            </div>
+            <div class="card">
+              <h3>Avaliação</h3>
+              <p><span class="mono">evaluate.py</span> reconstrói o agente pelo campo <span class="mono">algorithm</span> e usa <span class="mono">act(..., greedy=True)</span>; o PER e o ε não participam. O mesmo vale para o oponente checkpoint no <span class="mono">play.py</span>.</p>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="slide" id="slide-9" data-section="prática" data-title="Rodando e lendo os resultados">
+      <div class="slide-inner">
+        <div>
+          <div class="eyebrow">prática · comandos e telemetria</div>
+          <h2 class="title">Rodando e lendo os resultados</h2>
+        </div>
+        <div class="split">
+          <div class="stack">
+            <pre class="code"><span class="c"># nível 2 com stats por episódio</span>
+python train.py --arena seek_coin --level 2 \
+    --alg doubledqn_per_dueling --episodes 300 --stats
+
+<span class="c"># TensorBoard (perda, Q, gradiente)</span>
+python train.py --arena seek_coin --level 2 \
+    --alg doubledqn_per_dueling --episodes 300 --tensorboard
+tensorboard --logdir logs/runs</pre>
+          </div>
+          <div class="stack">
+            <div class="note"><span class="mark">→</span><span><b>Telemetria.</b> <span class="mono">--stats</span> grava perda mín/máx, norma de gradiente pré-clip e Q online (<span class="mono">q_mean</span>/<span class="mono">q_max</span>) por episódio em <span class="mono">logs/stats.csv</span>. Q explodindo é o primeiro sinal de alvo instável.</span></div>
+            <div class="note warn"><span class="mark">!</span><span><b>Comparação justa.</b> Use a mesma seed e o mesmo protocolo de <span class="mono">frame_stack</span>/<span class="mono">frame_skip</span> do DQN; a única diferença deve ser o <span class="mono">--alg</span>.</span></div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="slide" id="slide-10" data-section="fechamento" data-title="Trade-offs">
+      <div class="slide-inner">
+        <div>
+          <div class="eyebrow">fechamento · trade-offs</div>
+          <h2 class="title">Três correções, três custos</h2>
+        </div>
+        <div class="grid-3">
+          <div class="card">
+            <h3>Double</h3>
+            <p>Reduz a superestimação sem rede extra. O alvo fica mais conservador — às vezes mais lento no começo, mas mais honesto.</p>
+          </div>
+          <div class="card">
+            <h3>PER</h3>
+            <p>Foca no erro alto, acelera o aprendizado das transições difíceis e pode ser instável se β ou α estiverem agressivos. O repo usa rank e β agendado para domar isso.</p>
+          </div>
+          <div class="card">
+            <h3>Dueling</h3>
+            <p>Ajuda quando muitas ações são equivalentes em um estado; o gradiente de V é compartilhado. Não muda o número de parâmetros.</p>
+          </div>
+        </div>
+        <div class="split">
+          <div class="stack">
+            <div class="note"><span class="mark">→</span><span><b>Para levar.</b> O pacote combina as três melhorias clássicas do DQN. O alvo Double vem da online + target, o PER amostra por rank com pesos de importância, e o dueling decompõe Q em V + A.</span></div>
+            <div class="note loss"><span class="mark">3</span><span><b>Próximo.</b> As variantes on-policy (<span class="mono">ppo-aula.html</span>, <span class="mono">a2c-aula.html</span>) e as específicas para dinâmica não estacionária (<span class="mono">eppo-aula.html</span>, <span class="mono">ppo_aes-aula.html</span>, <span class="mono">gtr-aula.html</span>).</span></div>
+          </div>
+          <div class="stack">
+            <div class="spec"><span class="num">3 em 1</span><span class="unit">Double DQN · PER · dueling</span></div>
+            <div class="note warn"><span class="mark">!</span><span><b>Não é uma escada.</b> Nada impede comparar só o Double ou só o PER: as três ideias são independentes e o código está organizado para deixar isso visível.</span></div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+  </main>
+</div>
+<script src="aula.js"></script>
+</body>
+</html>

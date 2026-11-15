@@ -1,0 +1,335 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>HAPPO no rl-arena</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,600;12..96,700&family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
+<link rel="stylesheet" href="aula.css">
+</head>
+<body>
+<div class="app">
+  <div class="progress" aria-hidden="true"><span id="progress-fill"></span></div>
+  <header class="topbar">
+    <div class="brand">
+      <span class="dot"></span>
+      <span><b>HAPPO</b> // rl-arena</span>
+      <span class="sec-label" id="sec-label">abertura</span>
+    </div>
+    <div class="top-actions">
+      <button class="tb" id="btn-prev" type="button">←</button>
+      <button class="tb" id="btn-next" type="button">→</button>
+      <span class="counter" id="counter">01 / 10</span>
+    </div>
+  </header>
+  <main class="stage" id="stage">
+
+    <section class="slide" id="slide-1" data-section="abertura" data-title="HAPPO no rl-arena">
+      <div class="slide-inner">
+        <div class="cover-wrap">
+          <div class="cover-copy">
+            <div class="eyebrow">aula · aprendizado por reforço multiagente</div>
+            <h1 class="display">HAPPO no<br><span class="thin">rl-arena</span></h1>
+            <p class="lede">PPO para agentes heterogêneos: cada um tem seu ator, o crítico é centralizado e os atores são atualizados em sequência, corrigindo a razão conjunta.</p>
+            <div class="chips">
+              <span class="chip green">multiagente</span>
+              <span class="chip">atores separados</span>
+              <span class="chip">update sequencial</span>
+              <span class="chip">crítico CTDE</span>
+            </div>
+            <div class="cover-foot">
+              <span class="mono">algs/alg_happo/</span>
+              <span>Use <kbd>→</kbd> para começar</span>
+            </div>
+            <div class="cover-refs">
+              <div class="ref"><span class="ref-tag">paper</span>
+                <a href="https://arxiv.org/abs/2109.11251" target="_blank" rel="noopener">Kuba et al., “Trust Region Policy Optimisation in Multi-Agent Reinforcement Learning” (ICLR 2022) <span class="src">arXiv:2109.11251</span></a>
+              </div>
+              <div class="ref"><span class="ref-tag">código</span>
+                <span class="mono">arenas/algs/alg_happo/{agent,model,rollout_buffer}.py</span>
+              </div>
+            </div>
+          </div>
+          <div class="cover-art" aria-hidden="true">
+            <div class="mini-map">
+              <span class="platform" style="left:0;top:82%;width:100%"></span>
+              <span class="platform" style="left:8%;top:62%;width:27%"></span>
+              <span class="platform" style="left:56%;top:47%;width:31%"></span>
+              <span class="unit player" style="left:32%;top:56%"></span>
+              <span class="unit player" style="left:42%;top:56%"></span>
+              <span class="unit opponent" style="left:71%;top:56%"></span>
+              <span class="unit opponent" style="left:79%;top:56%"></span>
+              <span class="unit coin" style="left:58%;top:42%"></span>
+            </div>
+            <span class="mini-caption">coletores × empurradores<br>atores não compartilham pesos</span>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="slide" id="slide-2" data-section="motivação" data-title="Por que heterogêneo">
+      <div class="slide-inner">
+        <div>
+          <div class="eyebrow">motivação · quebra da simetria</div>
+          <h2 class="title">Quando os agentes não são intercambiáveis</h2>
+        </div>
+        <p class="lede">O IPPO e o MAPPO compartilham uma política entre agentes. O HAPPO parte do cenário oposto: metade dos times só coleta, a outra metade só empurra — os espaços de ação efetivos são diferentes.</p>
+        <div class="grid-3">
+          <div class="card">
+            <h3>IPPO</h3>
+            <p>Uma rede para todos; crítico local. Simples e amostra-eficiente quando o papel é o mesmo.</p>
+          </div>
+          <div class="card">
+            <h3>MAPPO</h3>
+            <p>Ator compartilhado + crítico centralizado. A execução continua local, mas o ator ainda assume papéis simétricos.</p>
+          </div>
+          <div class="card">
+            <h3>HAPPO</h3>
+            <p>Um ator por agente + crítico centralizado. O update sequencial preserva a validade da razão de política sob a nova política dos agentes anteriores.</p>
+          </div>
+        </div>
+        <div class="split">
+          <div class="stack">
+            <div class="code-label">algs/alg_happo/agent.py</div>
+            <pre class="code"><span class="k">class</span> <span class="hl">HAPPOAgent</span>:
+    algorithm = <span class="s">"happo"</span>
+    arch_version = <span class="s">"alg-happo-v1"</span>
+    on_policy = <span class="k">True</span>
+    multi_agent = <span class="k">True</span>
+    accepts_roles = <span class="k">True</span></pre>
+          </div>
+          <div class="stack">
+            <div class="note"><span class="mark">→</span><span><b>Por que não compartilhar?</b> Com um ator compartilhado, atualizar o agente i muda também as razões dos agentes j que usam a mesma rede. O HAPPO elimina esse acoplamento por construção.</span></div>
+            <div class="note warn"><span class="mark">!</span><span><b>Custo.</b> N atores = N CNNs. O crítico é um só; o update é sequencial, então o tempo de treino cresce com o número de agentes.</span></div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="slide" id="slide-3" data-section="redes" data-title="Atores e crítico">
+      <div class="slide-inner">
+        <div>
+          <div class="eyebrow">redes · atores locais + crítico centralizado</div>
+          <h2 class="title">Atores locais, crítico com visão global</h2>
+        </div>
+        <p class="lede">Cada ator vê só a própria observação. O crítico vê as features de todos os agentes no mesmo passo mais um one-hot de quem está sendo avaliado — e só existe no treino (CTDE).</p>
+        <div class="split">
+          <div class="stack">
+            <div class="card">
+              <h3>Ator i</h3>
+              <p>CNN do repo → 1280 features → MLP 128 → logits. Parâmetros independentes por agente. Na execução, só ele é necessário.</p>
+            </div>
+            <div class="card">
+              <h3>Crítico centralizado</h3>
+              <p>Uma CNN compartilhada entre as linhas extrai as features de cada agente. A MLP final recebe <span class="mono">n_agents × 1280 + n_agents</span> (features conjuntas + one-hot) e devolve um V por agente.</p>
+            </div>
+            <div class="note"><span class="mark">→</span><span><b>Por que um V por agente?</b> Cada agente tem o seu retorno e a sua vantagem; o crítico centralizado só compartilha a representação do estado conjunto. O GAE é calculado por agente.</span></div>
+          </div>
+          <div class="stack">
+            <div class="spec"><span class="num">N × CNN</span><span class="unit">atores independentes</span></div>
+            <div class="spec"><span class="num">1 CNN</span><span class="unit">crítico compartilhado entre linhas</span></div>
+            <div class="code-label">alg_happo/model.py</div>
+            <pre class="code"><span class="k">class</span> <span class="hl">HAPPONetwork</span>(nn.Module):
+    actors = nn.ModuleList([
+        ActorNetwork(input_shape, n_actions)
+        <span class="k">for</span> _ <span class="k">in</span> range(n_agents)])
+    critic = CentralizedCritic(input_shape, n_agents)</pre>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="slide" id="slide-4" data-section="update" data-title="Update sequencial">
+      <div class="slide-inner">
+        <div>
+          <div class="eyebrow">update · o coração do HAPPO</div>
+          <h2 class="title">Atualizar em ordem, corrigindo a razão</h2>
+        </div>
+        <p class="lede">Para o agente <span class="mono">i</span>, a razão de política é multiplicada pelo produto acumulado das razões dos agentes já atualizados. Esse fator corrige a vantagem conjunta decomposta sob a nova política dos anteriores.</p>
+        <div class="formula-wrap"><div class="formula">M<sub>i</sub> = Π<sub>j&lt;i</sub> π<sub>j,novo</sub>(a<sub>j</sub>|o<sub>j</sub>) / π<sub>j,velho</sub>(a<sub>j</sub>|o<sub>j</sub>)<br>razão usada = [π<sub>i,novo</sub>(a<sub>i</sub>|o<sub>i</sub>) / π<sub>i,velho</sub>(a<sub>i</sub>|o<sub>i</sub>)] · M<sub>i</sub></div></div>
+        <ol class="list">
+          <li><span class="bullet"></span><span><b>Congela</b> log-probs antigos por agente (em blocos de <span class="mono">eval_chunk_steps=64</span>).</span></li>
+          <li><span class="bullet blue"></span><span><b>GAE por agente</b> com os valores centralizados e vantagens normalizadas no conjunto.</span></li>
+          <li><span class="bullet amber"></span><span><b>Crítico primeiro:</b> <span class="mono">epochs</span> de minibatches contra os retornos do GAE.</span></li>
+          <li><span class="bullet red"></span><span><b>Atores em ordem:</b> para cada i, <span class="mono">epochs</span> de minibatches com <span class="mono">ratio × ratio_pre</span>; depois recalcula a razão do agente i e a acumula em <span class="mono">ratio_pre</span>, sem gradiente.</span></li>
+        </ol>
+        <div class="note warn"><span class="mark">!</span><span><b>Ordem importa.</b> O <span class="mono">ratio_pre</span> é zerado no começo de cada update e atualizado após cada ator. Os agentes anteriores já estão congelados naquele momento, por isso o recálculo pode ser <span class="mono">no_grad</span>.</span></div>
+      </div>
+    </section>
+
+    <section class="slide" id="slide-5" data-section="papéis" data-title="Papéis e máscaras">
+      <div class="slide-inner">
+        <div>
+          <div class="eyebrow">papéis · coletores e empurradores</div>
+          <h2 class="title">Máscaras de ação por papel</h2>
+        </div>
+        <p class="lede">O cenário do seek_coin declara papéis. Coletores não podem empurrar: as ações <span class="mono">PUSH_LEFT</span>/<span class="mono">PUSH_RIGHT</span> recebem logit <span class="mono">−1e9</span> antes da categórica, então nunca são amostradas nem entram na perda.</p>
+        <div class="split">
+          <div class="stack">
+            <pre class="code">masks = torch.ones(n_agents, n_actions, dtype=<span class="k">bool</span>)
+<span class="k">for</span> i, role <span class="k">in</span> enumerate(self.agent_roles):
+    <span class="k">if</span> role == COLLECTOR_ROLE:
+        masks[i, PUSH_LEFT] = <span class="k">False</span>
+        masks[i, PUSH_RIGHT] = <span class="k">False</span>
+
+<span class="k">def</span> <span class="hl">_masked_logits</span>(self, logits, agent_index):
+    <span class="k">if not</span> self._has_action_mask:
+        <span class="k">return</span> logits
+    <span class="k">return</span> logits.masked_fill(
+        ~self.action_masks[agent_index], <span class="n">-1e9</span>)</pre>
+          </div>
+          <div class="stack">
+            <div class="note"><span class="mark">→</span><span><b>Defesa em profundidade.</b> O ambiente também converte empurrões de coletores em <span class="mono">STOP</span>, caso uma ação inválida chegue por outro caminho.</span></div>
+            <div class="note warn"><span class="mark">!</span><span><b>Papéis no construtor.</b> <span class="mono">agent_roles</span> é opcional; sem ele, todas as ações são permitidas e o HAPPO se comporta como um MAPPO com atores separados. <span class="mono">ArenaConfig.agent_roles</span> existe, mas a CLI atual do treino não expõe um argumento de papéis.</span></div>
+            <div class="note loss"><span class="mark">−</span><span><b>Máscara só no ator.</b> O crítico continua vendo o estado conjunto inteiro; a máscara não reduz a observação, só a política.</span></div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="slide" id="slide-6" data-section="buffer" data-title="Buffer por passo conjunto">
+      <div class="slide-inner">
+        <div>
+          <div class="eyebrow">memória · buffer indexado por passo</div>
+          <h2 class="title">Um registro por passo conjunto</h2>
+        </div>
+        <p class="lede">O buffer guarda as transições de todos os agentes no mesmo passo, como no MAPPO. O update usa matrizes <span class="mono">(T, n_agents)</span> para recompensa, valor, terminal e fim de episódio.</p>
+        <div class="split">
+          <div class="stack">
+            <div class="code-label">alg_happo/rollout_buffer.py</div>
+            <pre class="code"><span class="c"># add_transition(i, s, a, r, ns, terminated)</span>
+<span class="c"># acumula por agente até todos contribuírem</span>
+<span class="c"># e então fecha o passo conjunto</span>
+self.buffer.add(agent_index, state, action, reward,
+                next_state, terminated, log_prob)
+
+<span class="c"># as_arrays() → dict com</span>
+<span class="c"># states (T, N, C, H, W), actions (T, N),</span>
+<span class="c"># rewards (T, N), terminated (T, N), ...</span></pre>
+          </div>
+          <div class="stack">
+            <div class="note"><span class="mark">→</span><span><b>Por que não um buffer por agente?</b> O crítico centralizado precisa das observações de todos no mesmo instante. O rollout é commitado só quando todos os agentes escreveram no passo.</span></div>
+            <div class="note warn"><span class="mark">!</span><span><b>Coleta.</b> Todos os agentes decidem uma vez por <span class="mono">env.step</span>; a ação é mantida nos <span class="mono">frame_skip</span> substeps. O <span class="mono">end_episode</span> marca a fronteira para todos.</span></div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="slide" id="slide-7" data-section="hiperparâmetros" data-title="Hiperparâmetros">
+      <div class="slide-inner">
+        <div>
+          <div class="eyebrow">hiperparâmetros · defaults</div>
+          <h2 class="title">Hiperparâmetros</h2>
+        </div>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>Parâmetro</th><th>Default</th><th>Onde</th><th>Efeito</th></tr></thead>
+            <tbody>
+              <tr><td class="mono">lr</td><td class="mono">2,5e-4</td><td class="mono">agent.py:75</td><td>Adam para o container inteiro.</td></tr>
+              <tr><td class="mono">rollout_steps</td><td class="mono">1024</td><td class="mono">agent.py:76</td><td>Passos conjuntos por update.</td></tr>
+              <tr><td class="mono">epochs</td><td class="mono">4</td><td class="mono">agent.py:77</td><td>Épocas do crítico e de cada ator.</td></tr>
+              <tr><td class="mono">clip</td><td class="mono">0,2</td><td class="mono">agent.py:78</td><td>Recorte da razão corrigida.</td></tr>
+              <tr><td class="mono">gae_lambda</td><td class="mono">0,95</td><td class="mono">agent.py:78</td><td>GAE por agente.</td></tr>
+              <tr><td class="mono">value_coef</td><td class="mono">0,5</td><td class="mono">agent.py:79</td><td>Peso da perda do crítico.</td></tr>
+              <tr><td class="mono">entropy_coef</td><td class="mono">0,01</td><td class="mono">agent.py:79</td><td>Exploração dos atores.</td></tr>
+              <tr><td class="mono">max_grad_norm</td><td class="mono">10,0</td><td class="mono">agent.py:80</td><td>Clip por ator/crítico.</td></tr>
+              <tr><td class="mono">value_clip</td><td class="mono">None</td><td class="mono">agent.py:81</td><td>Clip opcional do valor (desligado).</td></tr>
+              <tr><td class="mono">eval_chunk_steps</td><td class="mono">64</td><td class="mono">agent.py:82</td><td>Bloco da avaliação sem gradiente.</td></tr>
+              <tr><td class="mono">batch_size</td><td class="mono">64 (CLI)</td><td class="mono">train.py</td><td>Minibatch conjunto; passos por lote = batch/N.</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <div class="note"><span class="mark">→</span><span><b>Um otimizador só.</b> O Adam cobre todos os parâmetros; cada update zera o gradiente e faz backward apenas com a perda do ator corrente, então o passo toca só aquele ator. O crítico é atualizado em uma fase separada.</span></div>
+      </div>
+    </section>
+
+    <section class="slide" id="slide-8" data-section="integração" data-title="Treino e avaliação">
+      <div class="slide-inner">
+        <div>
+          <div class="eyebrow">integração · CLI multiagente</div>
+          <h2 class="title">Treino, avaliação e play</h2>
+        </div>
+        <div class="split">
+          <div class="stack">
+            <pre class="code"><span class="c"># todos contra todos, 4 agentes</span>
+python train.py --arena seek_coin --alg happo \
+    --agents 4 --scenario all-vs-all \
+    --checkpoint-dir checkpoints/happo4
+
+<span class="c"># dois times de dois</span>
+python train.py --arena seek_coin --alg happo \
+    --agents 4 --scenario teams --teams 2 \
+    --checkpoint-dir checkpoints/happo_teams
+
+<span class="c"># espectador e duelo</span>
+python play.py --arena seek_coin \
+    --checkpoint checkpoints/happo_teams/best.pt
+python arenas/seek_coin/scripts/duel_ppo_happo.py \
+    --ppo-checkpoint ... --happo-checkpoint ...</pre>
+          </div>
+          <div class="stack">
+            <div class="note"><span class="mark">→</span><span><b>Mesmo ambiente.</b> Com <span class="mono">multi_agent=True</span>, o train.py monta um <span class="mono">Scenario</span> e usa <span class="mono">ArenaMultiEnv</span>; o cenário vai para a config e não pode mudar na retomada.</span></div>
+            <div class="note warn"><span class="mark">!</span><span><b>Avaliação.</b> <span class="mono">evaluate.py</span> detecta <span class="mono">n_agents &gt; 1</span> e grava uma linha por agente. O <span class="mono">play.py</span> entra em modo espectador; <span class="mono">--player human --human-agent N</span> permite controlar um agente.</span></div>
+            <div class="note loss"><span class="mark">−</span><span><b>Limite da primeira versão.</b> <span class="mono">--envs &gt; 1</span>, <span class="mono">--overlap</span> e adversários baseline misturados são recusados no multiagente.</span></div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="slide" id="slide-9" data-section="prática" data-title="Rodando na prática">
+      <div class="slide-inner">
+        <div>
+          <div class="eyebrow">prática · comandos</div>
+          <h2 class="title">Rodando na prática</h2>
+        </div>
+        <div class="grid-2">
+          <div class="stack">
+            <pre class="code"><span class="c"># nível 2, 4 agentes, com TensorBoard</span>
+python train.py --arena seek_coin --level 2 \
+    --alg happo --agents 4 --scenario all-vs-all \
+    --episodes 300 --tensorboard --stats
+
+<span class="c"># avaliar o checkpoint</span>
+python evaluate.py --arena seek_coin \
+    --checkpoint checkpoints/happo4/best.pt --episodes 10</pre>
+          </div>
+          <div class="stack">
+            <div class="note"><span class="mark">→</span><span><b>Saídas.</b> <span class="mono">checkpoints/&lt;dir&gt;/best.pt</span> e <span class="mono">latest.pt</span>; <span class="mono">logs/training.csv</span> com médias por agente; TensorBoard com <span class="mono">train/team&lt;t&gt;/*</span>.</span></div>
+            <div class="note warn"><span class="mark">!</span><span><b>Custo.</b> Cada época de ator é um loop separado. Com 4 agentes, o update é ~4× mais caro que um MAPPO com a mesma coleta — o preço da heterogeneidade.</span></div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="slide" id="slide-10" data-section="fechamento" data-title="Trade-offs">
+      <div class="slide-inner">
+        <div>
+          <div class="eyebrow">fechamento · trade-offs</div>
+          <h2 class="title">Quando vale o HAPPO</h2>
+        </div>
+        <div class="grid-2">
+          <div class="stack">
+            <div class="card">
+              <h3>Ganha</h3>
+              <p>Papéis diferentes cabem em atores diferentes, sem forçar uma política compartilhada a representar comportamentos conflitantes. O update sequencial mantém a teoria do trust region multiagente.</p>
+            </div>
+            <div class="card">
+              <h3>Limita</h3>
+              <p>N atores e update sequencial: mais parâmetros, mais tempo e mais memória. Sem papéis configurados, boa parte da vantagem sobre o MAPPO desaparece.</p>
+            </div>
+          </div>
+          <div class="stack">
+            <div class="note"><span class="mark">→</span><span><b>Para levar.</b> HAPPO = atores independentes + crítico centralizado + atualização sequencial com <span class="mono">M_i = Π_{j&lt;i} razão_j</span>. A máscara de papel é uma camada extra, não o núcleo.</span></div>
+            <div class="note warn"><span class="mark">!</span><span><b>Compare com IPPO/MAPPO</b> (<span class="mono">ippo-aula.html</span>, <span class="mono">mappo-aula.html</span>) no mesmo cenário e seed. Se não há papéis, o HAPPO tende a pagar o custo sem o benefício.</span></div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+  </main>
+</div>
+<script src="aula.js"></script>
+</body>
+</html>

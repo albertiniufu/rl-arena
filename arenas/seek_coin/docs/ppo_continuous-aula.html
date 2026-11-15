@@ -1,0 +1,331 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>PPO contínuo no rl-arena</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,600;12..96,700&family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
+<link rel="stylesheet" href="aula.css">
+</head>
+<body>
+<div class="app">
+  <div class="progress" aria-hidden="true"><span id="progress-fill"></span></div>
+  <header class="topbar">
+    <div class="brand">
+      <span class="dot"></span>
+      <span><b>PPO contínuo</b> // rl-arena</span>
+      <span class="sec-label" id="sec-label">abertura</span>
+    </div>
+    <div class="top-actions">
+      <button class="tb" id="btn-prev" type="button">←</button>
+      <button class="tb" id="btn-next" type="button">→</button>
+      <span class="counter" id="counter">01 / 10</span>
+    </div>
+  </header>
+  <main class="stage" id="stage">
+
+    <section class="slide" id="slide-1" data-section="abertura" data-title="PPO contínuo">
+      <div class="slide-inner">
+        <div class="cover-wrap">
+          <div class="cover-copy">
+            <div class="eyebrow">aula · aprendizado por reforço</div>
+            <h1 class="display">PPO contínuo<br><span class="thin">rl-arena</span></h1>
+            <p class="lede">A mesma receita do PPO com uma política Gaussiana: média aprendida, desvio logarítmico por dimensão e ações reais recortadas nos limites do ambiente.</p>
+            <div class="chips">
+              <span class="chip green">on-policy</span>
+              <span class="chip">ação Box</span>
+              <span class="chip">log σ global por dimensão</span>
+              <span class="chip">GAE λ = 0,95</span>
+            </div>
+            <div class="cover-foot">
+              <span class="mono">algs/alg_ppo_continuous/</span>
+              <span>Use <kbd>→</kbd> para começar</span>
+            </div>
+            <div class="cover-refs">
+              <div class="ref"><span class="ref-tag">paper</span>
+                <a href="https://arxiv.org/abs/1707.06347" target="_blank" rel="noopener">Schulman et al., “Proximal Policy Optimization Algorithms” (2017) <span class="src">arXiv:1707.06347</span></a>
+              </div>
+              <div class="ref"><span class="ref-tag">código</span>
+                <span class="mono">arenas/algs/alg_ppo_continuous/{agent,model,rollout_buffer}.py</span>
+              </div>
+            </div>
+          </div>
+          <div class="cover-art" aria-hidden="true">
+            <div class="mini-map">
+              <span class="platform" style="left:0;top:82%;width:100%"></span>
+              <span class="platform" style="left:8%;top:62%;width:27%"></span>
+              <span class="platform" style="left:56%;top:47%;width:31%"></span>
+              <span class="unit player" style="left:38%;top:56%"></span>
+              <span class="unit coin" style="left:58%;top:42%"></span>
+            </div>
+            <span class="mini-caption">usado na arena economy<br>ações Box contínuas</span>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="slide" id="slide-2" data-section="estrutura" data-title="Quando usar">
+      <div class="slide-inner">
+        <div>
+          <div class="eyebrow">estrutura · escopo</div>
+          <h2 class="title">Para ações contínuas, não para as seis do seek_coin</h2>
+        </div>
+        <p class="lede">DQN, PPO e A2C exigem <span class="mono">Discrete</span>. O <span class="mono">ppo_continuous</span> existe para arenas com <span class="mono">Box</span>: no repo, a <b>economy</b> (banco e governo). A CLI do seek_coin até filtra esse algoritmo das escolhas.</p>
+        <div class="grid-3">
+          <div class="card file-card">
+            <div class="file-top"><span class="file-name">model.py</span><span class="file-lines">34 linhas</span></div>
+            <p class="role"><b>Gaussiana.</b> MLP da média, um <span class="mono">log_std</span> global por dimensão e o crítico escalar.</p>
+            <span class="symbol">GaussianActorCritic → (mean, log_std, value)</span>
+          </div>
+          <div class="card file-card">
+            <div class="file-top"><span class="file-name">rollout_buffer.py</span><span class="file-lines">45 linhas</span></div>
+            <p class="role"><b>Buffer contínuo.</b> Guarda o vetor de ação <span class="mono">float32</span> e a marca de episódio.</p>
+            <span class="symbol">add · mark_episode_end · as_arrays</span>
+          </div>
+          <div class="card file-card">
+            <div class="file-top"><span class="file-name">agent.py</span><span class="file-lines">178 linhas</span></div>
+            <p class="role"><b>PPO.</b> Reusa <span class="mono">compute_gae</span> do <span class="mono">alg_ppo</span>, faz recorte e 10 épocas.</p>
+            <span class="symbol">PPOContinuousAgent · set_action_bounds</span>
+          </div>
+        </div>
+        <div class="split">
+          <div class="stack">
+            <pre class="code"><span class="k">class</span> <span class="hl">PPOContinuousAgent</span>:
+    algorithm = <span class="s">"ppo_continuous"</span>
+    arch_version = <span class="s">"alg-ppo-continuous-v1"</span>
+    on_policy = <span class="k">True</span>
+    continuous = <span class="k">True</span>   <span class="c"># ação Box</span>
+    <span class="c"># n_actions = dimensão do vetor de ação</span></pre>
+          </div>
+          <div class="stack">
+            <div class="note"><span class="mark">→</span><span><b>Onde entra.</b> O <span class="mono">agent_factory.apply_action_bounds</span> detecta <span class="mono">continuous</span> e chama <span class="mono">set_action_bounds(env.action_space.low, high)</span>. O agente não conhece a arena; só os limites.</span></div>
+            <div class="note warn"><span class="mark">!</span><span><b>Sem epsilon.</b> Como todo on-policy, explora pela amostragem da Gaussiana e pelo bônus de entropia (aqui, 0 por padrão).</span></div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="slide" id="slide-3" data-section="fundamentos" data-title="A política Gaussiana">
+      <div class="slide-inner">
+        <div>
+          <div class="eyebrow">fundamentos · política</div>
+          <h2 class="title">A política é uma Gaussiana por dimensão</h2>
+        </div>
+        <p class="lede">O ator devolve a média de cada dimensão. O desvio é um parâmetro global por dimensão — não uma saída da rede — limitado a <span class="mono">[e<sup>−5</sup>, e<sup>2</sup>]</span> para manter a exploração estável.</p>
+        <div class="formula-wrap"><div class="formula">a ~ N(μ<sub>θ</sub>(s), diag(σ²))&nbsp;&nbsp;&nbsp;&nbsp;σ = exp(log_std),&nbsp; log_std ∈ [−5, 2]<br>a<sub>usada</sub> = clip(a, low, high)&nbsp;&nbsp;&nbsp;&nbsp;<span class="dim">sem correção de densidade</span></div></div>
+        <div class="split">
+          <div class="stack">
+            <pre class="code"><span class="k">def</span> <span class="hl">forward</span>(self, x):
+    feats = self.features(x)
+    mean = self.actor_mean(feats)
+    log_std = self.actor_log_std.clamp(<span class="n">-5.0</span>, <span class="n">2.0</span>).expand_as(mean)
+    value = self.critic(feats).squeeze(<span class="n">-1</span>)
+    <span class="k">return</span> mean, log_std, value
+
+<span class="c"># amostragem de treino</span>
+action = mean + log_std.exp() * torch.randn_like(mean)
+action = self._clamp(action)</pre>
+          </div>
+          <div class="stack">
+            <div class="note"><span class="mark">σ</span><span><b>Desvio global.</b> Um único vetor de parâmetros <span class="mono">actor_log_std</span> (dimensão da ação) é aprendido; ele não depende do estado. É simples e barato — e limita a política a uma forma de exploração homogênea no espaço.</span></div>
+            <div class="note warn"><span class="mark">!</span><span><b>Clamp ≠ squash.</b> Recortar a ação nos limites muda a distribuição efetiva, mas o log-prob usado no PPO é o da Gaussiana original. É uma aproximação didática: fora dos limites a densidade não é corrigida.</span></div>
+            <div class="note loss"><span class="mark">−</span><span><b>Guloso.</b> <span class="mono">act(..., greedy=True)</span> devolve a média (recortada), sem ruído. É o que <span class="mono">evaluate.py</span>/<span class="mono">play.py</span> usam.</span></div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="slide" id="slide-4" data-section="fundamentos" data-title="Log-prob e entropia vetoriais">
+      <div class="slide-inner">
+        <div>
+          <div class="eyebrow">fundamentos · densidade conjunta</div>
+          <h2 class="title">Log-prob e entropia somam as dimensões</h2>
+        </div>
+        <p class="lede">Como as dimensões são independentes (diagonal), a densidade conjunta é o produto das marginais: em log, a soma. A razão do PPO e o bônus de entropia usam essa soma.</p>
+        <div class="formula-wrap"><div class="formula">log π(a|s) = Σ<sub>d</sub> log N(a<sub>d</sub>; μ<sub>d</sub>, σ<sub>d</sub>²)<br>H[π] = Σ<sub>d</sub> ½·log(2πe·σ<sub>d</sub>²)</div></div>
+        <div class="split">
+          <div class="stack">
+            <pre class="code">dist = Normal(mean, log_std.exp())
+old_log_probs = dist.log_prob(a).sum(dim=<span class="n">1</span>)
+...
+log_probs = dist.log_prob(a[idx]).sum(dim=<span class="n">1</span>)
+ratio = torch.exp(log_probs - old_log_probs[idx])
+entropy = dist.entropy().sum(dim=<span class="n">1</span>).mean()</pre>
+          </div>
+          <div class="stack">
+            <div class="note"><span class="mark">→</span><span><b>Mesmo recorte.</b> A perda de política é idêntica à do PPO discreto, só que a razão vem de densidades gaussianas. <span class="mono">ratio = π_novo(a|s) / π_velho(a|s)</span>.</span></div>
+            <div class="note warn"><span class="mark">!</span><span><b>Entropia desligada.</b> O default é <span class="mono">entropy_coef=0.0</span>: a Gaussiana já explora pelo σ aprendido. Ligar entropia empurra σ para cima e pode impedir a convergência fina.</span></div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="slide" id="slide-5" data-section="update" data-title="O update">
+      <div class="slide-inner">
+        <div>
+          <div class="eyebrow">update · o mesmo PPO</div>
+          <h2 class="title">O update é o PPO de sempre</h2>
+        </div>
+        <ol class="list">
+          <li><span class="bullet"></span><span><b>Rollout</b> de 1024 transições (estado, ação contínua, recompensa, próximo estado, terminal).</span></li>
+          <li><span class="bullet blue"></span><span><b>GAE(λ)</b> com <span class="mono">compute_gae</span> importado do <span class="mono">alg_ppo</span>; vantagens normalizadas.</span></li>
+          <li><span class="bullet amber"></span><span><b>10 épocas</b> de minibatches (64), recorte em <span class="mono">1±0,2</span>, perda de valor 0,5 e sem entropia.</span></li>
+          <li><span class="bullet red"></span><span><b>Passo</b> do Adam com <span class="mono">lr=3e-4</span> e gradiente clipado em norma 0,5; rollout descartado ao final.</span></li>
+        </ol>
+        <div class="split">
+          <div class="stack">
+            <pre class="code">unclipped = ratio * adv
+clipped = torch.clamp(ratio, <span class="n">1.0</span> - self.clip,
+                      <span class="n">1.0</span> + self.clip) * adv
+policy_loss = -torch.min(unclipped, clipped).mean()
+value_loss = mse_loss(values, returns[idx])
+loss = policy_loss + value_coef * value_loss</pre>
+          </div>
+          <div class="stack">
+            <div class="note"><span class="mark">→</span><span><b>Checkpoint igual.</b> <span class="mono">evaluate.py</span>/<span class="mono">play.py</span> leem o algoritmo do checkpoint e chamam <span class="mono">set_action_bounds</span> a partir do <span class="mono">Box</span> reconstruído da config.</span></div>
+            <div class="note warn"><span class="mark">!</span><span><b>Sem minibatch de observação?</b> O buffer guarda observações <span class="mono">(N,)</span> no vector encoder; o agente é agnóstico à forma do estado, como todos os outros.</span></div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="slide" id="slide-6" data-section="economy" data-title="Aplicação: economy">
+      <div class="slide-inner">
+        <div>
+          <div class="eyebrow">aplicação · arena economy</div>
+          <h2 class="title">Onde o PPO contínuo roda no repo</h2>
+        </div>
+        <p class="lede">A arena economy tem duas visões: o banco-agente e o governo. Ambas usam ações contínuas limitadas e observações vetoriais — o caso de uso do <span class="mono">ppo_continuous</span>.</p>
+        <div class="grid-2">
+          <div class="card">
+            <h3>BankEnv — banco-agente</h3>
+            <p><b>3 × n_groups</b> ações: taxa de aprovação <span class="mono">[0; 1]</span>, limite <span class="mono">[0,1; 1]</span> e spread <span class="mono">[0; 0,25]</span> por grupo de risco. Observação de <span class="mono">5 + 6n + 3</span> dimensões.</p>
+          </div>
+          <div class="card">
+            <h3>EconomyEnv — governo</h3>
+            <p><b>3</b> ações: imposto de renda <span class="mono">[0; 0,60]</span>, razão de gastos <span class="mono">[0,05; 0,50]</span> e taxa de juros <span class="mono">[0; 0,05]</span>. Observação de 11 dimensões.</p>
+          </div>
+        </div>
+        <div class="split">
+          <div class="stack">
+            <pre class="code"><span class="c"># da raiz do repo</span>
+python train.py --arena economy \
+    --alg ppo_continuous --episodes 200
+
+python evaluate.py --arena economy \
+    --checkpoint checkpoints/economy/best.pt
+
+python play.py --arena economy \
+    --checkpoint checkpoints/economy/best.pt</pre>
+          </div>
+          <div class="stack">
+            <div class="note"><span class="mark">→</span><span><b>Por que não DQN?</b> As ações são proporções contínuas (taxa, limite, spread). Discretizá-las perderia resolução e criaria uma explosão combinatória com <span class="mono">n_groups</span>.</span></div>
+            <div class="note warn"><span class="mark">!</span><span><b>Limites por dimensão.</b> O <span class="mono">Box</span> do ambiente define <span class="mono">low</span>/<span class="mono">high</span> por dimensão; o agente recorta o vetor amostrado nesses limites, sem normalizar para [−1,1].</span></div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="slide" id="slide-7" data-section="hiperparâmetros" data-title="Hiperparâmetros">
+      <div class="slide-inner">
+        <div>
+          <div class="eyebrow">hiperparâmetros · defaults</div>
+          <h2 class="title">Hiperparâmetros</h2>
+        </div>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>Parâmetro</th><th>Default</th><th>Onde</th><th>Efeito</th></tr></thead>
+            <tbody>
+              <tr><td class="mono">lr</td><td class="mono">3e-4</td><td class="mono">agent.py:25</td><td>Adam; <span class="mono">--lr</span> sobrescreve.</td></tr>
+              <tr><td class="mono">gamma</td><td class="mono">0,99</td><td class="mono">agent.py:25</td><td>Desconto do GAE.</td></tr>
+              <tr><td class="mono">rollout_steps</td><td class="mono">1024</td><td class="mono">agent.py:26</td><td>Gatilho do update.</td></tr>
+              <tr><td class="mono">epochs</td><td class="mono">10</td><td class="mono">agent.py:26</td><td>Reuso do rollout.</td></tr>
+              <tr><td class="mono">clip</td><td class="mono">0,2</td><td class="mono">agent.py:27</td><td>Recorte da razão.</td></tr>
+              <tr><td class="mono">gae_lambda</td><td class="mono">0,95</td><td class="mono">agent.py:28</td><td>Viés × variância do GAE.</td></tr>
+              <tr><td class="mono">value_coef</td><td class="mono">0,5</td><td class="mono">agent.py:28</td><td>Peso da perda do crítico.</td></tr>
+              <tr><td class="mono">entropy_coef</td><td class="mono">0,0</td><td class="mono">agent.py:28</td><td>Sem bônus de entropia por padrão.</td></tr>
+              <tr><td class="mono">max_grad_norm</td><td class="mono">0,5</td><td class="mono">agent.py:29</td><td>Clip de norma.</td></tr>
+              <tr><td class="mono">log_std clamp</td><td class="mono">[−5, 2]</td><td class="mono">model.py:32</td><td>Limites do desvio global.</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <div class="note"><span class="mark">→</span><span><b>Diferença de defaults.</b> O PPO discreto do repo usa lr 2,5e-4, grad clip 10 e entropia 0,01; o contínuo espelha a receita clássica do PPO contínuo: lr 3e-4, grad clip 0,5, entropia 0.</span></div>
+      </div>
+    </section>
+
+    <section class="slide" id="slide-8" data-section="prática" data-title="Rodando na prática">
+      <div class="slide-inner">
+        <div>
+          <div class="eyebrow">prática · comandos</div>
+          <h2 class="title">Rodando na prática</h2>
+        </div>
+        <div class="split">
+          <div class="stack">
+            <pre class="code"><span class="c"># treino na arena economy</span>
+python train.py --arena economy \
+    --alg ppo_continuous --episodes 200
+
+<span class="c"># curvas no TensorBoard</span>
+python train.py --arena economy \
+    --alg ppo_continuous --episodes 200 --tensorboard
+
+<span class="c"># avaliar o melhor checkpoint</span>
+python evaluate.py --arena economy \
+    --checkpoint checkpoints/economy/best.pt --episodes 20</pre>
+          </div>
+          <div class="stack">
+            <div class="note"><span class="mark">→</span><span><b>Saída.</b> <span class="mono">checkpoints/economy/best.pt</span>, <span class="mono">logs/training.csv</span> e <span class="mono">logs/evaluation.csv</span>. O checkpoint carrega a config da arena e a dimensão da ação.</span></div>
+            <div class="note warn"><span class="mark">!</span><span><b>Não use no seek_coin.</b> A CLI do seek_coin remove <span class="mono">ppo_continuous</span> das escolhas; o agente espera um <span class="mono">Box</span> e devolve vetores, não as seis ações discretas.</span></div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="slide" id="slide-9" data-section="limitações" data-title="Limitações do desenho">
+      <div class="slide-inner">
+        <div>
+          <div class="eyebrow">limitações · honestidade do desenho</div>
+          <h2 class="title">O que este PPO contínuo não faz</h2>
+        </div>
+        <div class="grid-2">
+          <div class="card">
+            <h3>Sem squashing</h3>
+            <p>Muitos PPOs contínuos usam <span class="mono">tanh</span> e corrigem o log-prob pela derivada do squash. Aqui só há <span class="mono">clip</span>: a ação fica dentro do <span class="mono">Box</span>, mas a densidade usada no PPO não corresponde à densidade efetiva perto da borda.</p>
+          </div>
+          <div class="card">
+            <h3>σ não depende do estado</h3>
+            <p>Um <span class="mono">log_std</span> global por dimensão é fácil de treinar e estável, mas não modela “mais incerteza em alguns estados”. Para os controles macro da economy, é um compromisso razoável.</p>
+          </div>
+        </div>
+        <div class="note warn"><span class="mark">!</span><span><b>Consequência prática.</b> Se o treino colapsar em ações nos extremos do <span class="mono">Box</span>, o gradiente pode ficar enganoso: a política “acha” que amostrou o valor original. Aumentar o horizonte do GAE ou reduzir o lr costuma estabilizar.</span></div>
+      </div>
+    </section>
+
+    <section class="slide" id="slide-10" data-section="fechamento" data-title="Para levar">
+      <div class="slide-inner">
+        <div>
+          <div class="eyebrow">fechamento · resumo</div>
+          <h2 class="title">Para levar</h2>
+        </div>
+        <div class="grid-2">
+          <div class="stack">
+            <div class="note"><span class="mark">1</span><span><b>Política.</b> Gaussian diagonal com média aprendida e <span class="mono">log_std</span> global por dimensão, recortada nos limites do <span class="mono">Box</span>.</span></div>
+            <div class="note"><span class="mark">2</span><span><b>Alvo.</b> GAE(λ) idêntico ao PPO discreto, importado de <span class="mono">alg_ppo</span>.</span></div>
+            <div class="note"><span class="mark">3</span><span><b>Update.</b> 10 épocas, recorte 0,2, perda de valor 0,5, grad clip 0,5; rollout de 1024 descartado após o update.</span></div>
+          </div>
+          <div class="stack">
+            <div class="spec"><span class="num">3 × n</span><span class="unit">dimensões de ação no BankEnv</span></div>
+            <div class="note warn"><span class="mark">!</span><span><b>Terminar ≠ truncar.</b> O buffer guarda apenas <span class="mono">terminated</span>; o truncamento por tempo continua bootstrapping, como em todo o repo.</span></div>
+            <div class="note loss"><span class="mark">→</span><span><b>Próximo.</b> Volte ao <span class="mono">ppo-aula.html</span> para a versão discreta e ao <span class="mono">economy</span> para ver o ambiente que consome este agente.</span></div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+  </main>
+</div>
+<script src="aula.js"></script>
+</body>
+</html>

@@ -13,6 +13,13 @@ Plataforma 2D didática para treinar agentes DQN (PyTorch + Gymnasium + NumPy + 
 
 Repositório git local (branch `main`). Artefatos gerados (`venv/`, `checkpoints/`, `logs/`) são ignorados pelo `.gitignore`.
 
+## Documentação HTML
+
+Há uma aula em slides por algoritmo em `docs/*-aula.html` (`index.html` lista
+todas): DQN, Double DQN/PER/dueling, MKA, PPO, EPPO, PPO-AES, GTR, A2C,
+PPO contínuo, IPPO, MAPPO e HAPPO. As páginas compartilham `docs/aula.css` e
+`docs/aula.js`; abra direto no navegador.
+
 ## Comandos
 
 Use o venv existente em `venv/` (Python 3.10; o README menciona `.venv`, mas o diretório real é `venv`):

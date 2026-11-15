@@ -1,0 +1,441 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>DQN no rl-arena</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,600;12..96,700&family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
+<link rel="stylesheet" href="aula.css">
+</head>
+<body>
+<div class="app">
+  <div class="progress" aria-hidden="true"><span id="progress-fill"></span></div>
+  <header class="topbar">
+    <div class="brand">
+      <span class="dot"></span>
+      <span><b>DQN</b> // rl-arena</span>
+      <span class="sec-label" id="sec-label">abertura</span>
+    </div>
+    <div class="top-actions">
+      <button class="tb" id="btn-prev" type="button">←</button>
+      <button class="tb" id="btn-next" type="button">→</button>
+      <span class="counter" id="counter">01 / 11</span>
+    </div>
+  </header>
+  <main class="stage" id="stage">
+
+    <section class="slide" id="slide-1" data-section="abertura" data-title="DQN no rl-arena">
+      <div class="slide-inner">
+        <div class="cover-wrap">
+          <div class="cover-copy">
+            <div class="eyebrow">aula · aprendizado por reforço</div>
+            <h1 class="display">DQN no<br><span class="thin">rl-arena</span></h1>
+            <p class="lede">Q-learning profundo com replay uniforme, alvo congelado e ε-greedy: a referência off-policy do repositório, em 261 linhas.</p>
+            <div class="chips">
+              <span class="chip green">off-policy</span>
+              <span class="chip">replay de 50 mil</span>
+              <span class="chip">alvo C = 1000</span>
+              <span class="chip">ε de 1,0 → 0,05</span>
+            </div>
+            <div class="cover-foot">
+              <span class="mono">algs/alg_dqn/</span>
+              <span>Use <kbd>→</kbd> para começar</span>
+            </div>
+            <div class="cover-refs">
+              <div class="ref"><span class="ref-tag">paper</span>
+                <a href="https://www.nature.com/articles/nature14236" target="_blank" rel="noopener">Mnih et al., “Human-level control through deep reinforcement learning” (2015) <span class="src">Nature 518</span></a>
+              </div>
+              <div class="ref"><span class="ref-tag">código</span>
+                <span class="mono">arenas/algs/alg_dqn/{agent,model,replay_buffer}.py</span>
+              </div>
+            </div>
+          </div>
+          <div class="cover-art" aria-hidden="true">
+            <div class="mini-map">
+              <span class="platform" style="left:0;top:82%;width:100%"></span>
+              <span class="platform" style="left:8%;top:62%;width:27%"></span>
+              <span class="platform" style="left:56%;top:47%;width:31%"></span>
+              <span class="unit player" style="left:38%;top:56%"></span>
+              <span class="unit opponent" style="left:71%;top:56%"></span>
+              <span class="unit coin" style="left:58%;top:42%"></span>
+              <span class="unit coin" style="left:22%;top:57%"></span>
+            </div>
+            <span class="mini-caption">Q(s, a) aprende offline<br>de um replay de 50 mil transições</span>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="slide" id="slide-2" data-section="estrutura" data-title="Três arquivos, um contrato">
+      <div class="slide-inner">
+        <div>
+          <div class="eyebrow">estrutura · contrato de agente</div>
+          <h2 class="title">Três arquivos, um contrato</h2>
+        </div>
+        <p class="lede">O <span class="mono">train.py</span> não conhece DQN: ele chama <span class="mono">act</span>, <span class="mono">learn</span> e lê atributos. Tudo o que o algoritmo precisa está no pacote <span class="mono">algs/alg_dqn/</span>.</p>
+        <div class="grid-3">
+          <div class="card file-card">
+            <div class="file-top"><span class="file-name">model.py</span><span class="file-lines">22 linhas</span></div>
+            <p class="role"><b>A rede.</b> Encoder CNN/MLP do repo + cabeça que devolve um Q por ação. Sem dueling.</p>
+            <span class="symbol">QNetwork.forward → (batch, n_actions)</span>
+          </div>
+          <div class="card file-card">
+            <div class="file-top"><span class="file-name">replay_buffer.py</span><span class="file-lines">78 linhas</span></div>
+            <p class="role"><b>A memória.</b> Deque com capacidade 50 mil; amostragem com chance igual. Aceita máscara de ações do risk.</p>
+            <span class="symbol">add · sample · sample_with_masks</span>
+          </div>
+          <div class="card file-card">
+            <div class="file-top"><span class="file-name">agent.py</span><span class="file-lines">161 linhas</span></div>
+            <p class="role"><b>O algoritmo.</b> ε-greedy, alvo de TD, SmoothL1, cópia dura da target a cada C updates.</p>
+            <span class="symbol">DQNAgent · td_target</span>
+          </div>
+        </div>
+        <div class="split">
+          <div class="stack">
+            <div class="code-label">algs/alg_dqn/agent.py</div>
+            <pre class="code"><span class="k">class</span> <span class="hl">DQNAgent</span>:
+    algorithm = <span class="s">"dqn"</span>
+    arch_version = <span class="s">"alg-dqn-v1"</span>
+    <span class="c"># off-policy: sem `on_policy = True`</span>
+    C = <span class="n">1000</span>          <span class="c"># updates entre cópias da target</span></pre>
+          </div>
+          <div class="stack">
+            <div class="note"><span class="mark">→</span><span><b>Descoberta automática.</b> <span class="mono">--alg dqn</span> importa <span class="mono">algs.alg_dqn</span>; qualquer pacote <span class="mono">alg_&lt;nome&gt;/agent.py</span> que exponha <span class="mono">Agent</span> entra na CLI.</span></div>
+            <div class="note warn"><span class="mark">!</span><span><b>Off-policy de verdade.</b> O train.py trata o DQN de forma diferente dos on-policy: agenda ε por episódio, usa <span class="mono">--warmup</span> e pode chamar <span class="mono">learn()</span> a cada K transições.</span></div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="slide" id="slide-3" data-section="fundamentos" data-title="O que a rede vê e devolve">
+      <div class="slide-inner">
+        <div>
+          <div class="eyebrow">fundamentos · observação, ação e Q</div>
+          <h2 class="title">A rede devolve um valor por ação</h2>
+        </div>
+        <p class="lede">A observação é a grade semântica <span class="mono">(5, 20, 32)</span> (ou um vetor <span class="mono">(N,)</span> nas outras arenas). A saída é o Q estimado de cada uma das seis ações.</p>
+        <div class="split">
+          <div class="stack">
+            <figure class="figure">
+              <div class="diagram-scroll">
+                <svg class="diagram net" viewBox="0 0 760 240" role="img" aria-label="Observação entra no encoder compartilhado e na cabeça que produz seis Q-valores.">
+                  <defs><marker id="arr-dqn" viewBox="0 0 10 10" refX="8.5" refY="5" markerWidth="6.5" markerHeight="6.5" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" class="arrowhead"></path></marker></defs>
+                  <rect class="in-rect" x="20" y="76" width="64" height="96" rx="6"></rect>
+                  <rect class="in-rect" x="30" y="86" width="64" height="96" rx="6"></rect>
+                  <rect class="in-rect" x="40" y="96" width="64" height="96" rx="6"></rect>
+                  <text class="box-title" x="62" y="62" text-anchor="middle">obs</text>
+                  <text class="box-sub" x="72" y="216" text-anchor="middle">(5, 20, 32)</text>
+                  <line class="wire" x1="108" y1="128" x2="146" y2="128" marker-end="url(#arr-dqn)"></line>
+                  <rect class="box conv" x="152" y="78" width="120" height="100" rx="8"></rect>
+                  <text class="box-title" x="212" y="112" text-anchor="middle">CNN do repo</text>
+                  <text class="box-sub" x="212" y="132" text-anchor="middle">3 convoluções</text>
+                  <text class="box-sub" x="212" y="148" text-anchor="middle">+ flatten</text>
+                  <line class="wire" x1="272" y1="128" x2="310" y2="128" marker-end="url(#arr-dqn)"></line>
+                  <rect class="box" x="316" y="88" width="92" height="80" rx="8"></rect>
+                  <text class="box-title" x="362" y="122" text-anchor="middle">1280</text>
+                  <text class="box-sub" x="362" y="140" text-anchor="middle">features</text>
+                  <line class="wire" x1="408" y1="128" x2="446" y2="128" marker-end="url(#arr-dqn)"></line>
+                  <rect class="box box-actor" x="452" y="78" width="116" height="100" rx="9"></rect>
+                  <text class="box-title" x="510" y="112" text-anchor="middle">128 → 6</text>
+                  <text class="box-sub" x="510" y="132" text-anchor="middle">uma cabeça</text>
+                  <text class="box-sub" x="510" y="148" text-anchor="middle">ReLU</text>
+                  <line class="wire" x1="568" y1="128" x2="606" y2="128" marker-end="url(#arr-dqn)"></line>
+                  <rect class="out-chip" x="612" y="66" width="126" height="124" rx="8"></rect>
+                  <text class="box-title" x="675" y="98" text-anchor="middle">Q(s, ·)</text>
+                  <text class="box-sub" x="675" y="120" text-anchor="middle">6 valores</text>
+                  <text class="box-sub" x="675" y="140" text-anchor="middle">STOP … PUSH_R</text>
+                  <text class="box-sub" x="675" y="164" text-anchor="middle">argmax → ação</text>
+                </svg>
+              </div>
+              <figcaption>O encoder é o mesmo dos demais algoritmos (CNN para imagem, MLP para vetor). O DQN troca as duas cabeças do actor-critic por uma única cabeça com <span class="mono">n_actions</span> saídas.</figcaption>
+            </figure>
+          </div>
+          <div class="stack">
+            <div class="spec"><span class="num">344.743</span><span class="unit">parâmetros com 5 canais</span></div>
+            <div class="note"><span class="mark">∅</span><span><b>Sem softmax.</b> Os Q-valores são números reais arbitrários; a política é derivada deles (argmax) ou da exploração ε-greedy. A rede não modela uma distribuição.</span></div>
+            <div class="note warn"><span class="mark">!</span><span><b>Grade não markoviana.</b> Velocidades e timers não estão na observação; o <span class="mono">--frame-stack</span> concatena frames para dar história. É uma simplificação didática do repo.</span></div>
+            <div class="note loss"><span class="mark">−</span><span><b>Recompensas do seek_coin.</b> +1 por moeda, −2 por morte, −0,1 por <span class="mono">STOP</span> e −0,1 por empurrar sem contato; episódio truncado em 45 s.</span></div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="slide" id="slide-4" data-section="fundamentos" data-title="Q-learning com uma rede">
+      <div class="slide-inner">
+        <div>
+          <div class="eyebrow">fundamentos · a equação de Bellman</div>
+          <h2 class="title">Q-learning com uma rede</h2>
+        </div>
+        <p class="lede">O DQN aproxima a função de valor-ação ótima. O alvo de cada transição é o retorno imediato mais o melhor Q do próximo estado, descontado — e só o terminal verdadeiro corta o bootstrap.</p>
+        <div class="formula-wrap"><div class="formula">y = r + γ · (1 − terminal) · max<sub>a′</sub> Q<sub>alvo</sub>(s′, a′)<br>L(θ) = SmoothL1( Q<sub>online</sub>(s, a) , y )</div></div>
+        <div class="grid-2">
+          <div class="card">
+            <h3>Por que uma rede-alvo?</h3>
+            <p>Se o alvo usasse a mesma rede que está sendo atualizada, perseguiríamos um alvo móvel: cada passo mudaria os dois lados da equação. A <span class="mono">target</span> é uma cópia congelada, sincronizada duro a cada <b>C = 1000</b> updates bem-sucedidos.</p>
+          </div>
+          <div class="card">
+            <h3>Por que SmoothL1?</h3>
+            <p>O Huber loss é quadrático perto de zero e linear longe dele: menos sensível a outliers de TD do que o MSE, o que estabiliza o alvo quando a rede ainda está errada. O gradiente é clipado em norma 10.</p>
+          </div>
+        </div>
+        <div class="split">
+          <div class="stack">
+            <div class="code-label">algs/alg_dqn/agent.py — alvo de TD</div>
+            <pre class="code"><span class="k">def</span> <span class="hl">td_target</span>(reward, next_q, terminated, gamma):
+    <span class="c"># terminado de verdade zera o futuro;</span>
+    <span class="c"># truncamento por tempo continua bootstrapping</span>
+    <span class="k">return</span> reward + gamma * (<span class="n">1.0</span> - terminated) * next_q</pre>
+          </div>
+          <div class="stack">
+            <div class="note"><span class="mark">→</span><span><b>Truncar ≠ terminar.</b> O replay guarda apenas <span class="mono">terminated</span>. Um episódio que acaba por tempo não é um estado terminal: o valor do futuro ainda existe e o alvo continua bootstrapping.</span></div>
+            <div class="note warn"><span class="mark">C</span><span><b>C = 1000 é empírico.</b> O comentário do código registra a busca: com a rampa de ε e <span class="mono">--learn-every 4</span>, C=1000 coletou 15,8 moedas de treino contra 8,8 do C=10.</span></div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="slide" id="slide-5" data-section="memória" data-title="Replay uniforme">
+      <div class="slide-inner">
+        <div>
+          <div class="eyebrow">memória · replay</div>
+          <h2 class="title">Replay uniforme: quebrar a correlação</h2>
+        </div>
+        <p class="lede">Transições consecutivas são altamente correlacionadas. O replay guarda as últimas 50 mil e sorteia um lote com chance igual, embaralhando a ordem em que a rede aprende.</p>
+        <div class="split">
+          <div class="stack">
+            <div class="code-label">algs/alg_dqn/replay_buffer.py</div>
+            <pre class="code"><span class="k">class</span> <span class="hl">ReplayBuffer</span>:
+    accepts_masks = <span class="k">True</span>
+
+    <span class="k">def</span> <span class="hl">add</span>(self, state, action, reward, next_state,
+            terminated, next_mask=<span class="k">None</span>):
+        self.data.append((state, action, reward,
+                          next_state, terminated))
+        <span class="c"># risk: máscara do próximo estado para não</span>
+        <span class="c"># superestimar ações inválidas no alvo</span>
+        self.masks.append(next_mask)
+
+    <span class="k">def</span> <span class="hl">sample</span>(self, batch_size):
+        data = <span class="hl">list(self.data)</span>   <span class="c"># deque é O(n) no meio</span>
+        idxs = random.sample(<span class="hl">range(len(data))</span>, batch_size)
+        ...</pre>
+          </div>
+          <div class="stack">
+            <div class="list">
+              <li><span class="bullet"></span><span><b>Capacidade.</b> 50 mil transições (<span class="mono">--buffer-size</span> no CLI). Passou disso, a mais antiga sai.</span></li>
+              <li><span class="bullet blue"></span><span><b>Uniformidade.</b> Toda transição tem a mesma probabilidade. Não há prioridade — isso é o que o Double DQN/PER adiciona no outro pacote.</span></li>
+              <li><span class="bullet amber"></span><span><b>Máscaras.</b> No risk, ações ilegais no próximo estado recebem <span class="mono">−inf</span> antes do <span class="mono">max</span>; se não sobrar ação legal, o próximo valor é zero.</span></li>
+              <li><span class="bullet red"></span><span><b>Cópia por amostragem.</b> <span class="mono">list(self.data)</span> custa memória temporária, mas o buffer cheio é indexado em O(1).</span></li>
+            </div>
+            <div class="note"><span class="mark">Σ</span><span><b>Off-policy.</b> Como o replay guarda dados de políticas antigas, o DQN pode reaproveitar cada transição muitas vezes. É o oposto do PPO/A2C, que descartam o rollout após o update.</span></div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="slide" id="slide-6" data-section="exploração" data-title="ε-greedy">
+      <div class="slide-inner">
+        <div>
+          <div class="eyebrow">exploração · ε-greedy</div>
+          <h2 class="title">Explorar com probabilidade ε</h2>
+        </div>
+        <p class="lede">Com probabilidade ε a ação é sorteada uniformemente; caso contrário, é o argmax dos Q-valores. No treino o ε cai ao longo do tempo; na avaliação é sempre 0 (guloso).</p>
+        <div class="stack">
+          <pre class="code"><span class="k">def</span> <span class="hl">act</span>(self, state, greedy=<span class="k">False</span>, action_mask=<span class="k">None</span>):
+    <span class="k">if</span> <span class="k">not</span> greedy <span class="k">and</span> random.random() &lt; self.epsilon:
+        <span class="k">return</span> random.randrange(self.n_actions)   <span class="c"># explora</span>
+    q = self.online(x)
+    <span class="k">if</span> mask <span class="k">is not None</span>:
+        q = q.masked_fill(~mask, <span class="n">float</span>(<span class="s">"-inf"</span>))  <span class="c"># risk</span>
+    <span class="k">return</span> <span class="n">int</span>(q.argmax(dim=<span class="n">1</span>).item())            <span class="c"># explota</span></pre>
+        </div>
+        <div class="grid-2">
+          <div class="card">
+            <h3>Quem agenda o ε?</h3>
+            <p>O agente tem um decay por passo (<span class="mono">epsilon ×= 0,9995</span> até 0,05). Mas o <span class="mono">train.py</span> assume o controle por padrão: <span class="mono">--epsilon-ramp-episodes 150</span> faz uma rampa linear de 1,0 até <span class="mono">--epsilon-min 0,1</span>, contada em episódios absolutos (para a retomada continuar de onde parou).</p>
+          </div>
+          <div class="card">
+            <h3>Por que uniforme?</h3>
+            <p>Simples e sem viés preferencial entre ações: a exploração não depende dos Q-valores atuais. O custo é desperdiçar passos em ações obviamente ruins no começo — e, no nível 2, em patches de areia/gelo que exigem uma política mais fina.</p>
+          </div>
+        </div>
+        <div class="note warn"><span class="mark">!</span><span><b>Lote vetorizado.</b> <span class="mono">act_batch</span> aplica ε-greedy linha a linha e respeita a máscara; é o caminho usado por <span class="mono">--envs &gt; 1</span>.</span></div>
+      </div>
+    </section>
+
+    <section class="slide" id="slide-7" data-section="update" data-title="O update, passo a passo">
+      <div class="slide-inner">
+        <div>
+          <div class="eyebrow">update · um learn()</div>
+          <h2 class="title">O update, passo a passo</h2>
+        </div>
+        <ol class="list">
+          <li><span class="bullet"></span><span><b>Espera.</b> <span class="mono">if len(buffer) &lt; max(warmup, batch_size): return None</span>. O warmup padrão do CLI é 1000.</span></li>
+          <li><span class="bullet"></span><span><b>Amostra</b> <span class="mono">batch_size</span> (64 por padrão) transições uniformemente, com máscara se o buffer tiver.</span></li>
+          <li><span class="bullet"></span><span><b>Q atual:</b> <span class="mono">q = online(s).gather(1, a)</span> — só o valor da ação tomada.</span></li>
+          <li><span class="bullet blue"></span><span><b>Alvo:</b> <span class="mono">max target(ns)</span>, mascarado, e <span class="mono">y = r + γ(1−terminal)·maxQ′</span> sob <span class="mono">no_grad</span>.</span></li>
+          <li><span class="bullet amber"></span><span><b>Perda:</b> <span class="mono">SmoothL1(q, y)</span>; backward; gradiente clipado em norma 10 antes do passo do Adam.</span></li>
+          <li><span class="bullet red"></span><span><b>Contadores:</b> <span class="mono">steps += 1</span>, ε decai; a cada <b>C</b> updates a target recebe uma cópia dura da online.</span></li>
+        </ol>
+        <div class="split">
+          <div class="stack">
+            <pre class="code"><span class="c"># resumo do miolo de learn()</span>
+q = self.online(s).gather(<span class="n">1</span>, a).squeeze(<span class="n">1</span>)
+<span class="k">with</span> torch.no_grad():
+    next_q = self.target(ns).max(dim=<span class="n">1</span>).values
+    target = td_target(r, next_q, term, self.gamma)
+loss = self.loss_fn(q, target)
+...
+<span class="k">if</span> self.steps % self.C == <span class="n">0</span>:
+    self.target.load_state_dict(self.online.state_dict())</pre>
+          </div>
+          <div class="stack">
+            <div class="note"><span class="mark">1</span><span><b>Um update por chamada.</b> O treino padrão chama <span class="mono">learn()</span> a cada 4 transições (<span class="mono">--learn-every 4</span>) com um ambiente. Cada chamada consome um batch novo.</span></div>
+            <div class="note warn"><span class="mark">2</span><span><b>Sem gradiente no alvo.</b> O alvo é tratado como constante; só <span class="mono">Q(s, a)</span> recebe gradiente. Sem o <span class="mono">no_grad</span>, a target também seria treinada.</span></div>
+            <div class="note loss"><span class="mark">3</span><span><b>Retomada.</b> O checkpoint guarda online, target, otimizador, <span class="mono">steps</span>, <span class="mono">epsilon</span> e <span class="mono">gamma</span> — o replay <b>não</b> é salvo, então a retomada não é bit a bit.</span></div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="slide" id="slide-8" data-section="hiperparâmetros" data-title="Hiperparâmetros">
+      <div class="slide-inner">
+        <div>
+          <div class="eyebrow">hiperparâmetros · defaults do repo</div>
+          <h2 class="title">Hiperparâmetros e o que cada um controla</h2>
+        </div>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>Parâmetro</th><th>Default</th><th>Onde</th><th>Efeito</th></tr></thead>
+            <tbody>
+              <tr><td class="mono">lr</td><td class="mono">1e-3</td><td class="mono">agent.py:37</td><td>Adam; o CLI <span class="mono">--lr</span> sobrescreve.</td></tr>
+              <tr><td class="mono">gamma</td><td class="mono">0,99</td><td class="mono">agent.py:37</td><td>Desconto; horizonte efetivo ≈ 100 passos.</td></tr>
+              <tr><td class="mono">epsilon</td><td class="mono">1,0 → 0,05</td><td class="mono">agent.py:37</td><td>Exploração inicial; a rampa do train.py prevalece.</td></tr>
+              <tr><td class="mono">epsilon_decay</td><td class="mono">0,9995</td><td class="mono">agent.py:38</td><td>Decay por passo quando a rampa está desligada.</td></tr>
+              <tr><td class="mono">batch_size</td><td class="mono">64</td><td class="mono">CLI</td><td>Transições por update; <span class="mono">--batch-size</span>.</td></tr>
+              <tr><td class="mono">buffer_size</td><td class="mono">50.000</td><td class="mono">agent.py:39</td><td>Capacidade do replay (deque).</td></tr>
+              <tr><td class="mono">C</td><td class="mono">1000</td><td class="mono">agent.py:20</td><td>Updates entre sincronizações da target.</td></tr>
+              <tr><td class="mono">warmup</td><td class="mono">0 (CLI: 1000)</td><td class="mono">agent.py:50</td><td>Transições antes do primeiro update.</td></tr>
+              <tr><td class="mono">max_grad_norm</td><td class="mono">10,0</td><td class="mono">agent.py:155</td><td>Clip de norma do gradiente antes do Adam.</td></tr>
+              <tr><td class="mono">frame_stack / skip</td><td class="mono">1 / 1</td><td class="mono">CLI</td><td>Histórico de observação e repetição da ação.</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <div class="grid-2">
+          <div class="note"><span class="mark">→</span><span><b>Rampa de ε.</b> <span class="mono">--epsilon-ramp-episodes 150</span> é o padrão do train.py para off-policy; <span class="mono">0</span> devolve o controle ao decay por passo do agente.</span></div>
+          <div class="note warn"><span class="mark">!</span><span><b>Aprender a cada 4 passos.</b> Com um ambiente, <span class="mono">--learn-every 4</span> é o default validado (≈3× mais passos/hora). Com <span class="mono">--envs &gt; 1</span>, o update é por passo do vetor (K explícito &gt; 1 é recusado).</span></div>
+        </div>
+      </div>
+    </section>
+
+    <section class="slide" id="slide-9" data-section="integração" data-title="train, evaluate, play">
+      <div class="slide-inner">
+        <div>
+          <div class="eyebrow">integração · o resto do repo</div>
+          <h2 class="title">Como o treino, a avaliação e o play usam o DQN</h2>
+        </div>
+        <div class="grid-3">
+          <div class="card">
+            <h3>train.py</h3>
+            <p>Loop por passo: <span class="mono">act</span> → <span class="mono">env.step</span> → <span class="mono">buffer.add</span> → a cada K passos <span class="mono">learn</span>. O ε é recalculado por episódio absoluto. <span class="mono">--envs &gt; 1</span> usa <span class="mono">act_batch</span>.</p>
+          </div>
+          <div class="card">
+            <h3>evaluate.py</h3>
+            <p>Lê <span class="mono">algorithm</span> do checkpoint, reconstrói a rede e roda <span class="mono">act(..., greedy=True)</span>. Não há update nem ε.</p>
+          </div>
+          <div class="card">
+            <h3>play.py</h3>
+            <p>Modo espectador/jogador. O checkpoint DQN joga guloso; <span class="mono">--opponent</span> aceita outro checkpoint ou uma baseline (<span class="mono">rule</span>/<span class="mono">random</span>/<span class="mono">coins</span>/<span class="mono">human</span>).</p>
+          </div>
+        </div>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>Arquivo do checkpoint</th><th>Conteúdo</th></tr></thead>
+            <tbody>
+              <tr><td class="mono">algorithm</td><td class="mono">"dqn"</td></tr>
+              <tr><td class="mono">arch_version</td><td class="mono">"alg-dqn-v1"</td></tr>
+              <tr><td class="mono">online / target</td><td>pesos das duas redes</td></tr>
+              <tr><td class="mono">optimizer</td><td>estado do Adam (retomada)</td></tr>
+              <tr><td class="mono">steps / epsilon / gamma</td><td>contadores e exploração</td></tr>
+              <tr><td class="mono">config</td><td><span class="mono">ArenaConfig</span> completa, para reconstruir o ambiente</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <div class="note"><span class="mark">→</span><span><b>Mesmo seed, mesma corrida?</b> O train.py semeia <span class="mono">random</span>, <span class="mono">numpy</span> e <span class="mono">torch</span> com <span class="mono">--seed</span> e faz <span class="mono">env.reset(seed=seed+ep)</span>. A retomada recomeça buffer e RNG, então não é bit a bit.</span></div>
+      </div>
+    </section>
+
+    <section class="slide" id="slide-10" data-section="prática" data-title="Rodando na prática">
+      <div class="slide-inner">
+        <div>
+          <div class="eyebrow">prática · comandos</div>
+          <h2 class="title">Rodando na prática</h2>
+        </div>
+        <div class="split">
+          <div class="stack">
+            <div class="code-label">treino</div>
+            <pre class="code"><span class="c"># DQN padrão no mapa histórico</span>
+python train.py --arena seek_coin --alg dqn --episodes 300
+
+<span class="c"># nível 2 (areia/gelo), com visualização</span>
+python train.py --arena seek_coin --level 2 \
+    --alg dqn --episodes 300 --render
+
+<span class="c"># vetorizado: 4 ambientes paralelos</span>
+python train.py --arena seek_coin --alg dqn \
+    --envs 4 --episodes 300
+
+<span class="c"># retomar de um checkpoint</span>
+python train.py --arena seek_coin --alg dqn \
+    --resume checkpoints/best.pt --episodes 100</pre>
+          </div>
+          <div class="stack">
+            <div class="code-label">avaliar e jogar</div>
+            <pre class="code">python evaluate.py --arena seek_coin \
+    --checkpoint checkpoints/best.pt --episodes 20
+
+python play.py --arena seek_coin \
+    --checkpoint checkpoints/best.pt --render
+
+python play.py --arena seek_coin \
+    --player human --opponent coins</pre>
+            <div class="note"><span class="mark">→</span><span><b>Saídas.</b> <span class="mono">checkpoints/best.pt</span> e <span class="mono">latest.pt</span>; <span class="mono">logs/training.csv</span> e <span class="mono">evaluation.csv</span>; com <span class="mono">--stats</span>, <span class="mono">logs/stats.csv</span>; com <span class="mono">--tensorboard</span>, curvas em <span class="mono">logs/runs</span>.</span></div>
+          </div>
+        </div>
+        <div class="note warn"><span class="mark">!</span><span><b>Torch.</b> Prefixe os scripts com <span class="mono">TORCH_CPP_LOG_LEVEL=ERROR</span> para suprimir avisos do NNPACK. O dispositivo aparece no início do treino: <span class="mono">device=cuda</span> ou <span class="mono">cpu</span>.</span></div>
+      </div>
+    </section>
+
+    <section class="slide" id="slide-11" data-section="fechamento" data-title="Trade-offs e para levar">
+      <div class="slide-inner">
+        <div>
+          <div class="eyebrow">fechamento · trade-offs</div>
+          <h2 class="title">Quando o DQN basta — e quando não</h2>
+        </div>
+        <div class="grid-2">
+          <div class="stack">
+            <div class="card">
+              <h3>Ganha</h3>
+              <p>Simplicidade e reuso de dados. Um update custa um batch do replay, e cada transição pode ser aprendida muitas vezes. É a melhor referência para comparar as variantes.</p>
+            </div>
+            <div class="card">
+              <h3>Limita</h3>
+              <p>O <span class="mono">max</span> do alvo superestima valores com ruído (o Double DQN corrige), o replay uniforme ignora transições raras ou valiosas (o PER corrige) e uma cabeça única mistura V e A quando as ações são parecidas (o dueling corrige).</p>
+            </div>
+          </div>
+          <div class="stack">
+            <div class="note"><span class="mark">→</span><span><b>Para levar.</b> DQN = Q-learning + rede + replay + target. O alvo é <span class="mono">r + γ(1−terminal)max Q′</span>; o replay quebra a correlação; a target estabiliza; ε-greedy explora.</span></div>
+            <div class="note warn"><span class="mark">!</span><span><b>O nível 2 muda o jogo.</b> Areia (efeito de 5 s após sair) e gelo (escorregão) quebram a suposição de dinâmica estacionária. O DQN aprende, mas a política reativa com ε alto erra com frequência no começo — por isso a comparação com EPPO/AES/GTR no mesmo protocolo.</span></div>
+            <div class="note loss"><span class="mark">3</span><span><b>Próximos passos.</b> Veja <span class="mono">doubledqn-aula.html</span> para as três correções clássicas e <span class="mono">ppo-aula.html</span> para a família on-policy.</span></div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+  </main>
+</div>
+<script src="aula.js"></script>
+</body>
+</html>

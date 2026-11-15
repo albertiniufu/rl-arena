@@ -1,0 +1,371 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>A2C no rl-arena</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,600;12..96,700&family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
+<link rel="stylesheet" href="aula.css">
+</head>
+<body>
+<div class="app">
+  <div class="progress" aria-hidden="true"><span id="progress-fill"></span></div>
+  <header class="topbar">
+    <div class="brand">
+      <span class="dot"></span>
+      <span><b>A2C</b> // rl-arena</span>
+      <span class="sec-label" id="sec-label">abertura</span>
+    </div>
+    <div class="top-actions">
+      <button class="tb" id="btn-prev" type="button">←</button>
+      <button class="tb" id="btn-next" type="button">→</button>
+      <span class="counter" id="counter">01 / 10</span>
+    </div>
+  </header>
+  <main class="stage" id="stage">
+
+    <section class="slide" id="slide-1" data-section="abertura" data-title="A2C no rl-arena">
+      <div class="slide-inner">
+        <div class="cover-wrap">
+          <div class="cover-copy">
+            <div class="eyebrow">aula · aprendizado por reforço</div>
+            <h1 class="display">A2C no<br><span class="thin">rl-arena</span></h1>
+            <p class="lede">Advantage actor-critic com retornos n-step: coleta, um único passo de gradiente e descarte. O degrau mais simples entre o actor-critic e o PPO.</p>
+            <div class="chips">
+              <span class="chip green">on-policy</span>
+              <span class="chip">n = 64 passos</span>
+              <span class="chip">1 update por rollout</span>
+              <span class="chip">sem clipping</span>
+            </div>
+            <div class="cover-foot">
+              <span class="mono">algs/alg_a2c/</span>
+              <span>Use <kbd>→</kbd> para começar</span>
+            </div>
+            <div class="cover-refs">
+              <div class="ref"><span class="ref-tag">paper</span>
+                <a href="https://arxiv.org/abs/1602.01783" target="_blank" rel="noopener">Mnih et al., “Asynchronous Methods for Deep Reinforcement Learning” (2016) <span class="src">arXiv:1602.01783</span></a>
+              </div>
+              <div class="ref"><span class="ref-tag">código</span>
+                <span class="mono">arenas/algs/alg_a2c/{agent,model,rollout_buffer}.py</span>
+              </div>
+            </div>
+          </div>
+          <div class="cover-art" aria-hidden="true">
+            <div class="mini-map">
+              <span class="platform" style="left:0;top:82%;width:100%"></span>
+              <span class="platform" style="left:8%;top:62%;width:27%"></span>
+              <span class="platform" style="left:56%;top:47%;width:31%"></span>
+              <span class="unit player" style="left:38%;top:56%"></span>
+              <span class="unit opponent" style="left:71%;top:56%"></span>
+              <span class="unit coin" style="left:58%;top:42%"></span>
+            </div>
+            <span class="mini-caption">rollout de 64 passos<br>um gradiente, sem épocas</span>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="slide" id="slide-2" data-section="estrutura" data-title="Três arquivos, um contrato on-policy">
+      <div class="slide-inner">
+        <div>
+          <div class="eyebrow">estrutura · contrato de agente</div>
+          <h2 class="title">Três arquivos, um contrato on-policy</h2>
+        </div>
+        <p class="lede">O A2C usa a mesma topologia de rede do PPO, mas um fluxo de dados diferente: o rollout é consumido assim que enche (ou quando o episódio termina) e descartado depois do update.</p>
+        <div class="grid-3">
+          <div class="card file-card">
+            <div class="file-top"><span class="file-name">model.py</span><span class="file-lines">27 linhas</span></div>
+            <p class="role"><b>A rede.</b> Encoder compartilhado + cabeça do ator (logits) + cabeça do crítico (V escalar).</p>
+            <span class="symbol">ActorCriticNetwork.forward → (logits, value)</span>
+          </div>
+          <div class="card file-card">
+            <div class="file-top"><span class="file-name">rollout_buffer.py</span><span class="file-lines">53 linhas</span></div>
+            <p class="role"><b>A fila.</b> Transições na ordem da coleta, com marca de fim de episódio. Sem amostragem.</p>
+            <span class="symbol">add · mark_episode_end · as_arrays</span>
+          </div>
+          <div class="card file-card">
+            <div class="file-top"><span class="file-name">agent.py</span><span class="file-lines">173 linhas</span></div>
+            <p class="role"><b>O algoritmo.</b> Retornos n-step, vantagem normalizada, um passo de Adam e limpeza do buffer.</p>
+            <span class="symbol">A2CAgent · n_step_returns</span>
+          </div>
+        </div>
+        <div class="split">
+          <div class="stack">
+            <pre class="code"><span class="k">class</span> <span class="hl">A2CAgent</span>:
+    algorithm = <span class="s">"a2c"</span>
+    arch_version = <span class="s">"alg-a2c-v1"</span>
+    on_policy = <span class="k">True</span>
+    epsilon = <span class="n">0.0</span>
+    target = online   <span class="c"># sem rede-alvo</span></pre>
+          </div>
+          <div class="stack">
+            <div class="note"><span class="mark">→</span><span><b>Descoberta automática.</b> <span class="mono">--alg a2c</span> importa <span class="mono">algs.alg_a2c</span>. O train.py reconhece <span class="mono">on_policy=True</span> e trata o agente como PPO/A2C: sem ε, sem warmup.</span></div>
+            <div class="note warn"><span class="mark">!</span><span><b>Sem rede-alvo.</b> <span class="mono">target</span> é um alias de <span class="mono">online</span> só para satisfazer o contrato de checkpoint; o A2C não faz bootstrapping com uma segunda rede.</span></div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="slide" id="slide-3" data-section="fundamentos" data-title="Actor-critic">
+      <div class="slide-inner">
+        <div>
+          <div class="eyebrow">fundamentos · ator e crítico</div>
+          <h2 class="title">Um escolhe, o outro avalia</h2>
+        </div>
+        <p class="lede">A mesma CNN alimenta duas cabeças. O ator aprende <span class="mono">π(a|s)</span> categórica; o crítico aprende <span class="mono">V(s)</span>, usado para reduzir a variância da vantagem.</p>
+        <figure class="figure">
+          <div class="diagram-scroll">
+            <svg class="diagram net" viewBox="0 0 900 300" role="img" aria-label="Observação entra na CNN; ator produz logits e crítico produz V de s.">
+              <defs><marker id="arr-a2c" viewBox="0 0 10 10" refX="8.5" refY="5" markerWidth="6.5" markerHeight="6.5" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" class="arrowhead"></path></marker></defs>
+              <rect class="in-rect" x="24" y="94" width="70" height="112" rx="6"></rect>
+              <rect class="in-rect" x="34" y="104" width="70" height="112" rx="6"></rect>
+              <text class="box-title" x="64" y="82" text-anchor="middle">obs</text>
+              <text class="box-sub" x="64" y="240" text-anchor="middle">(5, 20, 32)</text>
+              <line class="wire" x1="108" y1="160" x2="146" y2="160" marker-end="url(#arr-a2c)"></line>
+              <rect class="box conv" x="152" y="104" width="130" height="112" rx="8"></rect>
+              <text class="box-title" x="217" y="142" text-anchor="middle">CNN do repo</text>
+              <text class="box-sub" x="217" y="164" text-anchor="middle">3 convoluções</text>
+              <text class="box-sub" x="217" y="182" text-anchor="middle">flatten → 1280</text>
+              <line class="wire" x1="282" y1="160" x2="320" y2="160"></line>
+              <path class="wire" d="M320 160 H348 V96 H380" marker-end="url(#arr-a2c)"></path>
+              <path class="wire" d="M320 160 H348 V224 H380" marker-end="url(#arr-a2c)"></path>
+              <rect class="box box-actor" x="386" y="54" width="140" height="84" rx="9"></rect>
+              <text class="box-title" x="456" y="88" text-anchor="middle">ator</text>
+              <text class="box-sub" x="456" y="108" text-anchor="middle">128 → 6 logits</text>
+              <rect class="box box-critic" x="386" y="182" width="140" height="84" rx="9"></rect>
+              <text class="box-title" x="456" y="216" text-anchor="middle">crítico</text>
+              <text class="box-sub" x="456" y="236" text-anchor="middle">128 → V(s)</text>
+              <line class="wire" x1="526" y1="96" x2="566" y2="96" marker-end="url(#arr-a2c)"></line>
+              <line class="wire" x1="526" y1="224" x2="566" y2="224" marker-end="url(#arr-a2c)"></line>
+              <rect class="out-chip" x="572" y="68" width="130" height="56" rx="8"></rect>
+              <text class="box-title" x="637" y="92" text-anchor="middle">π(a|s)</text>
+              <text class="box-sub" x="637" y="110" text-anchor="middle">softmax dos logits</text>
+              <rect class="out-chip" x="572" y="196" width="130" height="56" rx="8"></rect>
+              <text class="box-title" x="637" y="220" text-anchor="middle">V(s)</text>
+              <text class="box-sub" x="637" y="238" text-anchor="middle">baseline do gradiente</text>
+              <line class="wire" x1="702" y1="96" x2="742" y2="160" marker-end="url(#arr-a2c)"></line>
+              <line class="wire" x1="702" y1="224" x2="742" y2="160" marker-end="url(#arr-a2c)"></line>
+              <rect class="box" x="748" y="118" width="128" height="84" rx="9"></rect>
+              <text class="box-title" x="812" y="150" text-anchor="middle">A = R − V(s)</text>
+              <text class="box-sub" x="812" y="172" text-anchor="middle">vantagem n-step</text>
+            </svg>
+          </div>
+          <figcaption>O ator é estocástico no treino e guloso na avaliação. O crítico só existe para o gradiente da política: não escolhe ação.</figcaption>
+        </figure>
+        <div class="note"><span class="mark">→</span><span><b>Compartilhar features.</b> Como no PPO, as duas cabeças usam o mesmo encoder. Isso acopla os dois aprendizes, mas economiza parâmetros e acelera a representação.</span></div>
+      </div>
+    </section>
+
+    <section class="slide" id="slide-4" data-section="fundamentos" data-title="Retornos n-step">
+      <div class="slide-inner">
+        <div>
+          <div class="eyebrow">fundamentos · alvo n-step</div>
+          <h2 class="title">Retornos n-step: olhar n passos à frente</h2>
+        </div>
+        <p class="lede">Em vez de esperar o fim do episódio (Monte Carlo) ou usar só um passo (TD), o A2C soma até <span class="mono">n=64</span> recompensas e faz bootstrap no valor do passo seguinte.</p>
+        <div class="formula-wrap"><div class="formula">R<sub>t</sub> = r<sub>t</sub> + γ r<sub>t+1</sub> + … + γ<sup>n−1</sup> r<sub>t+n−1</sub> + γ<sup>n</sup> V(s<sub>t+n</sub>)<br><span class="dim">para no fim do episódio: truncado faz bootstrap; terminal verdadeiro não</span></div></div>
+        <div class="split">
+          <div class="stack">
+            <div class="code-label">algs/alg_a2c/agent.py — n_step_returns</div>
+            <pre class="code"><span class="k">for</span> i <span class="k">in</span> range(n):
+    total = <span class="n">0.0</span>; discount = <span class="n">1.0</span>
+    <span class="k">for</span> k <span class="k">in</span> range(n_steps):
+        j = i + k
+        total += discount * rewards[j]
+        <span class="k">if</span> episode_ends[j] <span class="k">or</span> terminated[j]:
+            <span class="k">if not</span> terminated[j]:
+                total += discount * gamma * next_values[j]
+            <span class="k">break</span>
+        <span class="k">if</span> k == n_steps - <span class="n">1</span>:
+            total += discount * gamma * next_values[j]
+            <span class="k">break</span>
+        discount *= gamma</pre>
+          </div>
+          <div class="stack">
+            <div class="note"><span class="mark">n</span><span><b>n = batch_size.</b> O construtor usa <span class="mono">n_steps = batch_size</span> quando não recebe outro valor; o CLI padrão dá 64. Não há relação com minibatches: o A2C usa o rollout inteiro de uma vez.</span></div>
+            <div class="note warn"><span class="mark">!</span><span><b>Fronteira de episódio.</b> <span class="mono">episode_ends</span> interrompe a soma mesmo quando o fim é truncamento, mas ainda aplica <span class="mono">γ·V(s′)</span>. Só <span class="mono">terminated</span> corta o bootstrap.</span></div>
+            <div class="note loss"><span class="mark">CPU</span><span><b>Onde roda.</b> Os dois laços usam <span class="mono">.item()</span> por passo; em CUDA isso sincroniza. O código calcula os retornos em CPU (≈10 ms por rollout de 64) e só devolve o resultado ao device.</span></div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="slide" id="slide-5" data-section="update" data-title="O update">
+      <div class="slide-inner">
+        <div>
+          <div class="eyebrow">update · um passo de gradiente</div>
+          <h2 class="title">O update inteiro em uma passada</h2>
+        </div>
+        <p class="lede">Quando o buffer enche, o agente recalcula valores e log-probs, normaliza as vantagens e faz <b>um único</b> passo de Adam sobre o rollout inteiro. Depois limpa a fila.</p>
+        <ol class="list">
+          <li><span class="bullet"></span><span><b>Valores</b> <span class="mono">V(s)</span> e <span class="mono">V(s′)</span> sob <span class="mono">no_grad</span>; retornos n-step em CPU.</span></li>
+          <li><span class="bullet blue"></span><span><b>Vantagem</b> <span class="mono">A = R − V(s)</span>, normalizada por <span class="mono">(A−média)/desvio</span>.</span></li>
+          <li><span class="bullet amber"></span><span><b>Perdas:</b> política <span class="mono">−logπ(a|s)·A</span>, valor MSE e bônus de entropia.</span></li>
+          <li><span class="bullet red"></span><span><b>Passo único</b> com gradiente clipado em 10; <span class="mono">steps += 1</span>; <span class="mono">buffer.clear()</span>.</span></li>
+        </ol>
+        <div class="split">
+          <div class="stack">
+            <pre class="code">logits, values = self.online(s)
+dist = Categorical(logits=logits)
+log_probs = dist.log_prob(a)
+policy_loss = -(log_probs * advantages).mean()
+value_loss = mse_loss(values, returns)
+entropy = dist.entropy().mean()
+loss = (policy_loss + value_coef * value_loss
+        - entropy_coef * entropy)</pre>
+          </div>
+          <div class="stack">
+            <div class="note"><span class="mark">→</span><span><b>É a mesma política do PPO?</b> Sim: categórica via softmax dos logits. A diferença é que o A2C não faz épocas nem clipping — usa o rollout uma vez.</span></div>
+            <div class="note warn"><span class="mark">!</span><span><b>Gatilho por episódio.</b> <span class="mono">end_episode()</span> marca a fronteira e, se o buffer não estiver vazio, <b>atualiza na hora</b>. Assim o rabo do episódio não fica esperando 64 passos.</span></div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="slide" id="slide-6" data-section="hiperparâmetros" data-title="Hiperparâmetros">
+      <div class="slide-inner">
+        <div>
+          <div class="eyebrow">hiperparâmetros · defaults</div>
+          <h2 class="title">Hiperparâmetros</h2>
+        </div>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>Parâmetro</th><th>Default</th><th>Onde</th><th>Efeito</th></tr></thead>
+            <tbody>
+              <tr><td class="mono">lr</td><td class="mono">1e-3 (CLI: 2,5e-4)</td><td class="mono">agent.py:58</td><td>Adam; o train.py sempre passa <span class="mono">--lr</span>.</td></tr>
+              <tr><td class="mono">gamma</td><td class="mono">0,99</td><td class="mono">agent.py:58</td><td>Desconto dos retornos n-step.</td></tr>
+              <tr><td class="mono">n_steps</td><td class="mono">= batch_size (64)</td><td class="mono">agent.py:69</td><td>Horizonte do retorno / gatilho do update.</td></tr>
+              <tr><td class="mono">value_coef</td><td class="mono">0,5</td><td class="mono">agent.py:59</td><td>Peso da perda do crítico.</td></tr>
+              <tr><td class="mono">entropy_coef</td><td class="mono">0,01</td><td class="mono">agent.py:60</td><td>Exploração via entropia da categórica.</td></tr>
+              <tr><td class="mono">max_grad_norm</td><td class="mono">10,0</td><td class="mono">agent.py:61</td><td>Clip de norma antes do Adam.</td></tr>
+              <tr><td class="mono">frame_stack / skip</td><td class="mono">1 / 1</td><td class="mono">CLI</td><td>Histórico e repetição da ação.</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <div class="grid-2">
+          <div class="note"><span class="mark">→</span><span><b>A2C × PPO.</b> O PPO reaproveita o mesmo rollout por 4 épocas com recorte; o A2C faz um passo só. Menos amostras eficiente, mais simples e mais rápido por update.</span></div>
+          <div class="note warn"><span class="mark">!</span><span><b>Batch = horizonte.</b> Aumentar <span class="mono">--batch-size</span> no A2C aumenta o horizonte n-step, não o tamanho do minibatch. O update usa o buffer inteiro.</span></div>
+        </div>
+      </div>
+    </section>
+
+    <section class="slide" id="slide-7" data-section="integração" data-title="Como o train.py usa o A2C">
+      <div class="slide-inner">
+        <div>
+          <div class="eyebrow">integração · train, evaluate, play</div>
+          <h2 class="title">Como o train.py usa o A2C</h2>
+        </div>
+        <div class="grid-3">
+          <div class="card">
+            <h3>Loop</h3>
+            <p><span class="mono">act</span> → <span class="mono">env.step</span> → <span class="mono">buffer.add</span> → <span class="mono">learn()</span> a cada passo. O <span class="mono">learn()</span> devolve <span class="mono">None</span> até o buffer ter <span class="mono">n_steps</span>.</p>
+          </div>
+          <div class="card">
+            <h3>Fim de episódio</h3>
+            <p>O train.py chama <span class="mono">end_episode(info)</span>: o buffer marca a fronteira e, se houver transições, o update acontece imediatamente.</p>
+          </div>
+          <div class="card">
+            <h3>Fim do treino</h3>
+            <p><span class="mono">finish_training()</span> consome o rollout parcial que sobrou quando <span class="mono">--max-hours</span> ou o número de episódios termina.</p>
+          </div>
+        </div>
+        <div class="split">
+          <div class="stack">
+            <pre class="code"><span class="c"># vetorizado: coleta em workers, update em lote</span>
+python train.py --arena seek_coin --alg a2c \
+    --envs 8 --opponent rule --episodes 300
+
+<span class="c"># sobrepor coleta (CPU) e update (GPU)</span>
+python train.py --arena seek_coin --alg a2c \
+    --envs 8 --overlap --opponent rule --episodes 300</pre>
+          </div>
+          <div class="stack">
+            <div class="note"><span class="mark">→</span><span><b>Sem ε e sem warmup.</b> O train.py detecta <span class="mono">on_policy=True</span> e não passa <span class="mono">epsilon_min</span>/<span class="mono">warmup</span> ao construtor; a exploração é a entropia e a amostragem.</span></div>
+            <div class="note warn"><span class="mark">!</span><span><b>Overlap.</b> Só PPO/A2C aceitam <span class="mono">--overlap</span>: uma thread coleta o próximo rollout numa cópia CPU da política enquanto a thread principal atualiza na GPU. Não é bit a bit reprodutível.</span></div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="slide" id="slide-8" data-section="prática" data-title="Rodando na prática">
+      <div class="slide-inner">
+        <div>
+          <div class="eyebrow">prática · comandos</div>
+          <h2 class="title">Rodando na prática</h2>
+        </div>
+        <div class="split">
+          <div class="stack">
+            <pre class="code"><span class="c"># treino simples</span>
+python train.py --arena seek_coin --alg a2c --episodes 300
+
+<span class="c"># nível 2 (areia/gelo) com visualização</span>
+python train.py --arena seek_coin --level 2 \
+    --alg a2c --episodes 300 --render
+
+<span class="c"># avaliar</span>
+python evaluate.py --arena seek_coin \
+    --checkpoint checkpoints/best.pt --episodes 20</pre>
+          </div>
+          <div class="stack">
+            <div class="note"><span class="mark">→</span><span><b>Saídas.</b> <span class="mono">checkpoints/best.pt</span>/<span class="mono">latest.pt</span>, <span class="mono">logs/training.csv</span>, <span class="mono">logs/evaluation.csv</span>; <span class="mono">--stats</span> adiciona perda/gradiente/Q por episódio.</span></div>
+            <div class="note warn"><span class="mark">!</span><span><b>Retomada.</b> O checkpoint guarda pesos, Adam, contadores e config, mas não o rollout parcial. Retomar recomeça o buffer — decisão explícita do repo.</span></div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="slide" id="slide-9" data-section="comparação" data-title="A2C × PPO">
+      <div class="slide-inner">
+        <div>
+          <div class="eyebrow">comparação · o que muda</div>
+          <h2 class="title">A2C e PPO lado a lado</h2>
+        </div>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>Aspecto</th><th>A2C</th><th>PPO</th></tr></thead>
+            <tbody>
+              <tr><td>Alvo</td><td>retorno n-step</td><td>GAE(λ) sobre o rollout</td></tr>
+              <tr><td>Reuso do rollout</td><td>1 passada</td><td>4 épocas de minibatches</td></tr>
+              <tr><td>Estabilidade</td><td>sem clipping</td><td>razão recortada em 1±0,2</td></tr>
+              <tr><td>Gatilho do update</td><td>n passos <b>ou</b> fim de episódio</td><td>rollout cheio; rabo em <span class="mono">finish_training</span></td></tr>
+              <tr><td>Custo por amostra</td><td>baixo</td><td>maior (4 épocas)</td></tr>
+              <tr><td>Uso típico no repo</td><td>baseline rápida</td><td>referência on-policy</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <div class="note"><span class="mark">→</span><span><b>Por que comparar?</b> Se o A2C já resolve a arena, o custo extra do PPO (épocas + clipping) não se paga. Se o treino oscila, o recorte do PPO costuma ser o primeiro remédio.</span></div>
+      </div>
+    </section>
+
+    <section class="slide" id="slide-10" data-section="fechamento" data-title="Trade-offs e para levar">
+      <div class="slide-inner">
+        <div>
+          <div class="eyebrow">fechamento · trade-offs</div>
+          <h2 class="title">Quando o A2C é a escolha certa</h2>
+        </div>
+        <div class="grid-2">
+          <div class="stack">
+            <div class="card">
+              <h3>Ganha</h3>
+              <p>Implementação curta, um gradiente por rollout e nenhum hiperparâmetro de recorte. Ótimo para depurar a infraestrutura e para ambientes onde o custo de coleta domina.</p>
+            </div>
+            <div class="card">
+              <h3>Limita</h3>
+              <p>Sem clipping, passos grandes podem destruir a política; sem reuso, cada amostra é usada uma vez. Em dinâmica não estacionária (nível 2), a variância alta pode atrasar a adaptação.</p>
+            </div>
+          </div>
+          <div class="stack">
+            <div class="note"><span class="mark">→</span><span><b>Para levar.</b> A2C = ator categórico + crítico + retornos n-step + vantagem normalizada. O buffer é uma fila, não um replay; o update é único e o rollout é descartado.</span></div>
+            <div class="note warn"><span class="mark">!</span><span><b>Próximo passo natural.</b> O PPO (<span class="mono">ppo-aula.html</span>) reaproveita o mesmo rollout por várias épocas e recorta a razão de probabilidades.</span></div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+  </main>
+</div>
+<script src="aula.js"></script>
+</body>
+</html>

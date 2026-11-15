@@ -1,0 +1,295 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>MKA no rl-arena</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,600;12..96,700&family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
+<link rel="stylesheet" href="aula.css">
+</head>
+<body>
+<div class="app">
+  <div class="progress" aria-hidden="true"><span id="progress-fill"></span></div>
+  <header class="topbar">
+    <div class="brand">
+      <span class="dot"></span>
+      <span><b>MKA</b> // rl-arena</span>
+      <span class="sec-label" id="sec-label">abertura</span>
+    </div>
+    <div class="top-actions">
+      <button class="tb" id="btn-prev" type="button">←</button>
+      <button class="tb" id="btn-next" type="button">→</button>
+      <span class="counter" id="counter">01 / 9</span>
+    </div>
+  </header>
+  <main class="stage" id="stage">
+
+    <section class="slide" id="slide-1" data-section="abertura" data-title="MKA no rl-arena">
+      <div class="slide-inner">
+        <div class="cover-wrap">
+          <div class="cover-copy">
+            <div class="eyebrow">aula · aprendizado por reforço</div>
+            <h1 class="display">MKA no<br><span class="thin">rl-arena</span></h1>
+            <p class="lede">O mesmo DQN, com um modelo custom: a rede troca as ReLUs por GELU e traz o encoder embutido. Um experimento controlado de arquitetura, não de algoritmo.</p>
+            <div class="chips">
+              <span class="chip green">off-policy</span>
+              <span class="chip">DQN idêntico</span>
+              <span class="chip">GELU</span>
+              <span class="chip">modelo autocontido</span>
+            </div>
+            <div class="cover-foot">
+              <span class="mono">algs/alg_mka/</span>
+              <span>Use <kbd>→</kbd> para começar</span>
+            </div>
+            <div class="cover-refs">
+              <div class="ref"><span class="ref-tag">base</span>
+                <a href="dqn-aula.html">A aula do DQN, para a matemática completa</a>
+              </div>
+              <div class="ref"><span class="ref-tag">código</span>
+                <span class="mono">arenas/algs/alg_mka/{agent,model,replay_buffer}.py</span>
+              </div>
+            </div>
+          </div>
+          <div class="cover-art" aria-hidden="true">
+            <div class="mini-map">
+              <span class="platform" style="left:0;top:82%;width:100%"></span>
+              <span class="platform" style="left:8%;top:62%;width:27%"></span>
+              <span class="platform" style="left:56%;top:47%;width:31%"></span>
+              <span class="unit player" style="left:38%;top:56%"></span>
+              <span class="unit opponent" style="left:71%;top:56%"></span>
+              <span class="unit coin" style="left:58%;top:42%"></span>
+            </div>
+            <span class="mini-caption">mesma matemática do DQN<br>só o modelo muda</span>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="slide" id="slide-2" data-section="estrutura" data-title="O que é o MKA">
+      <div class="slide-inner">
+        <div>
+          <div class="eyebrow">estrutura · um DQN de laboratório</div>
+          <h2 class="title">MKA é o DQN com outro modelo</h2>
+        </div>
+        <p class="lede">O agente é uma cópia fiel do <span class="mono">alg_dqn</span>: mesmo alvo de TD, mesmo replay uniforme, mesmo C=1000, mesmo ε-greedy. A única diferença está em <span class="mono">model.py</span>.</p>
+        <div class="grid-3">
+          <div class="card file-card">
+            <div class="file-top"><span class="file-name">model.py</span><span class="file-lines">29 linhas</span></div>
+            <p class="role"><b>Custom.</b> Três convoluções com <b>GELU</b>, encoder embutido (sem <span class="mono">build_encoder</span>) e cabeça 128 → n_actions.</p>
+            <span class="symbol">QNetwork.forward → Q(s, ·)</span>
+          </div>
+          <div class="card file-card">
+            <div class="file-top"><span class="file-name">replay_buffer.py</span><span class="file-lines">42 linhas</span></div>
+            <p class="role"><b>Replay uniforme.</b> Deque de 50 mil, sem máscaras de ação (diferente do DQN).</p>
+            <span class="symbol">add · add_batch · sample</span>
+          </div>
+          <div class="card file-card">
+            <div class="file-top"><span class="file-name">agent.py</span><span class="file-lines">116 linhas</span></div>
+            <p class="role"><b>DQN completo.</b> <span class="mono">td_target</span>, SmoothL1, target dura a cada C, eps-greedy.</p>
+            <span class="symbol">MKAAgent</span>
+          </div>
+        </div>
+        <div class="split">
+          <div class="stack">
+            <pre class="code"><span class="k">class</span> <span class="hl">MKAAgent</span>:
+    algorithm = <span class="s">"mka"</span>
+    arch_version = <span class="s">"alg-mka-v1"</span>
+    C = <span class="n">1000</span>
+    <span class="c"># off-policy, igual ao alg_dqn</span></pre>
+          </div>
+          <div class="stack">
+            <div class="note"><span class="mark">→</span><span><b>Por que existe?</b> Para comparar arquiteturas mantendo o algoritmo constante. Rodar <span class="mono">dqn</span> e <span class="mono">mka</span> com a mesma seed isola o efeito do modelo.</span></div>
+            <div class="note warn"><span class="mark">!</span><span><b>Não confunda.</b> O MKA não é um algoritmo novo na literatura: é um braço de experimento do repo. Toda a teoria está em <span class="mono">dqn-aula.html</span>.</span></div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="slide" id="slide-3" data-section="modelo" data-title="O modelo custom">
+      <div class="slide-inner">
+        <div>
+          <div class="eyebrow">modelo · GELU e encoder embutido</div>
+          <h2 class="title">O modelo custom</h2>
+        </div>
+        <p class="lede">As convoluções são as mesmas do encoder do repo (5×5/s2, 3×3/s2, 3×3/s1), mas a ativação é <b>GELU</b> em vez de ReLU e o modelo não aceita vetor <span class="mono">(N,)</span>: ele assume imagem <span class="mono">(C, H, W)</span>.</p>
+        <div class="formula-wrap"><div class="formula">GELU(x) = x · Φ(x)&nbsp;&nbsp;&nbsp;&nbsp;<span class="dim">Φ = CDF da Normal padrão; suaviza o “joelho” da ReLU</span></div></div>
+        <div class="split">
+          <div class="stack">
+            <div class="code-label">algs/alg_mka/model.py</div>
+            <pre class="code">self.features = nn.Sequential(
+    nn.Conv2d(c, <span class="n">16</span>, <span class="n">5</span>, stride=<span class="n">2</span>, padding=<span class="n">2</span>),
+    nn.<span class="hl">GELU</span>(),
+    nn.Conv2d(<span class="n">16</span>, <span class="n">32</span>, <span class="n">3</span>, stride=<span class="n">2</span>, padding=<span class="n">1</span>),
+    nn.<span class="hl">GELU</span>(),
+    nn.Conv2d(<span class="n">32</span>, <span class="n">32</span>, <span class="n">3</span>, stride=<span class="n">1</span>, padding=<span class="n">1</span>),
+    nn.<span class="hl">GELU</span>(),
+    nn.Flatten(),
+)
+n = self.features(torch.zeros(<span class="n">1</span>, c, h, w)).shape[<span class="n">1</span>]
+self.head = nn.Sequential(
+    nn.Linear(n, <span class="n">128</span>), nn.ReLU(), nn.Linear(<span class="n">128</span>, n_actions))</pre>
+          </div>
+          <div class="stack">
+            <div class="note"><span class="mark">→</span><span><b>Diferença real.</b> GELU é suave e permite gradientes pequenos para entradas negativas; ReLU zera. Em redes rasas, o efeito costuma ser modesto — o experimento existe para medir isso.</span></div>
+            <div class="note warn"><span class="mark">!</span><span><b>Mesmos pesos.</b> A contagem de parâmetros é idêntica à do DQN: 344.743 com 5 canais e 350.743 com frame stack 4.</span></div>
+            <div class="note loss"><span class="mark">−</span><span><b>Cuidado.</b> O modelo não usa o encoder compartilhado <span class="mono">algs/encoders.py</span>; duplicar mudanças lá não afeta o MKA.</span></div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="slide" id="slide-4" data-section="algoritmo" data-title="O algoritmo não muda">
+      <div class="slide-inner">
+        <div>
+          <div class="eyebrow">algoritmo · DQN de ponta a ponta</div>
+          <h2 class="title">O algoritmo é o DQN, sem cortes</h2>
+        </div>
+        <div class="split">
+          <div class="stack">
+            <div class="formula-wrap"><div class="formula">y = r + γ(1−terminal)·max<sub>a′</sub> Q<sub>target</sub>(s′, a′)<br>L = SmoothL1(Q<sub>online</sub>(s, a), y)</div></div>
+            <div class="code-label">agent.py — a mesma rotina</div>
+            <pre class="code">q = self.online(s).gather(<span class="n">1</span>, a).squeeze(<span class="n">1</span>)
+<span class="k">with</span> torch.no_grad():
+    next_q = self.target(ns).max(dim=<span class="n">1</span>).values
+    target = td_target(r, next_q, term, self.gamma)
+loss = self.loss_fn(q, target)
+...
+<span class="k">if</span> self.steps % self.C == <span class="n">0</span>:
+    self.target.load_state_dict(self.online.state_dict())</pre>
+          </div>
+          <div class="stack">
+            <div class="list">
+              <li><span class="bullet"></span><span><b>Replay uniforme</b> de 50 mil transições.</span></li>
+              <li><span class="bullet blue"></span><span><b>Alvo congelado</b> sincronizado a cada C=1000 updates.</span></li>
+              <li><span class="bullet amber"></span><span><b>ε-greedy</b> com decay por passo (<span class="mono">0,9995</span>) e piso <span class="mono">0,05</span>; a rampa do train.py prevalece.</span></li>
+              <li><span class="bullet red"></span><span><b>SmoothL1</b> e gradiente clipado em norma 10.</span></li>
+            </div>
+            <div class="note warn"><span class="mark">!</span><span><b>O que falta em relação ao DQN.</b> O MKA não implementa máscara de ações no <span class="mono">act</span> nem no alvo; no risk, isso pode superestimar ações ilegais. No seek_coin não há máscara.</span></div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="slide" id="slide-5" data-section="comparação" data-title="MKA × DQN">
+      <div class="slide-inner">
+        <div>
+          <div class="eyebrow">comparação · o que muda</div>
+          <h2 class="title">MKA × DQN, lado a lado</h2>
+        </div>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>Aspecto</th><th>DQN</th><th>MKA</th></tr></thead>
+            <tbody>
+              <tr><td>Ativação</td><td>ReLU</td><td><b>GELU</b></td></tr>
+              <tr><td>Encoder</td><td><span class="mono">build_encoder</span> (CNN ou MLP)</td><td>convoluções embutidas (só imagem)</td></tr>
+              <tr><td>Máscara de ações</td><td>sim (<span class="mono">action_mask</span>)</td><td>não</td></tr>
+              <tr><td>Alvo de TD</td><td><span class="mono">r + γ(1−term)max Q′</span></td><td>igual</td></tr>
+              <tr><td>Replay</td><td>uniforme, 50 mil</td><td>uniforme, 50 mil</td></tr>
+              <tr><td>Target dura</td><td>C=1000</td><td>C=1000</td></tr>
+              <tr><td>Parâmetros</td><td>344.743 (5 canais)</td><td>344.743 (5 canais)</td></tr>
+              <tr><td>Contrato de checkpoint</td><td><span class="mono">alg-dqn-v1</span></td><td><span class="mono">alg-mka-v1</span></td></tr>
+            </tbody>
+          </table>
+        </div>
+        <div class="note"><span class="mark">→</span><span><b>Experimento controlado.</b> Mesmo <span class="mono">--seed</span>, mesmo <span class="mono">frame_stack</span>/<span class="mono">frame_skip</span>, mesmo número de episódios. A única variável é o modelo.</span></div>
+      </div>
+    </section>
+
+    <section class="slide" id="slide-6" data-section="hiperparâmetros" data-title="Hiperparâmetros">
+      <div class="slide-inner">
+        <div>
+          <div class="eyebrow">hiperparâmetros · defaults</div>
+          <h2 class="title">Hiperparâmetros</h2>
+        </div>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>Parâmetro</th><th>Default</th><th>Onde</th><th>Efeito</th></tr></thead>
+            <tbody>
+              <tr><td class="mono">lr</td><td class="mono">1e-3</td><td class="mono">agent.py</td><td>Adam; <span class="mono">--lr</span> sobrescreve.</td></tr>
+              <tr><td class="mono">gamma</td><td class="mono">0,99</td><td class="mono">agent.py</td><td>Desconto.</td></tr>
+              <tr><td class="mono">epsilon</td><td class="mono">1 → 0,05</td><td class="mono">agent.py</td><td>Exploração ε-greedy.</td></tr>
+              <tr><td class="mono">batch_size</td><td class="mono">64</td><td class="mono">CLI</td><td>Amostras por update.</td></tr>
+              <tr><td class="mono">buffer_size</td><td class="mono">50.000</td><td class="mono">agent.py</td><td>Capacidade do replay.</td></tr>
+              <tr><td class="mono">C</td><td class="mono">1000</td><td class="mono">agent.py</td><td>Sync da target.</td></tr>
+              <tr><td class="mono">warmup</td><td class="mono">0 (CLI: 1000)</td><td class="mono">agent.py</td><td>Transições antes do 1º update.</td></tr>
+              <tr><td class="mono">max_grad_norm</td><td class="mono">10,0</td><td class="mono">agent.py</td><td>Clip do gradiente.</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    <section class="slide" id="slide-7" data-section="prática" data-title="Rodando na prática">
+      <div class="slide-inner">
+        <div>
+          <div class="eyebrow">prática · comandos</div>
+          <h2 class="title">Rodando na prática</h2>
+        </div>
+        <div class="split">
+          <div class="stack">
+            <pre class="code"><span class="c"># MKA no mapa histórico</span>
+python train.py --arena seek_coin --alg mka --episodes 300
+
+<span class="c"># nível 2 (areia/gelo)</span>
+python train.py --arena seek_coin --level 2 \
+    --alg mka --episodes 300 --stats
+
+<span class="c"># avaliar</span>
+python evaluate.py --arena seek_coin \
+    --checkpoint checkpoints/best.pt --episodes 20</pre>
+          </div>
+          <div class="stack">
+            <div class="note"><span class="mark">→</span><span><b>Mesmas saídas.</b> <span class="mono">checkpoints/best.pt</span>/<span class="mono">latest.pt</span>, <span class="mono">logs/training.csv</span> e <span class="mono">logs/evaluation.csv</span>. O checkpoint guarda <span class="mono">algorithm="mka"</span> e <span class="mono">arch_version="alg-mka-v1"</span>.</span></div>
+            <div class="note warn"><span class="mark">!</span><span><b>Sem GPU? Tudo bem.</b> O modelo é pequeno; o treino roda em CPU, mas confira <span class="mono">device=cuda</span>/<span class="mono">cpu</span> no início do log.</span></div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="slide" id="slide-8" data-section="leitura" data-title="Como ler o experimento">
+      <div class="slide-inner">
+        <div>
+          <div class="eyebrow">leitura · protocolo</div>
+          <h2 class="title">Como ler o experimento MKA × DQN</h2>
+        </div>
+        <div class="grid-2">
+          <div class="card">
+            <h3>Compare curvas, não um ponto</h3>
+            <p>Use <span class="mono">--tensorboard</span> e a mesma seed. A pergunta não é “quem coleta mais moedas no episódio 300?”, mas se a curva do MKA sobe mais cedo ou satura mais alto.</p>
+          </div>
+          <div class="card">
+            <h3>Controle o resto</h3>
+            <p>Mantenha <span class="mono">--episodes</span>, <span class="mono">--frame-stack</span>, <span class="mono">--frame-skip</span>, <span class="mono">--learn-every</span> e <span class="mono">--batch-size</span>. Sem isso, a comparação mistura arquitetura com orçamento de treino.</p>
+          </div>
+        </div>
+        <div class="note warn"><span class="mark">!</span><span><b>Variância alta.</b> Redes pequenas em jogos de plataforma com recompensa esparsa oscilam. Rode pelo menos 3 seeds por variante antes de concluir qualquer coisa.</span></div>
+      </div>
+    </section>
+
+    <section class="slide" id="slide-9" data-section="fechamento" data-title="Para levar">
+      <div class="slide-inner">
+        <div>
+          <div class="eyebrow">fechamento · resumo</div>
+          <h2 class="title">Para levar</h2>
+        </div>
+        <div class="grid-2">
+          <div class="stack">
+            <div class="note"><span class="mark">1</span><span><b>Algoritmo.</b> DQN completo: alvo de TD com target dura (C=1000), replay uniforme, ε-greedy, SmoothL1 e grad clip 10.</span></div>
+            <div class="note"><span class="mark">2</span><span><b>Modelo.</b> CNN com GELU e encoder embutido; mesma contagem de parâmetros do DQN, só imagem.</span></div>
+            <div class="note"><span class="mark">3</span><span><b>Uso.</b> Braço de experimento controlado: compare com <span class="mono">--alg dqn</span> e a mesma seed.</span></div>
+          </div>
+          <div class="stack">
+            <div class="note warn"><span class="mark">!</span><span><b>O que não esperar.</b> Uma melhoria garantida. O MKA existe para medir, não para afirmar que GELU é melhor.</span></div>
+            <div class="note loss"><span class="mark">→</span><span><b>Se o MKA ganhar.</b> A pergunta seguinte é se o ganho vem da ativação ou de detalhes do encoder. Isole: troque só a ativação no encoder do DQN e repita.</span></div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+  </main>
+</div>
+<script src="aula.js"></script>
+</body>
+</html>

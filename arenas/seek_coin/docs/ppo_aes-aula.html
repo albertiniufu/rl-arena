@@ -1,0 +1,335 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>PPO-AES no rl-arena</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,600;12..96,700&family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
+<link rel="stylesheet" href="aula.css">
+</head>
+<body>
+<div class="app">
+  <div class="progress" aria-hidden="true"><span id="progress-fill"></span></div>
+  <header class="topbar">
+    <div class="brand">
+      <span class="dot"></span>
+      <span><b>PPO-AES</b> // rl-arena</span>
+      <span class="sec-label" id="sec-label">abertura</span>
+    </div>
+    <div class="top-actions">
+      <button class="tb" id="btn-prev" type="button">←</button>
+      <button class="tb" id="btn-next" type="button">→</button>
+      <span class="counter" id="counter">01 / 10</span>
+    </div>
+  </header>
+  <main class="stage" id="stage">
+
+    <section class="slide" id="slide-1" data-section="abertura" data-title="PPO-AES no rl-arena">
+      <div class="slide-inner">
+        <div class="cover-wrap">
+          <div class="cover-copy">
+            <div class="eyebrow">aula · aprendizado por reforço</div>
+            <h1 class="display">PPO-AES no<br><span class="thin">rl-arena</span></h1>
+            <p class="lede">Adaptive Entropy Scheduling: em vez de um coeficiente de entropia fixo, um agendamento online que cresce com o drift observado — na raiz quadrada da média.</p>
+            <div class="chips">
+              <span class="chip green">on-policy</span>
+              <span class="chip">quantil 0,9 de |δ|</span>
+              <span class="chip">EMA β = 0,95</span>
+              <span class="chip">λ ∈ [1e-4, 0,1]</span>
+            </div>
+            <div class="cover-foot">
+              <span class="mono">algs/alg_ppo_aes/</span>
+              <span>Use <kbd>→</kbd> para começar</span>
+            </div>
+            <div class="cover-refs">
+              <div class="ref"><span class="ref-tag">paper</span>
+                <a href="https://arxiv.org/abs/2601.19624" target="_blank" rel="noopener">Wang et al., “Tracking Drift: Variation-Aware Entropy Scheduling for Non-Stationary RL” (ICML 2026) <span class="src">arXiv:2601.19624</span></a>
+              </div>
+              <div class="ref"><span class="ref-tag">código</span>
+                <a href="https://github.com/WtxwNs/AES" target="_blank" rel="noopener">Implementação oficial (CleanRL) <span class="src">github.com/WtxwNs/AES</span></a>
+              </div>
+            </div>
+          </div>
+          <div class="cover-art" aria-hidden="true">
+            <div class="mini-map">
+              <span class="platform" style="left:0;top:82%;width:100%"></span>
+              <span class="platform" style="left:8%;top:62%;width:27%"></span>
+              <span class="platform" style="left:56%;top:47%;width:31%"></span>
+              <span class="unit player" style="left:38%;top:56%"></span>
+              <span class="unit coin" style="left:58%;top:42%"></span>
+            </div>
+            <span class="mini-caption">o drift do crítico vira<br>temperatura da exploração</span>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="slide" id="slide-2" data-section="estrutura" data-title="Três arquivos">
+      <div class="slide-inner">
+        <div>
+          <div class="eyebrow">estrutura · contrato de agente</div>
+          <h2 class="title">O PPO do repo com um agendador a mais</h2>
+        </div>
+        <p class="lede">A rede, o buffer e o update são os do PPO. A única peça nova é <span class="mono">aes.py</span>: um objeto de estado que transforma resíduos de TD em um coeficiente de entropia.</p>
+        <div class="grid-3">
+          <div class="card file-card">
+            <div class="file-top"><span class="file-name">aes.py</span><span class="file-lines">93 linhas</span></div>
+            <p class="role"><b>O agendador.</b> Quantil, EMA, acumulado e a regra de raiz quadrada recortada.</p>
+            <span class="symbol">AESScheduler.update · state_dict</span>
+          </div>
+          <div class="card file-card">
+            <div class="file-top"><span class="file-name">model.py</span><span class="file-lines">27 linhas</span></div>
+            <p class="role"><b>Rede do PPO.</b> Ator categórico + crítico escalar, encoder compartilhado.</p>
+            <span class="symbol">ActorCriticNetwork → (logits, value)</span>
+          </div>
+          <div class="card file-card">
+            <div class="file-top"><span class="file-name">agent.py</span><span class="file-lines">185 linhas</span></div>
+            <p class="role"><b>PPO + AES.</b> Resíduo de TD de 1 passo por minibatch alimenta o agendador.</p>
+            <span class="symbol">PPOAESAgent</span>
+          </div>
+        </div>
+        <div class="split">
+          <div class="stack">
+            <pre class="code"><span class="k">class</span> <span class="hl">PPOAESAgent</span>:
+    algorithm = <span class="s">"ppo_aes"</span>
+    arch_version = <span class="s">"alg-ppo-aes-v1"</span>
+    on_policy = <span class="k">True</span>
+    <span class="c"># ent_coef vem do AESScheduler, não do construtor</span></pre>
+          </div>
+          <div class="stack">
+            <div class="note"><span class="mark">→</span><span><b>Plug-and-play.</b> A ideia do paper é trocar apenas o coeficiente de entropia na perda. Nada de arquitetura nova, replay ou crítico diferente.</span></div>
+            <div class="note warn"><span class="mark">!</span><span><b>Estado extra.</b> O scheduler tem <span class="mono">ema</span>, <span class="mono">accumulated</span>, <span class="mono">step</span> e <span class="mono">value</span>; o checkpoint pesos-only do repo não guarda esses campos, então a retomada reinicia o agendamento.</span></div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="slide" id="slide-3" data-section="teoria" data-title="A regra da raiz quadrada">
+      <div class="slide-inner">
+        <div>
+          <div class="eyebrow">teoria · dynamic regret</div>
+          <h2 class="title">Por que a raiz quadrada?</h2>
+        </div>
+        <p class="lede">O paper modela o agendamento como um compromisso de arrependimento dinâmico: acompanhar um comparador que se move (drift ξ) contra a estabilidade dos updates. O custo de um passo é convexo no peso da entropia.</p>
+        <div class="formula-wrap"><div class="formula">φ<sub>t</sub>(λ) = C<sub>1</sub>·ξ<sub>t</sub>/λ + C<sub>2</sub>·λ<br>λ<sub>t</sub>* = argmin<sub>λ</sub> φ<sub>t</sub>(λ) = √((C<sub>1</sub>/C<sub>2</sub>)·ξ<sub>t</sub>)&nbsp;&nbsp;<span class="dim">a regra de escala</span></div></div>
+        <div class="grid-2">
+          <div class="card">
+            <h3>Primeiro termo</h3>
+            <p><span class="mono">C₁ξ/λ</span>: quanto menor λ (menos exploração), maior o custo de não acompanhar o drift. Ele domina quando o ambiente muda muito.</p>
+          </div>
+          <div class="card">
+            <h3>Segundo termo</h3>
+            <p><span class="mono">C₂λ</span>: quanto maior λ, maior o custo de estabilidade — exploração demais degrada a política que já funcionava.</p>
+          </div>
+        </div>
+        <div class="note"><span class="mark">→</span><span><b>O ótimo é a média geométrica.</b> Igualando os dois termos, λ ∝ √ξ. Com drift alto, o coeficiente sobe; com drift baixo, cai. O λ fixo não consegue fazer os dois.</span></div>
+      </div>
+    </section>
+
+    <section class="slide" id="slide-4" data-section="proxy" data-title="O proxy observável">
+      <div class="slide-inner">
+        <div>
+          <div class="eyebrow">proxy · drift sem oráculo</div>
+          <h2 class="title">O drift não é observável — então medimos o TD</h2>
+        </div>
+        <p class="lede">O paper substitui <span class="mono">ξ_t</span> por um proxy conservador: o quantil 0,9 do erro de TD absoluto do lote. No PPO, o resíduo é o do crítico de valor.</p>
+        <div class="formula-wrap"><div class="formula">ξ̂<sub>t</sub> = Quantile<sub>0,9</sub>( | r + γV(s′) − V(s) | )<br>Â<sub>t</sub> = Σ<sub>s≤t</sub> EMA<sub>β</sub>(ξ̂<sub>s</sub>)&nbsp;&nbsp;&nbsp;&nbsp;<span class="dim">β = 0,95</span></div></div>
+        <div class="split">
+          <div class="stack">
+            <pre class="code"><span class="k">with</span> torch.no_grad():
+    residual = td_targets[idx] - values.detach()
+    self.entropy_coef = self.aes.update(residual.cpu())
+
+<span class="c"># td_targets = r + γ(1−terminal)·V(s′)</span>
+<span class="c"># (1 passo, sem GAE)</span></pre>
+          </div>
+          <div class="stack">
+            <div class="note"><span class="mark">q</span><span><b>Por que quantil, não média?</b> A média esconde picos; o quantil 0,9 captura a parte alta do erro, que é justamente onde uma mudança de dinâmica aparece primeiro.</span></div>
+            <div class="note warn"><span class="mark">!</span><span><b>Por que EMA?</b> Sem suavização, o λ oscilaria a cada minibatch. A EMA (β=0,95) troca responsividade por estabilidade.</span></div>
+            <div class="note loss"><span class="mark">−</span><span><b>Conservador.</b> O paper exige ξ̂ ≥ ξ; o quantil alto é uma escolha deliberada que puxa o agendamento para cima quando há dúvida.</span></div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="slide" id="slide-5" data-section="escala" data-title="A escala acumulada">
+      <div class="slide-inner">
+        <div>
+          <div class="eyebrow">escala · a regra online</div>
+          <h2 class="title">A regra online e os limites</h2>
+        </div>
+        <p class="lede">O agendador acumula o proxy médio e usa a raiz da média acumulada. O resultado é recortado em uma faixa de estabilidade — os defaults do carrier PPO oficial.</p>
+        <div class="formula-wrap"><div class="formula">λ<sub>t</sub> = clip<sub>[λmin, λmax]</sub>( κ · √(Â<sub>t</sub>/t) )<br><span class="dim">q=0,9 · β=0,95 · κ=1,0 · λmin=1e-4 · λmax=0,1</span></div></div>
+        <div class="split">
+          <div class="stack">
+            <div class="code-label">algs/alg_ppo_aes/aes.py</div>
+            <pre class="code">raw = torch.quantile(residuals.abs().flatten(), self.q).item()
+<span class="k">if</span> self.ema <span class="k">is None</span>:
+    self.ema = raw
+<span class="k">else</span>:
+    self.ema = self.beta * self.ema + (<span class="n">1.0</span> - self.beta) * raw
+self.step += <span class="n">1</span>
+self.accumulated += self.ema
+scheduled = self.kappa * (max(self.accumulated, <span class="n">0.0</span>)
+                          / self.step) ** <span class="n">0.5</span>
+self.value = min(max(scheduled, self.lambda_min),
+                 self.lambda_max)</pre>
+          </div>
+          <div class="stack">
+            <div class="note"><span class="mark">→</span><span><b>Começa no mínimo.</b> O valor inicial é <span class="mono">lambda_min=1e-4</span>; o coeficiente cresce conforme o acumulado se afasta de zero.</span></div>
+            <div class="note warn"><span class="mark">!</span><span><b>Escala do residual.</b> λ herda a unidade do erro de TD. No seek_coin, recompensas ~1 fazem λ saturar em 0,1 rapidamente; em arenas com recompensa em centenas, o mesmo λ seria menor em relação à escala.</span></div>
+            <div class="note loss"><span class="mark">−</span><span><b>Sem warmup.</b> A primeira chamada já define a EMA igual ao quantil cru; não há janela de aquecimento.</span></div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="slide" id="slide-6" data-section="update" data-title="Onde entra na perda">
+      <div class="slide-inner">
+        <div>
+          <div class="eyebrow">update · o encaixe no PPO</div>
+          <h2 class="title">O encaixe exato na perda do PPO</h2>
+        </div>
+        <p class="lede">A atualização acontece <b>a cada minibatch</b>, antes do cálculo da perda, e o λ devolvido substitui o coeficiente de entropia fixo. O resto do PPO — GAE, recorte, perda de valor — não muda.</p>
+        <div class="split">
+          <div class="stack">
+            <pre class="code">policy_loss = -torch.min(unclipped, clipped).mean()
+value_loss = mse_loss(values, returns[idx])
+entropy = dist.entropy().mean()
+
+self.entropy_coef = self.aes.update(
+    (td_targets[idx] - values.detach()).cpu())    <span class="c"># λ_t</span>
+
+loss = (policy_loss + value_coef * value_loss
+        - <span class="hl">self.entropy_coef</span> * entropy)</pre>
+          </div>
+          <div class="stack">
+            <div class="note"><span class="mark">→</span><span><b>Por minibatch, não por rollout.</b> É o contrato da implementação oficial: o passo do contador do agendador acompanha os minibatches do update, não os episódios.</span></div>
+            <div class="note warn"><span class="mark">!</span><span><b>Ordem importa.</b> O resíduo usa o valor da rede <b>antes</b> do passo de gradiente do minibatch (<span class="mono">values.detach()</span>); o alvo de TD vem do crítico pré-update, como no CleanRL.</span></div>
+            <div class="note loss"><span class="mark">−</span><span><b>Sem clipping no proxy.</b> Um único batch com resíduo enorme puxa a EMA; a média acumulada dilui, mas o primeiro update pode subir rápido até λmax.</span></div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="slide" id="slide-7" data-section="hiperparâmetros" data-title="Hiperparâmetros">
+      <div class="slide-inner">
+        <div>
+          <div class="eyebrow">hiperparâmetros · defaults</div>
+          <h2 class="title">Hiperparâmetros</h2>
+        </div>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>Parâmetro</th><th>Default</th><th>Onde</th><th>Efeito</th></tr></thead>
+            <tbody>
+              <tr><td class="mono">aes_q</td><td class="mono">0,9</td><td class="mono">agent.py</td><td>Quantil do |TD|.</td></tr>
+              <tr><td class="mono">aes_beta</td><td class="mono">0,95</td><td class="mono">agent.py</td><td>EMA do proxy.</td></tr>
+              <tr><td class="mono">aes_kappa</td><td class="mono">1,0</td><td class="mono">agent.py</td><td>Escala da raiz quadrada.</td></tr>
+              <tr><td class="mono">aes_lambda_min</td><td class="mono">1e-4</td><td class="mono">agent.py</td><td>Piso do coeficiente.</td></tr>
+              <tr><td class="mono">aes_lambda_max</td><td class="mono">0,1</td><td class="mono">agent.py</td><td>Teto do coeficiente.</td></tr>
+              <tr><td class="mono">lr</td><td class="mono">2,5e-4 (CLI)</td><td class="mono">agent.py</td><td>Adam.</td></tr>
+              <tr><td class="mono">rollout_steps</td><td class="mono">1024</td><td class="mono">agent.py</td><td>Horizonte de coleta.</td></tr>
+              <tr><td class="mono">epochs</td><td class="mono">4</td><td class="mono">agent.py</td><td>Reuso do rollout.</td></tr>
+              <tr><td class="mono">clip</td><td class="mono">0,2</td><td class="mono">agent.py</td><td>Recorte da razão.</td></tr>
+              <tr><td class="mono">gae_lambda</td><td class="mono">0,95</td><td class="mono">agent.py</td><td>GAE.</td></tr>
+              <tr><td class="mono">value_coef</td><td class="mono">0,5</td><td class="mono">agent.py</td><td>Peso do crítico.</td></tr>
+              <tr><td class="mono">max_grad_norm</td><td class="mono">10,0</td><td class="mono">agent.py</td><td>Clip do gradiente.</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <div class="note"><span class="mark">→</span><span><b>O que não foi tocado.</b> O PPO é idêntico ao <span class="mono">alg_ppo</span> em tudo menos <span class="mono">ent_coef</span>. Isso permite comparar <span class="mono">ppo</span> × <span class="mono">ppo_aes</span> com a mesma seed e isolar o agendamento.</span></div>
+      </div>
+    </section>
+
+    <section class="slide" id="slide-8" data-section="checkpoint" data-title="Checkpoint e retomada">
+      <div class="slide-inner">
+        <div>
+          <div class="eyebrow">checkpoint · estado do agendador</div>
+          <h2 class="title">O que sobrevive à retomada</h2>
+        </div>
+        <div class="split">
+          <div class="stack">
+            <div class="table-wrap">
+              <table>
+                <thead><tr><th>Item</th><th>Checkpoint</th></tr></thead>
+                <tbody>
+                  <tr><td>pesos online</td><td><span class="yes">sim</span></td></tr>
+                  <tr><td>estado do Adam</td><td><span class="yes">sim</span></td></tr>
+                  <tr><td><span class="mono">steps</span>, <span class="mono">gamma</span>, config</td><td><span class="yes">sim</span></td></tr>
+                  <tr><td><span class="mono">ema</span> do AES</td><td><span class="no">não</span></td></tr>
+                  <tr><td><span class="mono">accumulated</span> / <span class="mono">step</span></td><td><span class="no">não</span></td></tr>
+                  <tr><td>λ corrente</td><td><span class="no">não</span> (recomeça em λmin)</td></tr>
+                  <tr><td>rollout parcial</td><td><span class="no">não</span></td></tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+          <div class="stack">
+            <div class="note"><span class="mark">!</span><span><b>Mesma decisão do repo.</b> A retomada não é bit a bit: buffer, RNGs e agora o scheduler recomeçam. O <span class="mono">AESScheduler</span> tem <span class="mono">state_dict</span>/<span class="mono">load_state_dict</span> prontos, mas o formato pesos-only do <span class="mono">alg_registry</span> não os carrega.</span></div>
+            <div class="note warn"><span class="mark">→</span><span><b>Efeito prático.</b> Depois de retomar, o coeficiente volta ao mínimo e sobe outra vez. Em treinos longos com retomadas frequentes, isso reduz a exploração no começo de cada bloco.</span></div>
+          </div>
+        </div>
+        <div class="spec"><span class="num">14</span><span class="unit">testes em test_ppo_aes.py, incluindo o valor exato do quantil e da EMA</span></div>
+      </div>
+    </section>
+
+    <section class="slide" id="slide-9" data-section="prática" data-title="Rodando e a fila">
+      <div class="slide-inner">
+        <div>
+          <div class="eyebrow">prática · comandos e fila</div>
+          <h2 class="title">Rodando e a fila</h2>
+        </div>
+        <div class="split">
+          <div class="stack">
+            <pre class="code"><span class="c"># ppo_aes no nível 2</span>
+python train.py --arena seek_coin --level 2 \
+    --alg ppo_aes --opponent rule --episodes 1000000 \
+    --lr 3e-4 --batch-size 256 \
+    --frame-stack 4 --frame-skip 3 --seed 7 \
+    --checkpoint-dir checkpoints/overnight_l2/ppo_aes \
+    --tensorboard --run-name overnight_l2_ppo_aes --stats
+
+python evaluate.py --arena seek_coin \
+    --checkpoint checkpoints/overnight_l2/ppo_aes/best.pt</pre>
+          </div>
+          <div class="stack">
+            <div class="note"><span class="mark">→</span><span><b>Fila.</b> <span class="mono">train_aes_gtr_level2_queue.sh</span> espera a fila do EPPO e roda <b>ppo_aes</b> (5h25) e depois <b>GTR</b> (5h25). Log em <span class="mono">logs/overnight_l2/ppo_aes.log</span>.</span></div>
+            <div class="note warn"><span class="mark">!</span><span><b>Como acompanhar o λ.</b> Ele não vai ao TensorBoard: o atributo <span class="mono">agent.entropy_coef</span> é atualizado a cada minibatch, e <span class="mono">aes.scalars()</span> expõe <span class="mono">aes/lambda</span>, <span class="mono">aes/raw_proxy_ema</span> e <span class="mono">aes/accumulated_proxy</span>.</span></div>
+            <div class="note loss"><span class="mark">−</span><span><b>Comparação.</b> Use <span class="mono">--alg ppo</span> com a mesma seed e os mesmos argumentos; a diferença é só o coeficiente de entropia.</span></div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="slide" id="slide-10" data-section="fechamento" data-title="Trade-offs">
+      <div class="slide-inner">
+        <div>
+          <div class="eyebrow">fechamento · trade-offs</div>
+          <h2 class="title">Quando o AES ajuda — e o que custa</h2>
+        </div>
+        <div class="grid-2">
+          <div class="stack">
+            <div class="card">
+              <h3>Ganha</h3>
+              <p>Exploração proporcional ao drift observado. Em ambientes que mudam, o coeficiente sobe quando o crítico erra mais; em fases estáveis, desce e deixa a política refinar.</p>
+            </div>
+            <div class="card">
+              <h3>Limita</h3>
+              <p>O proxy depende da escala da recompensa e da calibração do crítico. Se o crítico estiver mal ajustado, o λ reage ao erro de modelagem, não ao drift real.</p>
+            </div>
+          </div>
+          <div class="stack">
+            <div class="note"><span class="mark">→</span><span><b>Para levar.</b> λ<sub>t</sub> = clip(κ√(Â<sub>t</sub>/t)); Â acumula a EMA do quantil 0,9 do |TD|; o λ entra no lugar de <span class="mono">ent_coef</span> a cada minibatch. O resto é PPO.</span></div>
+            <div class="note warn"><span class="mark">!</span><span><b>Nível 2.</b> Areia (5 s de efeito após sair) e gelo criam mudanças de dinâmica que o crítico sente como erro de TD — exatamente o sinal que o AES quer medir.</span></div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+  </main>
+</div>
+<script src="aula.js"></script>
+</body>
+</html>
