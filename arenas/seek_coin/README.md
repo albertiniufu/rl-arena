@@ -119,7 +119,7 @@ Com `--opponent human` a janela também abre sozinha e o adversário usa o mesmo
 
 ### 6. Experimentar
 
-- Algoritmo: `--alg dqn` (padrão), `doubledqn_per_dueling`, `ppo`, `a2c`, `ippo` ou `mappo` — veja [Algoritmos](#algoritmos).
+- Algoritmo: `--alg dqn` (padrão), `doubledqn_per_dueling`, `ppo`, `eppo`, `a2c`, `ippo` ou `mappo` — veja [Algoritmos](#algoritmos).
 - Adversário: `--opponent random`, `coins` ou `rule` (o padrão `auto` é um currículo — veja [Adversários](#adversários)).
 - Semente: `--seed N` (treinos com a mesma semente são idênticos).
 - Mundo: física, recompensas, duração do episódio e contagens ficam em `arena/config.py`.

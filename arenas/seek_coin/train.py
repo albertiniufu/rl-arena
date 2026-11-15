@@ -359,8 +359,8 @@ def parse_args(argv=None):
                     default="dqn",
                     help="algoritmo de RL: pacote alg_<nome> em algs/ "
                          "(dqn = DQN enxuto; doubledqn_per_dueling = Double DQN "
-                         "+ PER + dueling; ppo = PPO; a2c = A2C; "
-                         "ippo/mappo/happo = multiagente)")
+                         "+ PER + dueling; ppo = PPO; eppo = PPO com crítico "
+                         "evidencial; a2c = A2C; ippo/mappo/happo = multiagente)")
     ap.add_argument("--lr", type=float, default=2.5e-4,
                     help="taxa de aprendizado do Adam (na retomada, o otimizador "
                          "restaurado do checkpoint sobrepõe este valor)")
