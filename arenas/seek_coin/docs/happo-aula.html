@@ -182,7 +182,7 @@
           </div>
           <div class="stack">
             <div class="note"><span class="mark">→</span><span><b>Defesa em profundidade.</b> O ambiente também converte empurrões de coletores em <span class="mono">STOP</span>, caso uma ação inválida chegue por outro caminho.</span></div>
-            <div class="note warn"><span class="mark">!</span><span><b>Papéis no construtor.</b> <span class="mono">agent_roles</span> é opcional; sem ele, todas as ações são permitidas e o HAPPO se comporta como um MAPPO com atores separados. <span class="mono">ArenaConfig.agent_roles</span> existe, mas a CLI atual do treino não expõe um argumento de papéis.</span></div>
+            <div class="note warn"><span class="mark">!</span><span><b>Papéis no construtor.</b> <span class="mono">agent_roles</span> é opcional; sem ele, todas as ações são permitidas e o HAPPO se comporta como um MAPPO com atores separados. <span class="mono">ArenaConfig.agent_roles</span> agora é preenchido pela CLI: <span class="mono">--scenario collectors-vs-pushers --teams K</span> (time par) monta o cenário, grava os papéis no checkpoint e passa <span class="mono">agent_roles</span> ao HAPPO; <span class="mono">evaluate.py</span>/<span class="mono">play.py</span> reconstroem os papéis da config.</span></div>
             <div class="note loss"><span class="mark">−</span><span><b>Máscara só no ator.</b> O crítico continua vendo o estado conjunto inteiro; a máscara não reduz a observação, só a política.</span></div>
           </div>
         </div>
@@ -262,6 +262,11 @@ python train.py --arena seek_coin --alg happo \
 python train.py --arena seek_coin --alg happo \
     --agents 4 --scenario teams --teams 2 \
     --checkpoint-dir checkpoints/happo_teams
+
+<span class="c"># times mistos: 1 coletor + 1 empurrador por time</span>
+python train.py --arena seek_coin --alg happo \
+    --agents 4 --scenario collectors-vs-pushers --teams 2 \
+    --checkpoint-dir checkpoints/happo_roles
 
 <span class="c"># espectador e duelo</span>
 python play.py --arena seek_coin \

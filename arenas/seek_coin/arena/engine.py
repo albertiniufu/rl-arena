@@ -2,7 +2,7 @@ import math
 import numpy as np
 from dataclasses import dataclass
 from .actions import JUMP, LEFT, PUSH_INTENSITY, PUSH_LEFT, PUSH_RIGHT, RIGHT, STOP
-from .config import ArenaConfig
+from .config import ArenaConfig, COLLECTOR_ROLE, PUSHER_ROLE
 from .levels import (
     get_fixed_coins, get_hazard_kinds, get_level, get_moving_coins)
 
@@ -22,6 +22,7 @@ class Character:
     slide_vx: float = 0.0
     ice_cooldown: float = 0.0
     sand_timer: float = 0.0
+    push_cooldown: float = 0.0  # segundos restantes até poder empurrar de novo
 
 @dataclass
 class Coin:
@@ -198,6 +199,18 @@ class ArenaEngine:
         horizontal_gap = max(rb[0] - (ra[0] + ra[2]), ra[0] - (rb[0] + rb[2]), 0)
         return vertical and horizontal_gap <= 3
 
+    def _role(self, index):
+        """Papel do personagem (`collector`/`pusher`) ou `None` no legado."""
+        roles = getattr(self.cfg, "agent_roles", ())
+        if roles and len(roles) == len(self.characters):
+            return roles[index]
+        return None
+
+    def _vx_limit(self):
+        """Teto de velocidade horizontal; o impulso forte pode elevá-lo."""
+        cap = float(getattr(self.cfg, "push_speed_cap", 0.0) or 0.0)
+        return max(float(self.cfg.max_speed) * 2.0, cap)
+
     def _eligible_targets(self, actor_index):
         """Índices que o agente pode empurrar; `None` = qualquer personagem.
 
@@ -223,8 +236,10 @@ class ArenaEngine:
             return False
         i, target = min(candidates, key=lambda pair: abs(pair[1].x - actor.x))
         # Apply an impulse; no teleportation. Intensity scales the impulse.
-        target.vx = float(np.clip(target.vx + direction * self.cfg.push_impulse * intensity,
-                                  -self.cfg.max_speed * 2, self.cfg.max_speed * 2))
+        limit = self._vx_limit()
+        target.vx = float(np.clip(
+            target.vx + direction * self.cfg.push_impulse * intensity,
+            -limit, limit))
         target.vy = min(target.vy, -45.0)
         # O empurrão transfere moedas do alvo para quem empurrou. Quem tem
         # menos que `push_coin_transfer` passa o que tem (nunca fica negativo).
@@ -252,6 +267,7 @@ class ArenaEngine:
                 c.slide_vx = 0.0
                 c.ice_cooldown = 0.0
                 c.sand_timer = 0.0
+                c.push_cooldown = 0.0
                 c.alive = True
                 c.on_ground = True
                 c.platform_index = index
@@ -295,7 +311,8 @@ class ArenaEngine:
                 c.vy = -self.cfg.jump_speed
                 c.on_ground = False
             c.vx *= 0.88 ** (dt * self.cfg.fps)
-        c.vx = float(np.clip(c.vx, -self.cfg.max_speed * 2, self.cfg.max_speed * 2))
+        limit = self._vx_limit()
+        c.vx = float(np.clip(c.vx, -limit, limit))
         if sand_factor < 1.0:
             c.vx = float(np.clip(c.vx,
                                  -self.cfg.max_speed * sand_factor,
@@ -327,6 +344,7 @@ class ArenaEngine:
             c.slide_vx = 0.0
             c.ice_cooldown = 0.0
             c.sand_timer = 0.0
+            c.push_cooldown = 0.0
 
     def step(self, actions, dt):
         self.sim_time += dt
@@ -338,6 +356,11 @@ class ArenaEngine:
                 coin.x += dx
                 coin.y += dy
         self._advance_hazards(dt)
+        # Recarga de empurrão: um empurrão bem-sucedido bloqueia o próximo
+        # pelo tempo configurado (2 s no cenário coletores × empurradores).
+        for c in self.characters:
+            if c.push_cooldown > 0:
+                c.push_cooldown = max(0.0, c.push_cooldown - dt)
         before_deaths = [c.deaths for c in self.characters]
         # Saldo antes dos empurrões: o delta isola a transferência de moedas
         # (a morte também mexe no saldo, mas acontece depois).
@@ -347,12 +370,21 @@ class ArenaEngine:
         for i, action in enumerate(actions):
             if action not in (PUSH_LEFT, PUSH_RIGHT):
                 continue
+            # Coletor não empurra: a ação é inerte (o ambiente a converte em
+            # STOP antes daqui; o engine repete a regra para chamadas diretas).
+            if self._role(i) == COLLECTOR_ROLE:
+                continue
+            actor = self.characters[i]
+            if actor.push_cooldown > 0:
+                continue
             direction = -1 if action == PUSH_LEFT else 1
             eligible = self._eligible_targets(i)
             if eligible is None:
-                self.push(i, direction, PUSH_INTENSITY)
+                pushed = self.push(i, direction, PUSH_INTENSITY)
             else:
-                self.push(i, direction, PUSH_INTENSITY, eligible)
+                pushed = self.push(i, direction, PUSH_INTENSITY, eligible)
+            if pushed and self.cfg.push_cooldown > 0:
+                actor.push_cooldown = float(self.cfg.push_cooldown)
         # Positivo para quem recebeu moedas, negativo para quem as perdeu.
         coins_transferred = [c.coins - before
                              for c, before in zip(self.characters, before_push_coins)]
@@ -365,7 +397,9 @@ class ArenaEngine:
             coin.timer -= dt
         self.coins = [coin for coin in self.coins if coin.timer > 0]
         for i, c in enumerate(self.characters):
-            if not c.alive:
+            # Empurrador não coleta do mapa: a moeda dele vem da transferência
+            # no empurrão (papel "só empurra").
+            if not c.alive or self._role(i) == PUSHER_ROLE:
                 continue
             for coin in list(self.coins):
                 if math.hypot(c.x - coin.x, (c.y - self.cfg.player_size / 2) - coin.y) < 18:

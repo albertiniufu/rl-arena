@@ -40,17 +40,25 @@ Treina sem abrir janela (padrão). `--alg` escolhe o pacote `alg_<nome>` em `are
 
 Dica: se o terminal for inundado por avisos do NNPACK, rode com `TORCH_CPP_LOG_LEVEL=ERROR python train.py ...`.
 
-**Multiagente (IPPO e MAPPO).** Use `--alg ippo` ou `--alg mappo` para treinar todos
-os agentes ao mesmo tempo. O IPPO tem um crítico local por agente; o MAPPO usa um
-**crítico centralizado** (CTDE), que vê as features de todos os agentes durante o
-treino, embora a política continue descentralizada na execução.
-Em `--scenario all-vs-all` cada agente é um time; em `--scenario teams --teams K` os
-agentes são divididos em K times de mesmo tamanho. Em times, a recompensa de cada
-membro é a média das recompensas do time.
+**Multiagente (IPPO, MAPPO e HAPPO).** Use `--alg ippo`, `--alg mappo` ou
+`--alg happo` para treinar todos os agentes ao mesmo tempo. O IPPO tem um crítico
+local por agente; o MAPPO usa um **crítico centralizado** (CTDE), que vê as
+features de todos os agentes durante o treino, embora a política continue
+descentralizada na execução. O HAPPO dá um ator independente a cada agente e faz
+o update em sequência, corrigindo a razão pelo produto das razões já atualizadas.
+Em `--scenario all-vs-all` cada agente é um time; em `--scenario teams --teams K`
+os agentes são divididos em K times de mesmo tamanho. Em times, a recompensa de
+cada membro é a média das recompensas do time. Em
+`--scenario collectors-vs-pushers --teams K` cada time é misto: metade só coleta
+e metade só empurra (time precisa ser par). Coletores têm `PUSH_*` mascarados e
+não coletam pela política; empurradores não coletam moedas do mapa e só ganham
+saldo transferindo moedas no empurrão, calibrado para meia arena com recarga de
+2 s.
 
 ```bash
 python train.py --alg ippo --agents 4 --scenario all-vs-all --checkpoint-dir checkpoints/all4
 python train.py --alg mappo --agents 4 --scenario teams --teams 2 --checkpoint-dir checkpoints/mappo_teams4
+python train.py --alg happo --agents 4 --scenario collectors-vs-pushers --teams 2 --checkpoint-dir checkpoints/happo_roles
 python evaluate.py --checkpoint checkpoints/teams4/best.pt --episodes 10
 python play.py --checkpoint checkpoints/teams4/best.pt --render   # modo espectador
 python play.py --checkpoint checkpoints/teams4/best.pt --player human --human-agent 0  # você + agente no time

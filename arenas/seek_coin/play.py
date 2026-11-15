@@ -147,7 +147,8 @@ def _play_multi(args, alg, cfg, render_mode):
         if not teammates:
             raise SystemExit(
                 "O agente humano precisa de um colega de time; use um "
-                "checkpoint treinado com --scenario teams e um time com 2+ "
+                "checkpoint treinado com --scenario teams ou "
+                "collectors-vs-pushers e um time com 2+ "
                 "agentes, ou escolha outro --human-agent.")
         from arenas.seek_coin.agents.human import HumanPolicy
         human = HumanPolicy()
@@ -157,9 +158,12 @@ def _play_multi(args, alg, cfg, render_mode):
               "Q/E empurrar.")
     env = ArenaMultiEnv(cfg, scenario=scenario, render_mode=render_mode,
                         skin=args.skin)
+    agent_kwargs = dict(n_agents=scenario.n_agents,
+                        team_ids=tuple(scenario.team_ids))
+    if scenario.has_roles and getattr(alg.Agent, "accepts_roles", False):
+        agent_kwargs["agent_roles"] = tuple(scenario.roles)
     agent = alg.Agent(env.observation_space.shape, env.action_space.n,
-                      n_agents=scenario.n_agents,
-                      team_ids=tuple(scenario.team_ids))
+                      **agent_kwargs)
     load_checkpoint(args.checkpoint, agent, resume=False)
     agent.epsilon = 0.0
     video_writer = None

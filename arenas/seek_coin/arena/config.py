@@ -18,6 +18,13 @@ class ArenaConfig:
     # com 450, o pico é ~105px — margem confortável para todos os degraus.
     jump_speed: float = 450.0
     push_impulse: float = 130.0
+    # Teto de velocidade horizontal de quem é empurrado. 0 mantém o limite
+    # legado (max_speed * 2); o cenário coletores × empurradores eleva o teto
+    # para o impulso forte não ser cortado no substep seguinte.
+    push_speed_cap: float = 0.0
+    # Tempo mínimo entre dois empurrões bem-sucedidos do mesmo personagem.
+    # 0 preserva o comportamento legado (sem recarga).
+    push_cooldown: float = 0.0
     player_size: int = 25
     episode_seconds: float = 45.0
     respawn_seconds: float = 5.0
@@ -52,3 +59,17 @@ class ArenaConfig:
     ice_slide_fraction: float = 0.2  # 1/5 da largura da tela
     ice_slide_seconds: float = 0.6
     ice_cooldown: float = 1.0
+
+    def push_impulse_for_range(self, range_px, intensity):
+        """Impulso que desloca um alvo ~`range_px` após um empurrão.
+
+        O engine aplica o atrito **antes** de mover no substep do empurrão:
+        `v0` vira `v0 * 0.88` e só então o alvo anda. A distância total é
+        `v0 * dt * 0.88 / (1 - 0.88)`; invertendo, chega-se ao impulso por
+        unidade de intensidade. Serve para calibrar "empurrar meia arena" sem
+        números mágicos no chamador.
+        """
+        dt = 1.0 / float(self.fps)
+        decay = 0.88 ** (dt * float(self.fps))
+        speed = float(range_px) * (1.0 - decay) / (dt * decay)
+        return speed / float(int(intensity))
