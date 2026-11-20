@@ -20,6 +20,14 @@ centrado em si (ver `observations.render_grid`). O mapa inteiro continua
 existindo no engine; a câmera é que acompanha o agente. Fora dos limites do
 mapa o recorte é preenchido com zeros (fundo). A visão local é ativada por
 `uses_local_view(level)` e não muda o espaço de ações.
+
+O nível 5 é um **mundo procedural infinito**: o mapa não é fixo, e sim gerado
+em chunks determinísticos por seed à medida que o agente avança; o mundo rola
+continuamente (as entidades andam para a esquerda quando o agente passa de
+~55% da largura) e o que fica para trás é descartado. Usa a visão local do
+nível 4 para manter o shape fixo, canais extras de areia/gelo/buraco e
+plataformas móveis ocasionais. É single-agent por enquanto (geração infinita
+multiagente ficou fora do escopo inicial).
 """
 from __future__ import annotations
 
@@ -123,6 +131,7 @@ HAZARD_KINDS = {
     2: ("sand", "ice"),
     3: (),
     4: (),
+    5: ("sand", "ice"),
 }
 
 # Nível 3: mesmo mapa do nível 1, com botões e uma super moeda.
@@ -156,6 +165,7 @@ LEVEL_CHANNEL_NAMES = {
     1: (),
     2: ("sand", "ice"),
     3: ("activate_button", "cancel_button", "super_coin"),
+    5: ("sand", "ice", "hole"),
 }
 
 # Nível 4: mesmo mundo do nível 3 (botões/super moeda) com visão local.
@@ -167,15 +177,32 @@ BUTTONS[4] = BUTTONS[3]
 SUPER_COIN_POSITIONS[4] = SUPER_COIN_POSITIONS[3]
 LEVEL_CHANNEL_NAMES[4] = LEVEL_CHANNEL_NAMES[3]
 
+# Nível 5: mundo procedural; o mapa fixo é vazio e as entidades nascem em
+# `endless.py` (a visão local mantém o shape do nível 4).
+STATIC_PLATFORMS[5] = ()
+FIXED_COIN_POSITIONS[5] = ()
+MOVING_COIN_SPECS[5] = ()
+MOVING_PLATFORMS[5] = ()
+BUTTONS[5] = ()
+SUPER_COIN_POSITIONS[5] = None
+
 # Níveis cuja observação é um recorte egocêntrico (visão parcial). Os demais
 # continuam entregando o mapa inteiro — mudar isso quebraria checkpoints e a
 # comparação entre níveis.
-LOCAL_VIEW_LEVELS = frozenset({4})
+LOCAL_VIEW_LEVELS = frozenset({4, 5})
+
+# Níveis com mundo gerado em chunks (sem mapa fixo).
+ENDLESS_LEVELS = frozenset({5})
 
 
 def uses_local_view(level: int) -> bool:
     """O nível entrega apenas o recorte ao redor do agente?"""
     return int(level) in LOCAL_VIEW_LEVELS
+
+
+def uses_endless_world(level: int) -> bool:
+    """O nível gera o mundo em chunks (mundo procedural infinito)?"""
+    return int(level) in ENDLESS_LEVELS
 
 
 def get_level(level: int):

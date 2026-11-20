@@ -9,7 +9,7 @@ from arenas.seek_coin.agents.baseline import PolicyContext, make_policy
 from .actions import N_ACTIONS, PUSH_LEFT, PUSH_RIGHT, STOP
 from .config import ArenaConfig
 from .engine import ArenaEngine, Character, Coin, Hazard, SuperCoin
-from .levels import get_level_channel_names
+from .levels import get_level_channel_names, uses_endless_world
 from .observations import observation_grid_shape, render_grid
 from .reward_shaping import coin_potential
 from .skins import load_renderer_class
@@ -180,6 +180,10 @@ class ArenaEnv(gym.Env):
                 else float(self.engine.super_coin.timer)),
             "pbrs_this_step": pbrs,
         }
+        if uses_endless_world(self.cfg.level):
+            # Distância percorrida no mundo procedural (métrica do nível 5).
+            info["distance"] = float(self.engine.distance)
+            info["chunks"] = int(self.engine.next_chunk)
         self._last_info = info
         self._frames.append(self._observation())
         if self.render_mode == "human":

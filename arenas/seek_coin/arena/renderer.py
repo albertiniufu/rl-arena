@@ -305,6 +305,14 @@ class ArenaRenderer:
         for ox, oy, r, _ in self.orbs:
             surf.blit(self._glow(int(r), (120, 90, 200)), (ox - 100 - r, oy - r))
 
+    def _draw_holes(self, surf, engine):
+        """Nível 5: buracos do chão procedural (regiões sem colisão)."""
+        for x, y, w, h in getattr(engine, "holes", ()):
+            rect = pygame.Rect(int(x), int(y), int(w), int(h))
+            pygame.draw.rect(surf, (6, 6, 16), rect)
+            pygame.draw.line(surf, (70, 70, 110),
+                             (rect.left, rect.top), (rect.right, rect.top), 2)
+
     def _draw_platforms(self, surf, engine):
         for x, y, w, h in engine.platforms:
             pygame.draw.rect(surf, (10, 10, 22), (x + 4, y + 6, w, h), border_radius=5)       # sombra
@@ -551,6 +559,7 @@ class ArenaRenderer:
     def _draw(self, engine, elapsed, info):
         self.fx.fill((0, 0, 0, 0))
         self._draw_background(self.world)
+        self._draw_holes(self.world, engine)
         self._draw_platforms(self.world, engine)
         self._draw_hazards(self.world, engine)
         self._draw_buttons(self.world, engine)

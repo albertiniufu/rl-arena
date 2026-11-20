@@ -28,8 +28,10 @@ o item foi implementado (arquivo + testes) quando terminar.
 | Abas de análise e proposta na Fila | ✅ concluído | [`arenas/common/job_queue_ui.py`](arenas/common/job_queue_ui.py) |
 | Aba de algoritmos por arena na Fila | ✅ concluído | [`arenas/common/algorithm_catalog.py`](arenas/common/algorithm_catalog.py) |
 | Visualização da evolução do BO na Fila | ⏳ pendente | — |
+| Experimentos no nível 4 — custo da visão local | ⏳ pendente | — |
+| Experimentos no nível 5 — mundo procedural | ⏳ pendente | — |
 | Nível 4 — visão local limitada | ✅ concluído | [`arenas/seek_coin/arena/observations.py`](arenas/seek_coin/arena/observations.py) |
-| Nível 5 — mundo contínuo procedural | ⏳ pendente | — |
+| Nível 5 — mundo contínuo procedural | ✅ concluído | [`arenas/seek_coin/arena/endless.py`](arenas/seek_coin/arena/endless.py) |
 | Ambiente OOD para validar agentes do seek_coin | ⏳ pendente | — |
 | Testes de aprendizado off-policy | ⏳ pendente | — |
 | Offline RL (dataset fixo) | ⏳ pendente | — |
@@ -68,20 +70,27 @@ o item foi implementado (arquivo + testes) quando terminar.
   - Testes: parser de `trials.jsonl`/ASHA, normalização de parâmetros, best-so-far, agregação por bin, parâmetro categórico, trial falho, campanha ausente e API/rota.
   - Documentar em `docs/fila-de-experimentos.md` e no README de `scripts/bo_campaign.py`/`asha_campaign.py`.
 
-### Nível 5 — mundo contínuo procedural
+### Experimentos no nível 4 — custo da visão local
 
-- [ ] **Criar o nível 5: um ambiente continuamente gerado e em movimento**, que posiciona novos elementos aleatoriamente (moedas, plataformas, areia, gelo e buracos) enquanto o agente avança.
-  - Motivação: sair do mapa fixo e testar generalização contínua, percepção local e controle em um mundo que não termina; é o passo natural depois do nível 4 (visão local).
-  - Mundo: chunks/segmentos gerados proceduralmente à frente e descartados atrás; a câmera acompanha o agente (ou o mundo rola continuamente). A posição do agente pode ser relativa ao chunk atual.
-  - Elementos: moedas, plataformas estáticas/móveis, areia, gelo e **buracos** (novo hazard: cair custa morte/respawn ou termina o episódio, a decidir). Taxas de spawn e dificuldade crescem com a distância/tempo.
-  - Determinismo: geração por seed e por índice de chunk; o mesmo seed produz a mesma sequência de chunks. Não usar RNG global fora do gerador do ambiente.
-  - Observação: usar a visão local do nível 4 (recorte ao redor do agente) para manter shape fixo; o mundo infinito não cabe na tela. Canais extras para areia/gelo/buraco e, se necessário, distância/velocidade.
-  - Física: plataformas e buracos precisam interagir com o engine atual; buracos podem ser regiões sem colisão de chão ou zonas fatais. Garantir que moedas não nasçam dentro de buracos/paredes.
-  - Memória: remover chunks/elementos fora da visão para manter memória e custo por passo limitados; medir isso em um episódio longo.
-  - Render: câmera rolante, desenhar só os chunks visíveis e indicar buracos com clareza.
-  - Testes: geração determinística por seed, spawn/despawn de chunks, limites de memória, colisão com buraco, areia/gelo, observação local, checkpoint com nível 5, evaluate/play e smoke de episódio longo.
-  - Avaliação: comparar com nível 4 em distância até a morte/queda e moedas por 1.000 passos; reportar por seed.
-  - Fora de escopo inicial: geração infinita multiagente, editor de mapas e curriculum automático de dificuldade.
+- [ ] **Medir o custo da visão local e a contribuição da janela/frame stack.**
+  - Pergunta primária: com o mesmo orçamento em **passos de ambiente**, quanto o nível 4 (`view_size=9`) perde para o nível 3 (mapa inteiro) em recompensa gulosa, moedas e passos até o alvo?
+  - Hipótese/falsificação: a visão local aumenta a necessidade de memória e reduz a eficiência; se o desempenho for equivalente ao nível 3, a percepção global não era o gargalo. Registrar a hipótese e a métrica primária antes de rodar.
+  - Protocolo: setups S6 (nível 3) × S7 (nível 4) em [`docs/experimentos/setups.md`](docs/experimentos/setups.md); mesmo `frame_skip`, `frame_stack=4`, adversário `rule`, orçamento em passos (não horas), 3+ seeds de treino (ex.: 7, 17, 27) e o mesmo conjunto de avaliação gulosa (50 eps, seed 1000).
+  - Secundários: `view_size` 7 × 9 × 11; `frame_stack` 1 × 4; PPO e EPPO (ou DQN) com presets fixos de BO; sem tuning por condição.
+  - Métricas: recompensa/moedas/mortes na avaliação, passos até um alvo de recompensa, distância percorrida e custo de obs/rede; reportar média ± IC, teste pareado por seed e tamanho de efeito com [`arenas/common/report.py`](arenas/common/report.py).
+  - Registro: `docs/experimentos/EXP-AAAAMMDD-visao-local.md` (+ `.yaml` da skill `experimenter-helper`), linha em [`registro.md`](docs/experimentos/registro.md) e artefatos em `experiments/<ID>/`.
+  - Riscos: poucas seeds, troca de métrica depois de ver o resultado e vazamento de tune; usar held-out de avaliação e não escolher melhor `view_size` com os mesmos episódios de teste.
+  - Depende de: nível 4 implementado; não bloqueia o nível 5.
+
+### Experimentos no nível 5 — mundo procedural
+
+- [ ] **Medir generalização e custo do mundo infinito contra o mapa fixo local.**
+  - Pergunta: no mesmo orçamento em passos, o nível 5 mantém recompensa/moedas por 1.000 passos e distância até a morte/queda próximas do nível 4? O agente transfere habilidades do mapa fixo para chunks nunca vistos?
+  - Protocolo: setup S8 × S7; seeds e avaliação fixas; avaliar também zero-shot no nível 5 de um checkpoint treinado no nível 4 (e vice-versa) para separar generalização de aprendizado.
+  - Métricas: distância percorrida, moedas por 1.000 passos, mortes por queda, recompensa, chunks visitados e custo por passo/memória; reportar por seed e com IC.
+  - Verificações de ambiente antes do treino: geração determinística por seed, spawn/despawn de chunks, moedas fora dos buracos e limites de memória em episódio longo.
+  - Registro: `docs/experimentos/EXP-AAAAMMDD-mundo-procedural.md` + `registro.md`; documentar seeds ruins e falhas de geração, não só a média.
+  - Depende de: nível 5 implementado; usar o protocolo de [`TEMPLATE.md`](docs/experimentos/TEMPLATE.md).
 
 ### Ambiente OOD para validar agentes do seek_coin
 
@@ -209,6 +218,33 @@ o item foi implementado (arquivo + testes) quando terminar.
   - Testes: shape do recorte, agente no centro, padding nas bordas, entidades fora do recorte invisíveis, ausência de canais globais, seed, checkpoint com `view_size`, CLI e smoke single/multiagente.
   - Avaliação: protocolo nível 3 (visão global) × nível 4 (visão local) documentado no setup S7; a execução fica como próximo experimento.
   - Fora de escopo inicial: campo de visão cônico, oclusão por paredes/plataformas e arquitetura recorrente dedicada.
+
+### Nível 5 — mundo contínuo procedural
+
+> Implementado em [`arenas/seek_coin/arena/endless.py`](arenas/seek_coin/arena/endless.py)
+> (`ChunkGenerator` determinístico por `(seed, índice)`, `Mover` e constantes
+> de chunk/chão), [`arenas/seek_coin/arena/engine.py`](arenas/seek_coin/arena/engine.py)
+> (rolagem contínua, geração/descarte de chunks, buracos e respawn próximo),
+> [`arenas/seek_coin/arena/levels.py`](arenas/seek_coin/arena/levels.py)
+> (`uses_endless_world`, canais areia/gelo/buraco), `observations.py`
+> (canal `hole`), `environment.py` (info `distance`/`chunks`),
+> `renderer.py` (buracos e névoa da visão local) e `--level 5` na CLI.
+> Multiagente é recusado (fora do escopo inicial). Testes em
+> `arenas/seek_coin/tests/test_level5.py`. Protocolo de comparação em
+> [`docs/experimentos/setups.md`](docs/experimentos/setups.md) (S8).
+
+- [x] **Criar o nível 5: um ambiente continuamente gerado e em movimento**, que posiciona novos elementos aleatoriamente (moedas, plataformas, areia, gelo e buracos) enquanto o agente avança.
+  - Motivação: sair do mapa fixo e testar generalização contínua, percepção local e controle em um mundo que não termina; é o passo natural depois do nível 4 (visão local).
+  - Mundo: chunks de 480 px gerados à frente e descartados atrás; o mundo rola quando o agente passa de ~55% da largura (`world_offset`), e a posição de tela permanece limitada ao mapa.
+  - Elementos: moedas, plataformas de chão/elevadas, plataformas móveis a cada ~3 chunks, areia, gelo e buracos (gaps no chão; cair custa morte/respawn). Buracos e frequência crescem com o índice do chunk (dificuldade).
+  - Determinismo: RNG por `(seed, índice do chunk)` via `SeedSequence`; dois episódios com a mesma seed produzem a mesma sequência, independentemente da ordem de geração.
+  - Observação: visão local do nível 4 (`view_size` 9×9) com canais extras `sand`, `ice` e `hole`.
+  - Física: chão em segmentos com gaps de 32–110 px; buracos são regiões sem colisão (queda abaixo do mapa) e o respawn acontece na plataforma de chão mais próxima do agente.
+  - Memória: entidades atrás de `-DROP_MARGIN` são descartadas e os índices de plataforma remapeados; em 1.500 passos o número de plataformas/moedas/buracos fica limitado ao que está na tela + margem.
+  - Render: o world continua em coordenadas de tela (rolagem já aplicada pelo engine), buracos são desenhados como poços e a névoa da visão local do nível 4 se aplica.
+  - Testes: determinismo por seed, emenda de chunks, rolagem/geração/descarte, memória limitada, moedas fora dos buracos, canal `hole`, morte por queda e respawn, areia/gelo, checkpoint, CLI, rejeição de multiagente/GPU e smoke de episódio com `distance`.
+  - Avaliação: protocolo no setup S8 e item pendente “Experimentos no nível 5”; execução fica para a próxima rodada.
+  - Fora de escopo inicial: geração infinita multiagente (o `ArenaMultiEnv` recusa o nível 5), editor de mapas e curriculum automático de dificuldade.
 
 ### Aba de algoritmos por arena na Fila de Experimentos
 

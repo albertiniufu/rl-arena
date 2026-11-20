@@ -5,7 +5,9 @@ from .actions import JUMP, LEFT, PUSH_INTENSITY, PUSH_LEFT, PUSH_RIGHT, RIGHT, S
 from .config import ArenaConfig, COLLECTOR_ROLE, PUSHER_ROLE
 from .levels import (
     get_buttons, get_fixed_coins, get_hazard_kinds, get_level,
-    get_moving_coins, get_super_coin_position)
+    get_moving_coins, get_super_coin_position, uses_endless_world)
+from .endless import (
+    DROP_MARGIN, GROUND_Y, MARGIN, ChunkGenerator, Mover)
 
 @dataclass
 class Character:
@@ -71,6 +73,13 @@ class ArenaEngine:
         self.super_coin_cooldown = 0.0
         self._button_state: dict[str, bool] = {}
         self.sim_time = 0.0
+        # Estado do mundo procedural (nível 5); `None` nos demais níveis.
+        self.world_offset = 0.0
+        self.next_chunk = 0
+        self.distance = 0.0
+        self.holes: list[tuple] = []
+        self.movers: list[Mover] = []
+        self.chunk_generator = None
 
     def _platforms_at(self, t: float):
         return (list(self.static_platforms)
@@ -81,6 +90,9 @@ class ArenaEngine:
         self.platform_deltas = [(0.0, 0.0)] * len(self.platforms)
 
     def _advance_platforms(self, t: float) -> None:
+        if uses_endless_world(self.level):
+            self._advance_endless_movers(t)
+            return
         old = self.platforms
         new = self._platforms_at(t)
         self.platform_deltas = [
@@ -88,6 +100,185 @@ class ArenaEngine:
             in zip(old, new)
         ]
         self.platforms = new
+
+    # ---------------------------------------------------------------- nível 5
+    def _init_endless_world(self, seed) -> None:
+        """Zera o mundo procedural e gera os primeiros chunks."""
+        self.world_offset = 0.0
+        self.next_chunk = 0
+        self.distance = 0.0
+        self.platforms = []
+        self.platform_deltas = []
+        self.movers = []
+        self.holes = []
+        self.coins = []
+        self.hazards = []
+        self.buttons = []
+        self.super_coin = None
+        self.super_coin_cooldown = 0.0
+        self._button_state = {}
+        world_seed = (int(seed) if seed is not None
+                      else int(self.rng.integers(0, 2**32 - 1)))
+        self.chunk_generator = ChunkGenerator(
+            world_seed, world_height=float(self.cfg.height))
+        self._generate_ahead()
+
+    def _generate_ahead(self) -> None:
+        """Gera chunks até cobrir a tela + margem à frente do agente."""
+        if self.chunk_generator is None:
+            return
+        limit = self.world_offset + self.cfg.width + MARGIN
+        while (self.next_chunk * self.chunk_generator.chunk_width) < limit:
+            self._append_chunk(self.next_chunk)
+            self.next_chunk += 1
+
+    def _append_chunk(self, index: int) -> None:
+        content = self.chunk_generator.generate(index)
+        offset = self.world_offset
+        platform_map = {}
+        for local, (x, y, w, h) in enumerate(content.platforms):
+            platform_map[local] = len(self.platforms)
+            self.platforms.append((x - offset, y, w, h))
+            self.platform_deltas.append((0.0, 0.0))
+        for spec in content.movers:
+            index_p = platform_map.get(spec.platform)
+            if index_p is None:
+                continue
+            mover = Mover(
+                platform_index=index_p,
+                base_x=spec.base_x - offset,
+                base_y=spec.base_y,
+                axis=spec.axis,
+                amplitude=spec.amplitude,
+                period=spec.period,
+                phase=spec.phase,
+            )
+            # Nasce já na fase atual: gerar um chunk no meio do episódio não
+            # pode fazer a plataforma "pular" da base até a posição de t=0.
+            mx, my = mover.at(self.sim_time)
+            _, _, w, h = self.platforms[index_p]
+            self.platforms[index_p] = (mx, my, w, h)
+            self.movers.append(mover)
+        for x, y, w, h in content.holes:
+            self.holes.append((x - offset, y, w, h))
+        for x, y in content.coins:
+            self.coins.append(Coin(x - offset, y, self.cfg.coin_lifetime))
+
+    def _advance_endless_movers(self, t: float) -> None:
+        deltas = [(0.0, 0.0)] * len(self.platforms)
+        for mover in self.movers:
+            i = mover.platform_index
+            if not 0 <= i < len(self.platforms):
+                continue
+            x, y, w, h = self.platforms[i]
+            nx, ny = mover.at(t)
+            deltas[i] = (nx - x, ny - y)
+            self.platforms[i] = (nx, ny, w, h)
+        self.platform_deltas = deltas
+
+    def _scroll_endless(self) -> None:
+        """Rola o mundo quando o agente passa de ~55% da largura."""
+        if self.chunk_generator is None or not self.characters:
+            return
+        trigger = self.cfg.width * 0.55
+        anchor = self.characters[0].x
+        if anchor > trigger:
+            dx = anchor - trigger
+            self._shift_world(-dx)
+            self.world_offset += dx
+            self._drop_behind()
+        self.distance = max(
+            self.distance, self.world_offset + self.characters[0].x)
+        self._generate_ahead()
+        for kind in self.hazard_kinds:
+            have = sum(1 for hazard in self.hazards
+                       if hazard.kind == kind)
+            for _ in range(max(0, int(self.cfg.hazard_count) - have)):
+                self._spawn_hazard(kind)
+
+    def _shift_world(self, dx: float) -> None:
+        self.platforms = [(x + dx, y, w, h)
+                          for x, y, w, h in self.platforms]
+        self.platform_deltas = [(0.0, 0.0)] * len(self.platforms)
+        self.holes = [(x + dx, y, w, h) for x, y, w, h in self.holes]
+        for coin in self.coins:
+            coin.x += dx
+        for hazard in self.hazards:
+            hazard.x += dx
+        for character in self.characters:
+            character.x += dx
+        for mover in self.movers:
+            mover.base_x += dx
+
+    def _drop_behind(self) -> None:
+        """Descarta entidades atrás da tela e remapeia índices de plataforma."""
+        limit = -DROP_MARGIN
+        keep = [i for i, (x, _, w, _) in enumerate(self.platforms)
+                if x + w > limit]
+        if len(keep) != len(self.platforms):
+            mapping = {old: new for new, old in enumerate(keep)}
+            self.platforms = [self.platforms[i] for i in keep]
+            self.platform_deltas = [(0.0, 0.0)] * len(self.platforms)
+            for character in self.characters:
+                if character.platform_index is not None:
+                    character.platform_index = mapping.get(
+                        character.platform_index)
+                    if character.platform_index is None:
+                        character.on_ground = False
+            kept_hazards = []
+            for hazard in self.hazards:
+                new_index = mapping.get(hazard.platform_index)
+                if new_index is not None:
+                    hazard.platform_index = new_index
+                    kept_hazards.append(hazard)
+            self.hazards = kept_hazards
+            kept_movers = []
+            for mover in self.movers:
+                new_index = mapping.get(mover.platform_index)
+                if new_index is not None:
+                    mover.platform_index = new_index
+                    kept_movers.append(mover)
+            self.movers = kept_movers
+        self.holes = [h for h in self.holes if h[0] + h[2] > limit]
+        self.coins = [c for c in self.coins if c.x > limit]
+
+    def _nearby_respawn(self):
+        """Plataforma mais próxima do agente para renascer (nível 5)."""
+        anchor = self.characters[0].x if self.characters else 0.0
+        valid = [(i, x, y, w)
+                 for i, (x, y, w, h) in enumerate(self.platforms)
+                 if w > self.cfg.player_size * 2
+                 and x + w > 0 and x < self.cfg.width]
+        if not valid:
+            return None
+        ground = [p for p in valid if p[2] >= GROUND_Y - 1.0]
+        pool = ground or valid
+        index, px, py, pw = min(
+            pool, key=lambda p: abs(p[1] + p[3] / 2.0 - anchor))
+        lo, hi = px + self.cfg.player_size, px + pw - self.cfg.player_size
+        rx = (px + pw / 2.0 if hi <= lo
+              else float(self.rng.uniform(lo, hi)))
+        return index, rx, float(py)
+
+    def _reset_endless(self, seed, n_characters, spawn_positions):
+        count = (int(n_characters) if n_characters is not None
+                 else 1 + self.cfg.opponent_count)
+        if spawn_positions is not None:
+            if len(spawn_positions) != count:
+                raise ValueError(
+                    f"spawn_positions deve ter {count} entradas "
+                    f"(recebido {len(spawn_positions)})")
+            positions = [(float(x), float(y)) for x, y in spawn_positions]
+        else:
+            positions = [(90.0, 320.0)] + [
+                (500.0 + i * 25.0, 320.0) for i in range(count - 1)
+            ]
+        self.characters = [Character(x, y) for x, y in positions]
+        self._init_endless_world(seed)
+        for kind in self.hazard_kinds:
+            for _ in range(max(0, int(self.cfg.hazard_count))):
+                self._spawn_hazard(kind)
+        return self
 
     def reset(self, seed=None, n_characters=None, spawn_positions=None):
         # Sem seed, continua o RNG existente em vez de criar outro com entropia:
@@ -98,6 +289,8 @@ class ArenaEngine:
         if seed is not None:
             self.rng = np.random.default_rng(seed)
         self.sim_time = 0.0
+        if uses_endless_world(self.level):
+            return self._reset_endless(seed, n_characters, spawn_positions)
         self._set_platforms_at(0.0)
         count = (int(n_characters) if n_characters is not None
                  else 1 + self.cfg.opponent_count)
@@ -137,10 +330,14 @@ class ArenaEngine:
         return self
 
     def _spawn_coin(self):
-        # Moedas aleatórias só em plataformas estáticas; as moedas do alto
-        # são fixas (ver `levels.FIXED_COIN_POSITIONS`).
-        surfaces = [(x, y, w) for x, y, w, h in self.static_platforms
+        # Moedas aleatórias nas plataformas ativas; no nível 5 o mundo é
+        # procedural, então as plataformas fixas do nível são vazias.
+        surfaces = [(x, y, w) for x, y, w, h in
+                    (self.platforms if uses_endless_world(self.level)
+                     else self.static_platforms)
                     if w > 50]
+        if not surfaces:
+            return
         x, y, width = surfaces[int(self.rng.integers(len(surfaces)))]
         coin_x = self.rng.uniform(x + 10, x + width - 10)
         self.coins.append(Coin(float(coin_x), float(y - 18),
@@ -270,14 +467,24 @@ class ArenaEngine:
         if not c.alive:
             c.respawn_timer -= dt
             if c.respawn_timer <= 0:
-                # Respawn on a randomly selected platform, not outside the map.
-                valid = [(i, x, y, w, h)
-                         for i, (x, y, w, h) in enumerate(self.platforms)
-                         if w > self.cfg.player_size * 2]
-                index, px, py, pw, _ = valid[
-                    int(self.rng.integers(len(valid)))]
-                c.x = float(self.rng.uniform(px + self.cfg.player_size, px + pw - self.cfg.player_size))
-                c.y = float(py)
+                # Respawn on a platform. No nível 5, perto do ponto onde o
+                # agente está (o mundo infinito não tem "mapa" para sortear).
+                spot = (self._nearby_respawn()
+                        if uses_endless_world(self.level) else None)
+                if spot is not None:
+                    index, respawn_x, respawn_y = spot
+                else:
+                    valid = [(i, x, y, w, h)
+                             for i, (x, y, w, h) in enumerate(self.platforms)
+                             if w > self.cfg.player_size * 2]
+                    index, px, py, pw, _ = valid[
+                        int(self.rng.integers(len(valid)))]
+                    respawn_x = float(self.rng.uniform(
+                        px + self.cfg.player_size,
+                        px + pw - self.cfg.player_size))
+                    respawn_y = float(py)
+                c.x = float(respawn_x)
+                c.y = float(respawn_y)
                 c.vx = 0.0
                 c.vy = 0.0
                 c.slide_timer = 0.0
@@ -494,7 +701,9 @@ class ArenaEngine:
                     self._spawn_coin()
         super_collected, super_activated, super_cancelled, super_expired = (
             self._update_super_coin(dt))
-        return {
+        if uses_endless_world(self.level):
+            self._scroll_endless()
+        events = {
             "collected": collected,
             "deaths_delta": [c.deaths - before_deaths[i] for i, c in enumerate(self.characters)],
             "coins_transferred": coins_transferred,
@@ -503,3 +712,6 @@ class ArenaEngine:
             "super_coin_cancelled": super_cancelled,
             "super_coin_expired": super_expired,
         }
+        if uses_endless_world(self.level):
+            events["distance"] = float(self.distance)
+        return events

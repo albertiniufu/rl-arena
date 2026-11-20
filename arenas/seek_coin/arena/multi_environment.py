@@ -22,7 +22,7 @@ from gymnasium import spaces
 from .actions import N_ACTIONS, PUSH_LEFT, PUSH_RIGHT, STOP
 from .config import ArenaConfig
 from .engine import ArenaEngine
-from .levels import get_level_channel_names
+from .levels import get_level_channel_names, uses_endless_world
 from .observations import observation_grid_shape, render_grid
 from .reward_shaping import coin_potential
 from .scenario import Scenario
@@ -38,6 +38,13 @@ class ArenaMultiEnv:
 
     def __init__(self, config=None, scenario=None, render_mode=None, skin=None):
         self.cfg = config or ArenaConfig()
+        if uses_endless_world(self.cfg.level):
+            # A geração infinita multiagente ficou fora do escopo inicial do
+            # nível 5: a rolagem ancora no agente 0 e descartaria os demais.
+            raise ValueError(
+                f"o nível {self.cfg.level} (mundo procedural) é single-agent; "
+                "use ArenaEnv ou um nível com mapa fixo para o modo "
+                "multiagente.")
         if scenario is None:
             scenario = Scenario.from_config(self.cfg)
         self.scenario = scenario

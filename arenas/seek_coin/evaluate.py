@@ -26,7 +26,7 @@ def parse_args(argv=None):
     ap.add_argument("--seed", type=int, default=1000)
     ap.add_argument("--level", type=int, default=None,
                     help="sobrescreve o nível gravado no checkpoint "
-                         "(0..4; 4 = visão local)")
+                         "(0..5; 4 = visão local; 5 = mundo procedural)")
     ap.add_argument("--view-size", type=int, default=None,
                     help="sobrescreve o view_size gravado no checkpoint "
                          "(nível 4; ímpar)")

@@ -44,7 +44,7 @@ from arenas.seek_coin.arena.actions import PUSH_INTENSITY
 from arenas.seek_coin.arena.config import ArenaConfig
 from arenas.seek_coin.arena.skins import list_skins
 from arenas.seek_coin.arena.levels import (
-    get_level_channel_names, uses_local_view)
+    get_level_channel_names, uses_endless_world, uses_local_view)
 from arenas.seek_coin.arena.vector import make_vector_env
 from arenas.seek_coin.training.common import (
     _append_rollout_segment,
@@ -196,7 +196,8 @@ def parse_args(argv=None):
     ap.add_argument("--level", type=int, default=0,
                     help="nível do mapa (0 = histórico; 1 = plataformas móveis; "
                          "2 = areia/gelo; 3 = botões/super moeda; "
-                         "4 = nível 3 com visão local)")
+                         "4 = nível 3 com visão local; "
+                         "5 = mundo procedural infinito com visão local)")
     ap.add_argument("--view-size", type=int, default=None,
                     help="lado do recorte egocêntrico no nível 4, em células "
                          "(ímpar; padrão do ArenaConfig: 9)")
@@ -416,6 +417,10 @@ def validate_train_args(args):
         raise SystemExit(
             "--agents > 1 exige um algoritmo multiagente (--alg ippo/mappo/happo)")
     if multi_agent_alg:
+        if uses_endless_world(getattr(args, "level", 0)):
+            raise SystemExit(
+                f"--level {args.level} (mundo procedural) é single-agent; "
+                "use um nível com mapa fixo para IPPO/MAPPO/HAPPO")
         if agents < 2:
             raise SystemExit(
                 f"--alg {args.alg} exige --agents >= 2")

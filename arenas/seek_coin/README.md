@@ -133,6 +133,7 @@ Com `--opponent human` a janela também abre sozinha e o adversário usa o mesmo
 - Duração: `--episode-seconds N` (padrão 90; o valor fica no checkpoint e é reaplicado no `evaluate.py`/`play.py`).
 - Níveis: `--level 2` adiciona areia/gelo; `--level 3` adiciona botões de ativação/cancelamento e uma super moeda de alto valor. No nível 3, o botão de ativação fica no chão da esquerda, o de cancelamento na plataforma central e a super moeda no chão da direita; os tempos/valores ficam em `super_coin_seconds`, `super_coin_cooldown`, `super_coin_reward` e `super_coin_coins` no `ArenaConfig`. O renderer default desenha os botões e a super moeda; as skins alternativas podem não exibir esses elementos.
 - Visão local (nível 4): `--level 4` usa o **mesmo mundo do nível 3**, mas a observação é um recorte `view_size × view_size` (ímpar; padrão 9 células ≈ 180 px) centrado no agente; `--view-size 7` estreita a janela. Fora dos limites do mapa o recorte é preenchido com zeros e tudo o que está fora da janela simplesmente não aparece. Os níveis 0–3 continuam entregando o mapa inteiro. No multiagente cada agente recebe o próprio recorte. O renderer default escurece a área fora da janela para mostrar o campo de visão; o `GpuArenaVecEnv` recusa o nível 4 (use o caminho em CPU). A observação passa a ser parcialmente observável: o frame stack continua disponível, mas memória recorrente (RNN/Transformer) fica como evolução futura.
+- Mundo procedural (nível 5): `--level 5` gera chunks determinísticos de 480 px (seed + índice do chunk) com chão e buracos, plataformas elevadas/móveis, moedas e areia/gelo. O mundo rola quando o agente passa de ~55% da largura; o que fica para trás é descartado, então a memória e o custo por passo ficam limitados ao que está na tela. Usa a visão local do nível 4 e o canal extra `hole`; `info` traz `distance` e `chunks`. Cair num buraco custa morte/respawn na plataforma de chão mais próxima. O nível 5 é single-agent por enquanto (o multiagente recusa esse nível).
 - Mundo: física, recompensas, duração do episódio e contagens ficam em `arena/config.py`.
 - Vetorização: `--envs N` coleta em N workers paralelos e age em lote; vale para todos os algoritmos (exige adversário fixo e desliga render/telemetria por episódio).
 - Sobreposição: `--overlap` (só PPO/A2C) coleta o próximo rollout nos workers de CPU enquanto a GPU atualiza o anterior — ~30% mais episódios/hora no protocolo de 8 workers. A política fica defasada em um update; o PPO guarda o log-prob da coleta para o ratio continuar correto.
@@ -352,7 +353,8 @@ rl-arena/
 │       │   ├── scenario.py             # cenários multiagente (todos-contra-todos/times)
 │       │   ├── observations.py         # grade semântica (5 canais legado, 6 por viewer; recorte local no nível 4)
 │       │   ├── multi_environment.py    # ArenaMultiEnv: ações conjuntas por agente
-│       │   ├── levels.py               # níveis 0/1/2/3/4 (plataformas, hazards, botões, visão local)
+│       │   ├── levels.py               # níveis 0..5 (plataformas, hazards, botões, visão local, procedural)
+│       │   ├── endless.py              # nível 5: gerador de chunks e plataformas móveis
 │       │   └── renderer*.py            # skins descobertas por arquivo
 │       ├── agents/                     # políticas baseline do adversário
 │       ├── training/                   # telemetria, oponentes, avaliação e vídeo

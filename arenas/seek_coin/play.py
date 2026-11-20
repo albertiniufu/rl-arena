@@ -128,8 +128,8 @@ def parse_args(argv=None):
     ap.add_argument("--level", type=int, default=None,
                     help="nível do mapa (0 = histórico; 1 = plataformas móveis; "
                          "2 = areia/gelo; 3 = botões/super moeda; "
-                         "4 = nível 3 com visão local); sem o argumento, usa o "
-                         "nível do checkpoint")
+                         "4 = nível 3 com visão local; 5 = mundo procedural "
+                         "infinito); sem o argumento, usa o nível do checkpoint")
     ap.add_argument("--view-size", type=int, default=None,
                     help="lado do recorte egocêntrico no nível 4, em células "
                          "(ímpar); sem o argumento, usa o do checkpoint")

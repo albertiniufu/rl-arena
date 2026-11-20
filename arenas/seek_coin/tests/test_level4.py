@@ -58,8 +58,9 @@ def test_level_four_reuses_the_level_three_world():
         "activate_button", "cancel_button", "super_coin")
 
 
-def test_only_level_four_uses_local_view():
-    assert [level for level in range(5) if uses_local_view(level)] == [4]
+def test_local_view_levels():
+    # Nível 4 (mapa fixo) e nível 5 (mundo procedural) usam recorte local.
+    assert [level for level in range(6) if uses_local_view(level)] == [4, 5]
 
 
 def test_observation_grid_shape():

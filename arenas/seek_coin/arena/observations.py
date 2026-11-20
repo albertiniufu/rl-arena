@@ -16,6 +16,8 @@ No nível 4 (`levels.uses_local_view`) a grade é **recortada** em uma janela
 janela simplesmente não entra na observação. Fora dos limites do mapa a
 janela é preenchida com zeros (fundo). O recorte é aplicado depois de montar
 a grade completa, então os canais e a semântica das entidades não mudam.
+O nível 5 usa o mesmo recorte e acrescenta o canal `hole` (buracos do chão
+procedural).
 """
 import numpy as np
 
@@ -137,4 +139,9 @@ def render_grid(engine, cfg, viewer=0, channels=5, team_ids=None):
             coin = getattr(engine, "super_coin", None)
             if coin is not None:
                 fill_rect(channel, coin.x - 8, coin.y - 8, 16, 16)
+        elif name == "hole":
+            # Nível 5: buracos do chão procedural (regiões sem colisão).
+            for hole_x, hole_y, hole_w, hole_h in getattr(
+                    engine, "holes", ()):
+                fill_rect(channel, hole_x, hole_y, hole_w, hole_h)
     return g
