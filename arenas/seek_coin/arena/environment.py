@@ -10,7 +10,7 @@ from .actions import N_ACTIONS, PUSH_LEFT, PUSH_RIGHT, STOP
 from .config import ArenaConfig
 from .engine import ArenaEngine, Character, Coin, Hazard, SuperCoin
 from .levels import get_level_channel_names
-from .observations import render_grid
+from .observations import observation_grid_shape, render_grid
 from .reward_shaping import coin_potential
 from .skins import load_renderer_class
 
@@ -36,10 +36,12 @@ class ArenaEnv(gym.Env):
         self.grid_h = self.cfg.height // self.cfg.cell
         self.grid_w = self.cfg.width // self.cfg.cell
         self.extra_channels = len(get_level_channel_names(self.cfg.level))
+        # Nível 4: a observação é só o recorte ao redor do agente.
+        self.obs_h, self.obs_w = observation_grid_shape(self.cfg)
         self.observation_space = spaces.Box(
             0.0, 1.0,
             shape=((5 + self.extra_channels) * self.cfg.frame_stack,
-                   self.grid_h, self.grid_w),
+                   self.obs_h, self.obs_w),
             dtype=np.float32,
         )
         # Pilha de frames: cada elemento é um frame único (5, H, W).
@@ -49,11 +51,12 @@ class ArenaEnv(gym.Env):
         self._last_info = {}
 
     def _observation(self):
-        """Frame único atual: grade semântica (5, H, W).
+        """Frame único atual: grade semântica `(C, H, W)`.
 
         A montagem fica em `arena/observations.py` para ser compartilhada com
         o ambiente multiagente (que usa uma grade egocêntrica de 6 canais).
-        Os defaults reproduzem exatamente a grade legada.
+        Os defaults reproduzem exatamente a grade legada; no nível 4 o mesmo
+        módulo devolve o recorte local centrado no jogador.
         """
         return render_grid(
             self.engine, self.cfg,

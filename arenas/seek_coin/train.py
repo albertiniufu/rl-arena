@@ -43,7 +43,8 @@ from arenas.seek_coin.arena.scenario import Scenario
 from arenas.seek_coin.arena.actions import PUSH_INTENSITY
 from arenas.seek_coin.arena.config import ArenaConfig
 from arenas.seek_coin.arena.skins import list_skins
-from arenas.seek_coin.arena.levels import get_level_channel_names
+from arenas.seek_coin.arena.levels import (
+    get_level_channel_names, uses_local_view)
 from arenas.seek_coin.arena.vector import make_vector_env
 from arenas.seek_coin.training.common import (
     _append_rollout_segment,
@@ -194,7 +195,11 @@ def parse_args(argv=None):
                     help="episódios de treino (adicionais ao retomar)")
     ap.add_argument("--level", type=int, default=0,
                     help="nível do mapa (0 = histórico; 1 = plataformas móveis; "
-                         "2 = areia/gelo; 3 = botões/super moeda)")
+                         "2 = areia/gelo; 3 = botões/super moeda; "
+                         "4 = nível 3 com visão local)")
+    ap.add_argument("--view-size", type=int, default=None,
+                    help="lado do recorte egocêntrico no nível 4, em células "
+                         "(ímpar; padrão do ArenaConfig: 9)")
     ap.add_argument("--episode-seconds", type=float, default=None,
                     help="duração do episódio em segundos; omitido usa o "
                          "ArenaConfig")
@@ -386,6 +391,10 @@ def validate_train_args(args):
     if episode_seconds is not None and episode_seconds <= 0:
         raise SystemExit(
             f"--episode-seconds deve ser > 0 (recebido {episode_seconds})")
+    view_size = getattr(args, "view_size", None)
+    if view_size is not None and (view_size < 3 or view_size % 2 == 0):
+        raise SystemExit(
+            f"--view-size deve ser ímpar e >= 3 (recebido {view_size})")
     eval_every = getattr(args, "eval_every", 0)
     if eval_every < 0:
         raise SystemExit(
@@ -913,6 +922,8 @@ def main():
     torch.manual_seed(args.seed)
     cfg = ArenaConfig()
     cfg.level = args.level
+    if args.view_size is not None:
+        cfg.view_size = args.view_size
     if args.episode_seconds is not None:
         cfg.episode_seconds = args.episode_seconds
     cfg.frame_stack, cfg.frame_skip = args.frame_stack, args.frame_skip
@@ -990,6 +1001,14 @@ def main():
             raise SystemExit(
                 f"Nível do checkpoint ({saved_level}) difere do --level "
                 f"({cfg.level}); retome com o mesmo nível.")
+        if uses_local_view(cfg.level):
+            saved_view = int(
+                (payload.get("config") or {}).get("view_size", cfg.view_size))
+            if saved_view != int(cfg.view_size):
+                raise SystemExit(
+                    f"view_size do checkpoint ({saved_view}) difere do "
+                    f"--view-size ({cfg.view_size}); retome com a mesma "
+                    "janela de visão.")
         if multi_agent:
             # O cenário não pode mudar entre execuções: os buffers e a
             # interpretação dos canais de aliados/inimigos dependem dele.

@@ -17,6 +17,7 @@ from arenas.seek_coin.arena.multi_environment import ArenaMultiEnv
 from arenas.seek_coin.arena.scenario import Scenario
 from arenas.seek_coin.arena.config import ArenaConfig
 from arenas.seek_coin.arena.levels import get_level_channel_names
+from arenas.seek_coin.arena.observations import observation_grid_shape
 from arenas.seek_coin.arena.skins import list_skins
 from arenas.common.yaml_config import add_config_args, apply_yaml_defaults
 from arenas.algs.alg_registry import (
@@ -49,9 +50,11 @@ def validate_play_args(args):
 
 
 def apply_cli_overrides(cfg, args):
-    """Aplica `--level`/`--episode-seconds` por cima da config do checkpoint."""
+    """Aplica `--level`/`--view-size`/`--episode-seconds` sobre o checkpoint."""
     if args.level is not None:
         cfg.level = args.level
+    if getattr(args, "view_size", None) is not None:
+        cfg.view_size = args.view_size
     if getattr(args, "episode_seconds", None) is not None:
         cfg.episode_seconds = args.episode_seconds
     return cfg
@@ -95,8 +98,7 @@ def resolve_opponent(spec, cfg, player_frame=None):
 
     apply_env_config(cfg, meta)
     obs_shape = ((5 + len(get_level_channel_names(cfg.level)))
-                 * cfg.frame_stack,
-                 cfg.height // cfg.cell, cfg.width // cfg.cell)
+                 * cfg.frame_stack, *observation_grid_shape(cfg))
     agent = opp_alg.Agent(obs_shape, N_ACTIONS)
     load_checkpoint(spec, agent, resume=False)
     agent.epsilon = 0.0
@@ -125,8 +127,12 @@ def parse_args(argv=None):
                          "os demais agentes usam o checkpoint")
     ap.add_argument("--level", type=int, default=None,
                     help="nível do mapa (0 = histórico; 1 = plataformas móveis; "
-                         "2 = areia/gelo; 3 = botões/super moeda); sem o "
-                         "argumento, usa o nível do checkpoint")
+                         "2 = areia/gelo; 3 = botões/super moeda; "
+                         "4 = nível 3 com visão local); sem o argumento, usa o "
+                         "nível do checkpoint")
+    ap.add_argument("--view-size", type=int, default=None,
+                    help="lado do recorte egocêntrico no nível 4, em células "
+                         "(ímpar); sem o argumento, usa o do checkpoint")
     ap.add_argument("--episode-seconds", type=float, default=None,
                     help="sobrescreve a duração do episódio gravada no "
                          "checkpoint")

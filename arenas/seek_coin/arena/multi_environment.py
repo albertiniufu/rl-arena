@@ -23,7 +23,7 @@ from .actions import N_ACTIONS, PUSH_LEFT, PUSH_RIGHT, STOP
 from .config import ArenaConfig
 from .engine import ArenaEngine
 from .levels import get_level_channel_names
-from .observations import render_grid
+from .observations import observation_grid_shape, render_grid
 from .reward_shaping import coin_potential
 from .scenario import Scenario
 from .skins import load_renderer_class
@@ -52,10 +52,13 @@ class ArenaMultiEnv:
         self.grid_h = self.cfg.height // self.cfg.cell
         self.grid_w = self.cfg.width // self.cfg.cell
         self.extra_channels = len(get_level_channel_names(self.cfg.level))
+        # Nível 4: cada agente recebe o próprio recorte local; o shape é o
+        # mesmo para todos.
+        self.obs_h, self.obs_w = observation_grid_shape(self.cfg)
         self.observation_space = spaces.Box(
             0.0, 1.0,
             shape=((N_CHANNELS + self.extra_channels)
-                   * self.cfg.frame_stack, self.grid_h, self.grid_w),
+                   * self.cfg.frame_stack, self.obs_h, self.obs_w),
             dtype=np.float32,
         )
         # Um frame stack por agente: a visão é egocêntrica, então cada um tem

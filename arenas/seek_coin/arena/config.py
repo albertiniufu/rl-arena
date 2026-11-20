@@ -52,6 +52,10 @@ class ArenaConfig:
     map_version: str = "arena-v1"
     level: int = 0  # 0 = histórico; 1 = plataformas móveis; 2 = areia/gelo; 3 = botões/super moeda
     agent_roles: tuple = ()  # papéis por agente (HAPPO); () = simétrico
+    # Nível 4: visão local. A observação é um recorte egocêntrico de
+    # `view_size x view_size` células centrado no agente (ímpar; 9 = ~180 px).
+    # Ignorado nos níveis 0..3, que continuam entregando o mapa inteiro.
+    view_size: int = 9
 
     # Hazards temporários do nível 2 (ignorados nos níveis 0/1)
     hazard_count: int = 2  # por tipo (areia e gelo)

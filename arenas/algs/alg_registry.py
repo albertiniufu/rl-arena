@@ -166,6 +166,8 @@ def apply_env_config(cfg, meta):
     config = (meta or {}).get("config") or {}
     if hasattr(cfg, "level"):
         cfg.level = int(config.get("level", cfg.level))
+    if hasattr(cfg, "view_size"):
+        cfg.view_size = int(config.get("view_size", cfg.view_size))
     if hasattr(cfg, "episode_seconds"):
         cfg.episode_seconds = float(
             config.get("episode_seconds", cfg.episode_seconds))

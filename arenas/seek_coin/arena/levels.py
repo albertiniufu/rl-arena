@@ -13,6 +13,13 @@ pisar no botão de ativação (chão da esquerda) liga a super moeda no chão da
 direita por `super_coin_seconds`; o botão de cancelamento fica na plataforma
 central e desliga a super moeda. Qualquer personagem pode ativar, cancelar ou
 coletar; a coleta paga `super_coin_reward` e adiciona `super_coin_coins`.
+
+O nível 4 usa o **mesmo mundo do nível 3**, mas com **observação local**: cada
+agente recebe apenas um recorte `(view_size, view_size)` da grade semântica,
+centrado em si (ver `observations.render_grid`). O mapa inteiro continua
+existindo no engine; a câmera é que acompanha o agente. Fora dos limites do
+mapa o recorte é preenchido com zeros (fundo). A visão local é ativada por
+`uses_local_view(level)` e não muda o espaço de ações.
 """
 from __future__ import annotations
 
@@ -115,6 +122,7 @@ HAZARD_KINDS = {
     1: (),
     2: ("sand", "ice"),
     3: (),
+    4: (),
 }
 
 # Nível 3: mesmo mapa do nível 1, com botões e uma super moeda.
@@ -150,6 +158,25 @@ LEVEL_CHANNEL_NAMES = {
     3: ("activate_button", "cancel_button", "super_coin"),
 }
 
+# Nível 4: mesmo mundo do nível 3 (botões/super moeda) com visão local.
+STATIC_PLATFORMS[4] = STATIC_PLATFORMS[3]
+FIXED_COIN_POSITIONS[4] = FIXED_COIN_POSITIONS[3]
+MOVING_COIN_SPECS[4] = MOVING_COIN_SPECS[3]
+MOVING_PLATFORMS[4] = MOVING_PLATFORMS[3]
+BUTTONS[4] = BUTTONS[3]
+SUPER_COIN_POSITIONS[4] = SUPER_COIN_POSITIONS[3]
+LEVEL_CHANNEL_NAMES[4] = LEVEL_CHANNEL_NAMES[3]
+
+# Níveis cuja observação é um recorte egocêntrico (visão parcial). Os demais
+# continuam entregando o mapa inteiro — mudar isso quebraria checkpoints e a
+# comparação entre níveis.
+LOCAL_VIEW_LEVELS = frozenset({4})
+
+
+def uses_local_view(level: int) -> bool:
+    """O nível entrega apenas o recorte ao redor do agente?"""
+    return int(level) in LOCAL_VIEW_LEVELS
+
 
 def get_level(level: int):
     """Devolve `(plataformas_estáticas, plataformas_móveis)` do nível."""
@@ -182,7 +209,7 @@ def get_moving_coins(level: int):
 
 
 def get_hazard_kinds(level: int):
-    """Tipos de hazard que aparecem no nível (vazio nos níveis 0/1/3)."""
+    """Tipos de hazard que aparecem no nível (vazio nos níveis 0/1/3/4)."""
     level = int(level)
     if level not in STATIC_PLATFORMS:
         raise ValueError(

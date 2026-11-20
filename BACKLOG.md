@@ -28,7 +28,7 @@ o item foi implementado (arquivo + testes) quando terminar.
 | Abas de análise e proposta na Fila | ✅ concluído | [`arenas/common/job_queue_ui.py`](arenas/common/job_queue_ui.py) |
 | Aba de algoritmos por arena na Fila | ✅ concluído | [`arenas/common/algorithm_catalog.py`](arenas/common/algorithm_catalog.py) |
 | Visualização da evolução do BO na Fila | ⏳ pendente | — |
-| Nível 4 — visão local limitada | ⏳ pendente | — |
+| Nível 4 — visão local limitada | ✅ concluído | [`arenas/seek_coin/arena/observations.py`](arenas/seek_coin/arena/observations.py) |
 | Nível 5 — mundo contínuo procedural | ⏳ pendente | — |
 | Ambiente OOD para validar agentes do seek_coin | ⏳ pendente | — |
 | Testes de aprendizado off-policy | ⏳ pendente | — |
@@ -67,21 +67,6 @@ o item foi implementado (arquivo + testes) quando terminar.
   - Estatística: deixar explícito que os plots são **exploratórios**; com poucos trials não declarar causalidade nem “melhor parâmetro” sem incerteza. Reportar trials falhos e não esconder outliers.
   - Testes: parser de `trials.jsonl`/ASHA, normalização de parâmetros, best-so-far, agregação por bin, parâmetro categórico, trial falho, campanha ausente e API/rota.
   - Documentar em `docs/fila-de-experimentos.md` e no README de `scripts/bo_campaign.py`/`asha_campaign.py`.
-
-### Nível 4 — visão local limitada
-
-- [ ] **Criar o nível 4 do seek_coin com observação parcial**: o agente não vê a tela inteira, apenas um quadrado limitado ao redor dele.
-  - Motivação: testar percepção local, generalização e necessidade de memória; o nível 3 ainda entrega o mapa inteiro, o que facilita planejamento global.
-  - Observação: recorte `(view_size, view_size)` da grade semântica centrado no agente (ex.: 7×7 ou 9×9 células). Fora dos limites do mapa, preencher com um valor fixo (ex.: 0 ou canal de borda). O agente fica sempre no centro do recorte.
-  - Configuração: `view_size`/`view_radius` em `ArenaConfig`, ativo no nível 4; gravar no checkpoint e validar na retomada. Decidir se o default dos níveis 0–3 continua a tela inteira.
-  - Entidades: moedas, adversários, botões e super moeda só aparecem se estiverem dentro do recorte. Não vazar informação global por `info`/renderer de treino.
-  - Multiagente: cada agente recebe o próprio recorte centrado em si (visão egocêntrica); shapes iguais entre agentes.
-  - Algoritmos: começar com frame stack; documentar que a observação é parcialmente observável e que memória recorrente (RNN/Transformer) fica como evolução futura.
-  - Render: manter o renderer da tela inteira para humanos e adicionar um modo de depuração mostrando o recorte do agente (ou uma máscara de névoa).
-  - Testes: shape do recorte, agente no centro, padding nas bordas, entidades fora do recorte invisíveis, ausência de canais globais, seed, checkpoint com `view_size` e smoke single/multiagente.
-  - Avaliação: comparar nível 3 (visão global) × nível 4 (visão local) no mesmo orçamento e seeds; medir queda de desempenho e necessidade de memória.
-  - Documentar no README/CLAUDE, `arena/levels.py` e [`docs/experimentos/`](docs/experimentos/README.md).
-  - Fora de escopo inicial: campo de visão cônico, oclusão por paredes/plataformas e arquitetura recorrente dedicada.
 
 ### Nível 5 — mundo contínuo procedural
 
@@ -197,6 +182,33 @@ o item foi implementado (arquivo + testes) quando terminar.
 
 > Os detalhes abaixo preservam o plano original; use-os como registro do
 > que foi implementado, não como tarefas em aberto.
+
+### Nível 4 — visão local limitada
+
+> Implementado em [`arenas/seek_coin/arena/levels.py`](arenas/seek_coin/arena/levels.py)
+> (`LOCAL_VIEW_LEVELS`/`uses_local_view`, nível 4 = mundo do nível 3),
+> [`arenas/seek_coin/arena/observations.py`](arenas/seek_coin/arena/observations.py)
+> (recorte egocêntrico com padding zero e `observation_grid_shape`),
+> [`arenas/seek_coin/arena/environment.py`](arenas/seek_coin/arena/environment.py)
+> e [`arenas/seek_coin/arena/multi_environment.py`](arenas/seek_coin/arena/multi_environment.py)
+> (shapes por agente), `view_size` em `ArenaConfig` e `--view-size` em
+> train/evaluate/play, checkpoint com `level`/`view_size` validados na
+> retomada e névoa no renderer default. Testes em
+> `arenas/seek_coin/tests/test_level4.py`. O protocolo de comparação
+> nível 3 × nível 4 está em
+> [`docs/experimentos/setups.md`](docs/experimentos/setups.md) (S7).
+
+- [x] **Criar o nível 4 do seek_coin com observação parcial**: o agente não vê a tela inteira, apenas um quadrado limitado ao redor dele.
+  - Motivação: testar percepção local, generalização e necessidade de memória; o nível 3 ainda entrega o mapa inteiro, o que facilita planejamento global.
+  - Observação: recorte `(view_size, view_size)` da grade semântica centrado no agente (default 9×9 células; `--view-size` aceita 7×7 etc.). Fora dos limites do mapa, preenchimento com 0. O agente fica sempre no centro do recorte.
+  - Configuração: `view_size` em `ArenaConfig`, ativo só no nível 4; gravado no checkpoint e validado na retomada. Os níveis 0–3 continuam com a tela inteira.
+  - Entidades: moedas, adversários, botões e super moeda só aparecem se estiverem dentro do recorte. Nenhuma informação global entra na observação.
+  - Multiagente: cada agente recebe o próprio recorte centrado em si (visão egocêntrica); shapes iguais entre agentes.
+  - Algoritmos: funciona com o frame stack existente; a observação é parcialmente observável e memória recorrente (RNN/Transformer) fica como evolução futura.
+  - Render: renderer da tela inteira para humanos com névoa fora do recorte do agente 0.
+  - Testes: shape do recorte, agente no centro, padding nas bordas, entidades fora do recorte invisíveis, ausência de canais globais, seed, checkpoint com `view_size`, CLI e smoke single/multiagente.
+  - Avaliação: protocolo nível 3 (visão global) × nível 4 (visão local) documentado no setup S7; a execução fica como próximo experimento.
+  - Fora de escopo inicial: campo de visão cônico, oclusão por paredes/plataformas e arquitetura recorrente dedicada.
 
 ### Aba de algoritmos por arena na Fila de Experimentos
 

@@ -23,6 +23,8 @@ from collections import deque
 
 import pygame
 
+from .levels import uses_local_view
+
 # --------------------------------------------------------------------------- #
 # utilidades
 # --------------------------------------------------------------------------- #
@@ -566,7 +568,28 @@ class ArenaRenderer:
             oy = int(random.uniform(-self.shake, self.shake))
         self.screen.fill((0, 0, 0))
         self.screen.blit(self.world, (ox, oy))
+        self._draw_local_view_fog(engine)
         self._draw_hud(engine, elapsed, info)
+
+    def _draw_local_view_fog(self, engine):
+        """Nível 4: escurece o que está fora do recorte do agente 0.
+
+        O renderer continua desenhando a tela inteira para humanos; a névoa
+        só deixa explícito o campo de visão que o agente realmente recebe.
+        No modo multiagente a janela mostrada é a do agente 0.
+        """
+        if not uses_local_view(self.cfg.level) or not engine.characters:
+            return
+        c = engine.characters[0]
+        size = int(self.cfg.view_size) * self.cfg.cell
+        rect = pygame.Rect(0, 0, size, size)
+        rect.center = (int(c.x), int(c.y - self.cfg.player_size / 2))
+        fog = pygame.Surface((self.W, self.H), pygame.SRCALPHA)
+        fog.fill((0, 0, 0, 150))
+        fog.fill((0, 0, 0, 0), rect.clip(fog.get_rect()))
+        self.screen.blit(fog, (0, 0))
+        pygame.draw.rect(
+            self.screen, (120, 200, 255), rect, 1, border_radius=4)
 
     def render(self, engine, elapsed, info=None):
         self.team_ids = tuple((info or {}).get("team_ids") or ())
