@@ -5,7 +5,8 @@ from .actions import JUMP, LEFT, PUSH_INTENSITY, PUSH_LEFT, PUSH_RIGHT, RIGHT, S
 from .config import ArenaConfig, COLLECTOR_ROLE, PUSHER_ROLE
 from .levels import (
     get_buttons, get_fixed_coins, get_hazard_kinds, get_level,
-    get_moving_coins, get_super_coin_position, uses_endless_world)
+    get_moving_coins, get_super_coin_position, super_coin_enabled,
+    uses_endless_world)
 from .endless import (
     DROP_MARGIN, GROUND_Y, MARGIN, ChunkGenerator, Mover)
 
@@ -67,8 +68,12 @@ class ArenaEngine:
         self.characters = []
         self.coins = []
         self.hazards = []
-        self.buttons = list(get_buttons(self.level))
-        self.super_coin_position = get_super_coin_position(self.level)
+        # Nível 4: botões/super moeda desligados por padrão (ver levels.py).
+        self.super_coin_enabled = super_coin_enabled(self.cfg)
+        self.buttons = (list(get_buttons(self.level))
+                        if self.super_coin_enabled else [])
+        self.super_coin_position = (get_super_coin_position(self.level)
+                                    if self.super_coin_enabled else None)
         self.super_coin: SuperCoin | None = None
         self.super_coin_cooldown = 0.0
         self._button_state: dict[str, bool] = {}

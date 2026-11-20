@@ -14,12 +14,15 @@ direita por `super_coin_seconds`; o botão de cancelamento fica na plataforma
 central e desliga a super moeda. Qualquer personagem pode ativar, cancelar ou
 coletar; a coleta paga `super_coin_reward` e adiciona `super_coin_coins`.
 
-O nível 4 usa o **mesmo mundo do nível 3**, mas com **observação local**: cada
-agente recebe apenas um recorte `(view_size, view_size)` da grade semântica,
-centrado em si (ver `observations.render_grid`). O mapa inteiro continua
-existindo no engine; a câmera é que acompanha o agente. Fora dos limites do
-mapa o recorte é preenchido com zeros (fundo). A visão local é ativada por
-`uses_local_view(level)` e não muda o espaço de ações.
+O nível 4 usa o mapa do nível 3, mas com **observação local**: cada agente
+recebe apenas um recorte `(view_size, view_size)` da grade semântica,
+centrado em si (ver `observations.render_grid`). Por padrão a **mecânica de
+botões/super moeda fica desligada** (`super_coin_enabled=None` → ligada só no
+nível 3), para a visão local focar percepção e controle sem um objetivo do
+outro lado do mapa; `--super-coin` reativa os botões/canais extras. O mapa
+inteiro continua existindo no engine; a câmera é que acompanha o agente. Fora
+dos limites do mapa o recorte é preenchido com zeros (fundo). A visão local é
+ativada por `uses_local_view(level)` e não muda o espaço de ações.
 
 O nível 5 é um **mundo procedural infinito**: o mapa não é fixo, e sim gerado
 em chunks determinísticos por seed à medida que o agente avança; o mundo rola
@@ -203,6 +206,41 @@ def uses_local_view(level: int) -> bool:
 def uses_endless_world(level: int) -> bool:
     """O nível gera o mundo em chunks (mundo procedural infinito)?"""
     return int(level) in ENDLESS_LEVELS
+
+
+def default_super_coin_enabled(level: int) -> bool:
+    """Mecânica de botões/super moeda ligada por padrão apenas no nível 3."""
+    return int(level) == 3
+
+
+def super_coin_enabled(cfg) -> bool:
+    """A mecânica de botões + super moeda está ligada para esta config?
+
+    `None` (default) segue o nível: ligada no 3 e desligada no 4, para a visão
+    local focar percepção/controle sem um objetivo no lado oposto do mapa.
+    Níveis sem botões (0/1/2/5) ignoram a chave e ficam sempre desligados.
+    """
+    level = int(cfg.level)
+    if level not in (3, 4):
+        return False
+    explicit = getattr(cfg, "super_coin_enabled", None)
+    if explicit is None:
+        return default_super_coin_enabled(level)
+    return bool(explicit)
+
+
+def observation_channel_names(cfg):
+    """Canais extras de observação considerando a config (não só o nível).
+
+    O nível 4 desligado não tem botões nem super moeda, então não carrega os
+    três canais extras — a observação volta aos 5 canais base.
+    """
+    names = get_level_channel_names(cfg.level)
+    if int(cfg.level) in (3, 4) and not super_coin_enabled(cfg):
+        return tuple(
+            name for name in names
+            if name not in ("activate_button", "cancel_button", "super_coin"))
+    return names
 
 
 def get_level(level: int):

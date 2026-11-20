@@ -22,7 +22,7 @@ from gymnasium import spaces
 from .actions import N_ACTIONS, PUSH_LEFT, PUSH_RIGHT, STOP
 from .config import ArenaConfig
 from .engine import ArenaEngine
-from .levels import get_level_channel_names, uses_endless_world
+from .levels import observation_channel_names, uses_endless_world
 from .observations import observation_grid_shape, render_grid
 from .reward_shaping import coin_potential
 from .scenario import Scenario
@@ -58,7 +58,7 @@ class ArenaMultiEnv:
         self.action_space = spaces.Discrete(N_ACTIONS)
         self.grid_h = self.cfg.height // self.cfg.cell
         self.grid_w = self.cfg.width // self.cfg.cell
-        self.extra_channels = len(get_level_channel_names(self.cfg.level))
+        self.extra_channels = len(observation_channel_names(self.cfg))
         # Nível 4: cada agente recebe o próprio recorte local; o shape é o
         # mesmo para todos.
         self.obs_h, self.obs_w = observation_grid_shape(self.cfg)

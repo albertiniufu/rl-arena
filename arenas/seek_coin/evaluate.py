@@ -30,6 +30,10 @@ def parse_args(argv=None):
     ap.add_argument("--view-size", type=int, default=None,
                     help="sobrescreve o view_size gravado no checkpoint "
                          "(nível 4; ímpar)")
+    ap.add_argument("--super-coin", action=argparse.BooleanOptionalAction,
+                    default=None,
+                    help="liga/desliga botões + super moeda; padrão: o "
+                         "gravado no checkpoint (nível 3 ligado, 4 desligado)")
     ap.add_argument("--episode-seconds", type=float, default=None,
                     help="sobrescreve a duração do episódio gravada no "
                          "checkpoint")
@@ -107,6 +111,8 @@ def main():
         cfg.level = args.level
     if args.view_size is not None:
         cfg.view_size = args.view_size
+    if args.super_coin is not None:
+        cfg.super_coin_enabled = args.super_coin
     if args.episode_seconds is not None:
         cfg.episode_seconds = args.episode_seconds
     if getattr(alg.Agent, "multi_agent", False) or cfg.n_agents > 1:

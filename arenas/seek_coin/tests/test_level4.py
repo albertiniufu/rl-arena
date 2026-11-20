@@ -31,7 +31,12 @@ from arenas.seek_coin.train import (
 VIEW = 9
 CENTER = VIEW // 2
 # Nível 4 = nível 3: 5 canais base + botões/super moeda.
-N_CHANNELS = 5 + len(get_level_channel_names(4))
+BASE_CHANNELS = 5
+# Nível 4 desliga botões/super moeda por padrão: só os canais base.
+N_CHANNELS = BASE_CHANNELS
+# Com a mecânica ligada, entram os 3 canais do nível 3.
+SUPER_CHANNELS = BASE_CHANNELS + len(get_level_channel_names(4))
+SUPER_CHANNEL = SUPER_CHANNELS - 1  # super_coin
 
 
 def _place(engine, x=300.0, y=347.5, platform_index=0):
@@ -87,10 +92,32 @@ def test_env_observation_shapes_single_and_multi():
 
     multi = ArenaMultiEnv(ArenaConfig(level=4, frame_stack=2),
                           scenario=Scenario.all_vs_all(2))
-    assert multi.observation_space.shape == (2 * 9, VIEW, VIEW)
+    assert multi.observation_space.shape == (2 * 6, VIEW, VIEW)
     obs, _ = multi.reset(seed=0)
     assert obs.shape == (2, *multi.observation_space.shape)
     multi.close()
+
+
+def test_super_coin_channels_only_when_enabled():
+    off = ArenaEnv(ArenaConfig(level=4), opponent_policy="random")
+    assert off.engine.buttons == []
+    assert off.engine.super_coin_position is None
+    on = ArenaEnv(ArenaConfig(level=4, super_coin_enabled=True),
+                  opponent_policy="random")
+    assert len(on.engine.buttons) == 2
+    assert on.observation_space.shape == (SUPER_CHANNELS, VIEW, VIEW)
+    off.close()
+    on.close()
+
+    level3 = ArenaEnv(ArenaConfig(level=3), opponent_policy="random")
+    assert len(level3.engine.buttons) == 2
+    assert level3.observation_space.shape == (SUPER_CHANNELS, 20, 32)
+    level3_off = ArenaEnv(ArenaConfig(level=3, super_coin_enabled=False),
+                          opponent_policy="random")
+    assert level3_off.engine.buttons == []
+    assert level3_off.observation_space.shape == (N_CHANNELS, 20, 32)
+    level3.close()
+    level3_off.close()
 
 
 def test_agent_is_always_at_the_center_of_its_crop():
@@ -128,15 +155,38 @@ def test_entities_outside_the_crop_are_invisible():
     assert outside[3].sum() == 0
 
 
+def test_level_four_does_not_activate_super_coin_by_default():
+    env = ArenaEnv(ArenaConfig(level=4, frame_skip=1),
+                   opponent_policy="random")
+    env.reset(seed=1)
+    _place(env.engine)
+    env.step(STOP)
+    assert env.engine.super_coin is None
+    assert env.engine.super_coin_position is None
+
+
+def test_level_four_activates_when_super_coin_is_enabled():
+    env = ArenaEnv(ArenaConfig(level=4, frame_skip=1,
+                               super_coin_enabled=True),
+                   opponent_policy="random")
+    env.reset(seed=1)
+    _place(env.engine, x=50.0)
+    env.step(STOP)
+    assert env.engine.super_coin is not None
+    env.close()
+
+
 def test_super_coin_channel_is_cropped_too():
-    env = ArenaEnv(ArenaConfig(level=4), opponent_policy="random")
+    env = ArenaEnv(ArenaConfig(level=4, super_coin_enabled=True),
+                   opponent_policy="random")
     env.reset(seed=0)
     env.engine.super_coin = SuperCoin(610.0, 342.0, 12.0)
     _place(env.engine, x=610.0)
-    assert _frame(env)[7].sum() > 0  # super moeda visível
+    assert _frame(env)[SUPER_CHANNEL].sum() > 0  # super moeda visível
     _place(env.engine, x=90.0)
-    assert _frame(env)[7].sum() == 0  # fora do recorte
+    assert _frame(env)[SUPER_CHANNEL].sum() == 0  # fora do recorte
     assert env.engine.super_coin is not None
+    env.close()
 
 
 def test_multi_agent_has_egocentric_crops():
@@ -185,21 +235,34 @@ def test_observation_does_not_leak_global_state():
     assert _frame(env)[2].sum() == 1
 
 
-def test_checkpoint_config_applies_level_and_view_size():
+def test_checkpoint_config_applies_level_view_size_and_super_coin():
     cfg = ArenaConfig(level=0, view_size=9)
-    apply_env_config(cfg, {"config": {"level": 4, "view_size": 7}})
+    apply_env_config(cfg, {"config": {
+        "level": 4, "view_size": 7, "super_coin_enabled": True}})
     assert cfg.level == 4
     assert cfg.view_size == 7
+    assert cfg.super_coin_enabled is True
     env = ArenaEnv(cfg, opponent_policy="random")
-    assert env.observation_space.shape == (N_CHANNELS, 7, 7)
+    assert env.observation_space.shape == (SUPER_CHANNELS, 7, 7)
+    env.close()
+
+    default = ArenaConfig(level=0)
+    apply_env_config(default, {"config": {"level": 4}})
+    assert default.super_coin_enabled is None
+    env = ArenaEnv(default, opponent_policy="random")
+    assert env.observation_space.shape == (N_CHANNELS, VIEW, VIEW)
     env.close()
 
 
 def test_train_and_play_cli_accept_level_four():
     train = parse_train_args(["--level", "4", "--view-size", "7"])
     assert train.level == 4 and train.view_size == 7
+    assert train.super_coin is None
+    assert parse_train_args(["--super-coin"]).super_coin is True
+    assert parse_train_args(["--no-super-coin"]).super_coin is False
     play = parse_play_args(["--level", "4", "--view-size", "7"])
     assert play.level == 4 and play.view_size == 7
+    assert play.super_coin is None
 
 
 @pytest.mark.parametrize("size", [2, 4, 1, 0])

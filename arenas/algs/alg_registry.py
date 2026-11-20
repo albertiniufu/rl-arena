@@ -168,6 +168,9 @@ def apply_env_config(cfg, meta):
         cfg.level = int(config.get("level", cfg.level))
     if hasattr(cfg, "view_size"):
         cfg.view_size = int(config.get("view_size", cfg.view_size))
+    if hasattr(cfg, "super_coin_enabled"):
+        cfg.super_coin_enabled = config.get(
+            "super_coin_enabled", cfg.super_coin_enabled)
     if hasattr(cfg, "episode_seconds"):
         cfg.episode_seconds = float(
             config.get("episode_seconds", cfg.episode_seconds))

@@ -39,8 +39,8 @@ import yaml
 
 _META_KEYS = {"arena", "setup", "name", "description", "notes"}
 _TOP_KEYS = {
-    "alg", "algorithm", "seed", "level", "view_size", "episode_seconds",
-    "frame_stack", "frame_skip", "opponent", "agents", "scenario", "teams",
+    "alg", "algorithm", "seed", "level", "view_size", "super_coin",
+    "episode_seconds",    "frame_stack", "frame_skip", "opponent", "agents", "scenario", "teams",
     "checkpoint_dir", "resume", "episodes", "max_hours", "save_every",
     "save_every_minutes", "tensorboard", "tensorboard_dir", "run_name",
     "stats", "budget_snapshots", "eval_every", "eval_episodes", "eval_seed",

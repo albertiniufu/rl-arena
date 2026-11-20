@@ -195,8 +195,9 @@ o item foi implementado (arquivo + testes) quando terminar.
 ### Nível 4 — visão local limitada
 
 > Implementado em [`arenas/seek_coin/arena/levels.py`](arenas/seek_coin/arena/levels.py)
-> (`LOCAL_VIEW_LEVELS`/`uses_local_view`, nível 4 = mundo do nível 3),
-> [`arenas/seek_coin/arena/observations.py`](arenas/seek_coin/arena/observations.py)
+> (`LOCAL_VIEW_LEVELS`/`uses_local_view`, nível 4 = mapa do nível 3 com
+> botões/super moeda desligados por padrão via `super_coin_enabled=None` e
+> `--super-coin`), [`arenas/seek_coin/arena/observations.py`](arenas/seek_coin/arena/observations.py)
 > (recorte egocêntrico com padding zero e `observation_grid_shape`),
 > [`arenas/seek_coin/arena/environment.py`](arenas/seek_coin/arena/environment.py)
 > e [`arenas/seek_coin/arena/multi_environment.py`](arenas/seek_coin/arena/multi_environment.py)
@@ -210,7 +211,7 @@ o item foi implementado (arquivo + testes) quando terminar.
 - [x] **Criar o nível 4 do seek_coin com observação parcial**: o agente não vê a tela inteira, apenas um quadrado limitado ao redor dele.
   - Motivação: testar percepção local, generalização e necessidade de memória; o nível 3 ainda entrega o mapa inteiro, o que facilita planejamento global.
   - Observação: recorte `(view_size, view_size)` da grade semântica centrado no agente (default 9×9 células; `--view-size` aceita 7×7 etc.). Fora dos limites do mapa, preenchimento com 0. O agente fica sempre no centro do recorte.
-  - Configuração: `view_size` em `ArenaConfig`, ativo só no nível 4; gravado no checkpoint e validado na retomada. Os níveis 0–3 continuam com a tela inteira.
+  - Configuração: `view_size` em `ArenaConfig`, ativo só no nível 4; gravado no checkpoint e validado na retomada. Os níveis 0–3 continuam com a tela inteira. A mecânica de botões/super moeda fica desligada por padrão no nível 4 (`super_coin_enabled=None`, 5 canais); `--super-coin` reativa os botões e os 3 canais extras (8 canais).
   - Entidades: moedas, adversários, botões e super moeda só aparecem se estiverem dentro do recorte. Nenhuma informação global entra na observação.
   - Multiagente: cada agente recebe o próprio recorte centrado em si (visão egocêntrica); shapes iguais entre agentes.
   - Algoritmos: funciona com o frame stack existente; a observação é parcialmente observável e memória recorrente (RNN/Transformer) fica como evolução futura.

@@ -16,7 +16,7 @@ from arenas.seek_coin.arena.environment import ArenaEnv
 from arenas.seek_coin.arena.multi_environment import ArenaMultiEnv
 from arenas.seek_coin.arena.scenario import Scenario
 from arenas.seek_coin.arena.config import ArenaConfig
-from arenas.seek_coin.arena.levels import get_level_channel_names
+from arenas.seek_coin.arena.levels import observation_channel_names
 from arenas.seek_coin.arena.observations import observation_grid_shape
 from arenas.seek_coin.arena.skins import list_skins
 from arenas.common.yaml_config import add_config_args, apply_yaml_defaults
@@ -50,11 +50,13 @@ def validate_play_args(args):
 
 
 def apply_cli_overrides(cfg, args):
-    """Aplica `--level`/`--view-size`/`--episode-seconds` sobre o checkpoint."""
+    """Aplica `--level`/`--view-size`/`--super-coin`/duração sobre o checkpoint."""
     if args.level is not None:
         cfg.level = args.level
     if getattr(args, "view_size", None) is not None:
         cfg.view_size = args.view_size
+    if getattr(args, "super_coin", None) is not None:
+        cfg.super_coin_enabled = args.super_coin
     if getattr(args, "episode_seconds", None) is not None:
         cfg.episode_seconds = args.episode_seconds
     return cfg
@@ -97,7 +99,7 @@ def resolve_opponent(spec, cfg, player_frame=None):
             "use checkpoints com o mesmo formato de observação.")
 
     apply_env_config(cfg, meta)
-    obs_shape = ((5 + len(get_level_channel_names(cfg.level)))
+    obs_shape = ((5 + len(observation_channel_names(cfg)))
                  * cfg.frame_stack, *observation_grid_shape(cfg))
     agent = opp_alg.Agent(obs_shape, N_ACTIONS)
     load_checkpoint(spec, agent, resume=False)
@@ -133,6 +135,10 @@ def parse_args(argv=None):
     ap.add_argument("--view-size", type=int, default=None,
                     help="lado do recorte egocêntrico no nível 4, em células "
                          "(ímpar); sem o argumento, usa o do checkpoint")
+    ap.add_argument("--super-coin", action=argparse.BooleanOptionalAction,
+                    default=None,
+                    help="liga/desliga botões + super moeda; padrão: o do "
+                         "checkpoint (nível 3 ligado, 4 desligado)")
     ap.add_argument("--episode-seconds", type=float, default=None,
                     help="sobrescreve a duração do episódio gravada no "
                          "checkpoint")

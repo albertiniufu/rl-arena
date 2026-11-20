@@ -44,7 +44,8 @@ from arenas.seek_coin.arena.actions import PUSH_INTENSITY
 from arenas.seek_coin.arena.config import ArenaConfig
 from arenas.seek_coin.arena.skins import list_skins
 from arenas.seek_coin.arena.levels import (
-    get_level_channel_names, uses_endless_world, uses_local_view)
+    default_super_coin_enabled, observation_channel_names,
+    super_coin_enabled, uses_endless_world, uses_local_view)
 from arenas.seek_coin.arena.vector import make_vector_env
 from arenas.seek_coin.training.common import (
     _append_rollout_segment,
@@ -201,6 +202,10 @@ def parse_args(argv=None):
     ap.add_argument("--view-size", type=int, default=None,
                     help="lado do recorte egocêntrico no nível 4, em células "
                          "(ímpar; padrão do ArenaConfig: 9)")
+    ap.add_argument("--super-coin", action=argparse.BooleanOptionalAction,
+                    default=None,
+                    help="liga/desliga botões + super moeda; padrão: ligado "
+                         "no nível 3 e desligado no nível 4")
     ap.add_argument("--episode-seconds", type=float, default=None,
                     help="duração do episódio em segundos; omitido usa o "
                          "ArenaConfig")
@@ -742,7 +747,7 @@ def _train_multi_agent(args, cfg, scenario, env, agent, ckpt_dir, start_ep,
                         obs_to_image(
                             obs[0],
                             n_channels=6 + len(
-                                get_level_channel_names(cfg.level))),
+                                observation_channel_names(cfg))),
                         ep, dataformats="HWC")
                     conv = _conv_weights(agent)
                     if conv is not None:
@@ -929,6 +934,8 @@ def main():
     cfg.level = args.level
     if args.view_size is not None:
         cfg.view_size = args.view_size
+    if args.super_coin is not None:
+        cfg.super_coin_enabled = args.super_coin
     if args.episode_seconds is not None:
         cfg.episode_seconds = args.episode_seconds
     cfg.frame_stack, cfg.frame_skip = args.frame_stack, args.frame_skip
@@ -1014,6 +1021,17 @@ def main():
                     f"view_size do checkpoint ({saved_view}) difere do "
                     f"--view-size ({cfg.view_size}); retome com a mesma "
                     "janela de visão.")
+        if int(cfg.level) in (3, 4):
+            saved_flag = (payload.get("config") or {}).get(
+                "super_coin_enabled")
+            saved_enabled = (default_super_coin_enabled(saved_level)
+                             if saved_flag is None else bool(saved_flag))
+            if saved_enabled != super_coin_enabled(cfg):
+                raise SystemExit(
+                    "Mecânica de botões/super moeda do checkpoint "
+                    f"({'ligada' if saved_enabled else 'desligada'}) difere "
+                    f"da atual ({'ligada' if super_coin_enabled(cfg) else 'desligada'}); "
+                    "use --super-coin ou --no-super-coin para alinhar.")
         if multi_agent:
             # O cenário não pode mudar entre execuções: os buffers e a
             # interpretação dos canais de aliados/inimigos dependem dele.
@@ -1155,7 +1173,7 @@ def main():
                 tb_writer.add_image(
                     "env/observation",
                     obs_to_image(
-                        obs, n_channels=5 + len(get_level_channel_names(cfg.level))),
+                        obs, n_channels=5 + len(observation_channel_names(cfg))),
                     ep, dataformats="HWC")
                 conv = _conv_weights(agent)
                 if conv is not None:

@@ -9,7 +9,7 @@ from arenas.seek_coin.agents.baseline import PolicyContext, make_policy
 from .actions import N_ACTIONS, PUSH_LEFT, PUSH_RIGHT, STOP
 from .config import ArenaConfig
 from .engine import ArenaEngine, Character, Coin, Hazard, SuperCoin
-from .levels import get_level_channel_names, uses_endless_world
+from .levels import observation_channel_names, uses_endless_world
 from .observations import observation_grid_shape, render_grid
 from .reward_shaping import coin_potential
 from .skins import load_renderer_class
@@ -35,7 +35,7 @@ class ArenaEnv(gym.Env):
         self.action_space = spaces.Discrete(N_ACTIONS)
         self.grid_h = self.cfg.height // self.cfg.cell
         self.grid_w = self.cfg.width // self.cfg.cell
-        self.extra_channels = len(get_level_channel_names(self.cfg.level))
+        self.extra_channels = len(observation_channel_names(self.cfg))
         # Nível 4: a observação é só o recorte ao redor do agente.
         self.obs_h, self.obs_w = observation_grid_shape(self.cfg)
         self.observation_space = spaces.Box(

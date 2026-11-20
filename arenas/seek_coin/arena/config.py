@@ -36,6 +36,10 @@ class ArenaConfig:
     super_coin_cooldown: float = 5.0
     super_coin_reward: float = 25.0
     super_coin_coins: int = 10
+    # Liga botões + super moeda (níveis 3/4). None = padrão do nível:
+    # ligado no nível 3 e desligado no nível 4 (visão local sem o objetivo
+    # distante). `--super-coin`/`--no-super-coin` sobrescreve.
+    super_coin_enabled: bool | None = None
     death_penalty: float = -2.0
     stop_penalty: float = -0.1 # escolher STOP (ficar parado) a cada step do agente
     push_miss_penalty: float = -0.1 # empurrar sem oponente em contato no início do step

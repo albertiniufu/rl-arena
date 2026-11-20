@@ -21,7 +21,7 @@ procedural).
 """
 import numpy as np
 
-from .levels import get_level_channel_names, uses_local_view
+from .levels import observation_channel_names, uses_local_view
 
 # Valor das células fora dos limites do mapa no recorte local.
 LOCAL_VIEW_PAD = 0.0
@@ -120,7 +120,7 @@ def render_grid(engine, cfg, viewer=0, channels=5, team_ids=None):
     # Canais extras do nível (hazards, botões e super moeda) logo após os base.
     base_channels = 6 if team_ids is not None else 5
 
-    for offset, name in enumerate(get_level_channel_names(cfg.level)):
+    for offset, name in enumerate(observation_channel_names(cfg)):
         channel = base_channels + offset
         if channel >= channels:
             continue
