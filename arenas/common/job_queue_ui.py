@@ -111,7 +111,16 @@ HTML = r"""<!doctype html>
   .doc-links a { color:var(--accent); text-decoration:none; font-weight:600;
                  font-size:.82rem; border:1px solid var(--line);
                  border-radius:8px; padding:3px 8px; background:#fbfdff; }
+  .plot { width:100%; min-height:340px; }
+  .plot-sm { width:100%; min-height:260px; }
+  .table-wrap { max-height:560px; overflow:auto; }
+  .table-wrap table th { position:sticky; top:0; background:#fff; }
+  .sortable { cursor:pointer; user-select:none; }
+  .sortable:hover { color:var(--accent); }
+  .bo-summary { display:flex; flex-wrap:wrap; gap:8px; margin-top:12px; }
+  .bo-summary .pill b { color:var(--ink); }
 </style>
+<script src="https://cdn.plot.ly/plotly-2.35.2.min.js"></script>
 </head>
 <body>
 <div class="wrap">
@@ -133,6 +142,7 @@ HTML = r"""<!doctype html>
     <button class="tab active" data-tab="queue" role="tab">Fila</button>
     <button class="tab" data-tab="algorithms" role="tab">Algoritmos</button>
     <button class="tab" data-tab="analysis" role="tab">Análise de resultados</button>
+    <button class="tab" data-tab="bo" role="tab">BO</button>
     <button class="tab" data-tab="proposal" role="tab">Proposta de experimentos</button>
   </nav>
 
@@ -223,6 +233,7 @@ HTML = r"""<!doctype html>
     </div>
     <div class="row" style="justify-content:space-between;margin-bottom:10px">
       <div id="experiment-status" class="muted"></div>
+      <button id="experiment-bo">Ver BO</button>
       <button id="experiment-sync" class="hidden">Atualizar status do YAML</button>
     </div>
     <div class="grid">
@@ -330,6 +341,106 @@ HTML = r"""<!doctype html>
       <div id="analysis-frame-wrap" class="hidden">
         <iframe id="analysis-frame" class="report-frame"
                 title="Relatório estatístico"></iframe>
+      </div>
+    </section>
+  </div>
+
+  <div id="tab-bo" class="tab-panel hidden">
+    <section class="card">
+      <h2>Evolução do BO</h2>
+      <p class="muted" style="margin-top:0">
+        Lê <span class="mono">campaign.json</span>,
+        <span class="mono">best.json</span> e
+        <span class="mono">trials.jsonl</span> (BO e ASHA) que já existem no
+        diretório da campanha. Os gráficos são <b>exploratórios</b>: com
+        poucos trials não há causalidade nem “melhor parâmetro” sem
+        incerteza. Trials falhos continuam na tabela e são excluídos das
+        estatísticas.
+      </p>
+      <div class="grid">
+        <div class="field span-4">
+          <label for="bo-job">Job / experimento</label>
+          <select id="bo-job"></select>
+        </div>
+        <div class="field span-5">
+          <label for="bo-path">Caminho da campanha (opcional)</label>
+          <input id="bo-path" placeholder="experiments/BO-AAAAMMDD-slug">
+        </div>
+        <div class="field span-3" style="align-self:end">
+          <button id="bo-load" class="primary">Carregar BO</button>
+        </div>
+        <div class="field span-3">
+          <label for="bo-alg">Algoritmo</label>
+          <select id="bo-alg"></select>
+        </div>
+        <div class="field span-3">
+          <label for="bo-status">Status</label>
+          <select id="bo-status">
+            <option value="">todos</option>
+          </select>
+        </div>
+        <div class="field span-3">
+          <label for="bo-param">Parâmetro</label>
+          <select id="bo-param"></select>
+        </div>
+        <div class="field span-3" style="align-self:end">
+          <label>&nbsp;</label>
+          <div class="row">
+            <button id="bo-export-csv">CSV</button>
+            <button id="bo-export-json">JSON</button>
+          </div>
+        </div>
+      </div>
+      <div id="bo-warnings" class="warnings"></div>
+      <div id="bo-summary" class="bo-summary"></div>
+      <div id="bo-meta" class="muted" style="margin-top:8px"></div>
+    </section>
+
+    <section class="card">
+      <h3>Convergência</h3>
+      <p class="muted" style="margin-top:0">
+        Score por trial e melhor score acumulado (best-so-far), por algoritmo.
+        ★ = trial escolhido como melhor; ◆ = validação final.
+      </p>
+      <div id="bo-convergence" class="plot"></div>
+    </section>
+
+    <section class="grid">
+      <div class="card">
+        <h3>Efeito do parâmetro</h3>
+        <div id="bo-effect" class="plot"></div>
+      </div>
+      <div class="card">
+        <h3>Importância dos parâmetros</h3>
+        <div id="bo-importance" class="plot-sm"></div>
+      </div>
+    </section>
+
+    <section class="card">
+      <h3>Melhoria sobre a referência</h3>
+      <p class="muted" style="margin-top:0">
+        Best-so-far comparado à mediana e ao primeiro trial válido; no BO, a
+        validação final aparece separada por orçamento.
+      </p>
+      <div id="bo-improvement" class="plot-sm"></div>
+    </section>
+
+    <section class="grid">
+      <div class="card">
+        <h3>Interação (2 parâmetros mais importantes)</h3>
+        <div id="bo-interaction" class="plot"></div>
+      </div>
+      <div class="card">
+        <h3>Parallel coordinates</h3>
+        <div id="bo-parallel" class="plot"></div>
+      </div>
+    </section>
+
+    <section class="card">
+      <h3>Trials</h3>
+      <div id="bo-table-meta" class="muted" style="margin-bottom:8px"></div>
+      <div class="table-wrap">
+        <table id="bo-trials"></table>
       </div>
     </section>
   </div>
@@ -672,7 +783,8 @@ HTML = r"""<!doctype html>
 const $ = (id) => document.getElementById(id);
 let state = { jobs: [], selected: null, paused: false, tab: "queue",
               analysisSources: [], analysisSource: null, analysisHtml: "",
-              algorithms: null };
+              algorithms: null, bo: null, boAlgorithm: null, boParam: null,
+              boStatus: "", boSort: {key: "index", dir: 1} };
 let loading = false;
 
 const esc = (value) => String(value ?? "").replace(/[&<>"']/g, ch => ({
@@ -915,6 +1027,13 @@ $("job-rows").addEventListener("click", async (event) => {
 $("experiment-close").addEventListener("click", () => {
   $("experiment-panel").classList.add("hidden");
 });
+$("experiment-bo").addEventListener("click", () => {
+  if (!state.experimentId) return;
+  switchTab("bo");
+  $("bo-path").value = "";
+  $("bo-job").value = state.experimentId;
+  loadBo();
+});
 
 $("experiment-sync").addEventListener("click", async () => {
   const id = state.experimentId;
@@ -940,7 +1059,7 @@ $("experiment-form").addEventListener("submit", async (event) => {
 // ---------------------------------------------------------------------
 // Abas
 
-const TABS = ["queue", "algorithms", "analysis", "proposal"];
+const TABS = ["queue", "algorithms", "analysis", "bo", "proposal"];
 
 function switchTab(name) {
   if (!TABS.includes(name)) name = "queue";
@@ -958,6 +1077,7 @@ function switchTab(name) {
     history.replaceState(null, "", url);
   } catch (error) { /* navegador sem History API */ }
   if (name === "analysis") populateAnalysisJobs();
+  if (name === "bo") populateBoJobs();
   if (name === "algorithms") loadAlgorithms();
 }
 
@@ -1173,6 +1293,579 @@ $("analysis-open").addEventListener("click", () => {
 });
 
 // ---------------------------------------------------------------------
+// Aba: BO
+
+const BO_CONFIG = {responsive: true, displaylogo: false,
+                   modeBarButtonsToRemove: ["lasso2d", "select2d"]};
+const boLayout = (extra = {}) => Object.assign({
+  margin: {l: 56, r: 20, t: 40, b: 50},
+  paper_bgcolor: "#fff", plot_bgcolor: "#fff",
+  font: {size: 12, color: "#0f172a"},
+  legend: {orientation: "h", y: -0.25},
+}, extra);
+
+const boNum = (value, digits = 2) => {
+  if (value === null || value === undefined) return "—";
+  const number = Number(value);
+  return Number.isFinite(number)
+    ? number.toLocaleString("pt-BR", {maximumFractionDigits: digits})
+    : "—";
+};
+
+function boMessage(id, text) {
+  const element = $(id);
+  if (!element) return;
+  if (window.Plotly) Plotly.purge(element);
+  element.innerHTML = `<p class="muted">${esc(text)}</p>`;
+}
+
+function populateBoJobs() {
+  const select = $("bo-job");
+  if (!select) return;
+  const jobs = (state.jobs || []).filter(job =>
+    job.experiment || job.experiment_yaml ||
+    (job.artifacts && job.artifacts.length));
+  const signature = jobs.map(job =>
+    `${job.id}:${job.status}:${job.name}`).join("|");
+  if (select.dataset.signature === signature) return;
+  const current = select.value;
+  select.dataset.signature = signature;
+  select.innerHTML = '<option value="">— escolha um job —</option>' +
+    jobs.map(job => {
+      const exp = job.experiment && job.experiment.id
+        ? ` · ${job.experiment.id}` : "";
+      return `<option value="${esc(job.id)}">${esc(job.name + exp)}</option>`;
+    }).join("");
+  if (current && jobs.some(job => job.id === current)) select.value = current;
+}
+
+function boCampaign() {
+  const campaigns = (state.bo && state.bo.campaigns) || [];
+  if (!campaigns.length) return null;
+  return campaigns.find(campaign =>
+    campaign.algorithm === state.boAlgorithm) || campaigns[0];
+}
+
+function boFilteredTrials(entry) {
+  let trials = (entry.trials || []).slice();
+  if (state.boStatus) {
+    trials = trials.filter(trial => trial.status === state.boStatus);
+  }
+  const {key, dir} = state.boSort;
+  const value = trial => {
+    if (key === "params") return JSON.stringify(trial.params);
+    return trial[key];
+  };
+  trials.sort((a, b) => {
+    const va = value(a), vb = value(b);
+    if (va === null || va === undefined) return 1;
+    if (vb === null || vb === undefined) return -1;
+    if (typeof va === "number" && typeof vb === "number") {
+      return (va - vb) * dir;
+    }
+    return String(va).localeCompare(String(vb), "pt-BR") * dir;
+  });
+  return trials;
+}
+
+function updateBoUrl() {
+  if (!state.bo) return;
+  try {
+    const url = new URL(window.location.href);
+    url.searchParams.set("tab", "bo");
+    url.searchParams.set("bo", state.bo.root);
+    if (state.boAlgorithm) url.searchParams.set("alg", state.boAlgorithm);
+    else url.searchParams.delete("alg");
+    if (state.boParam) url.searchParams.set("param", state.boParam);
+    else url.searchParams.delete("param");
+    if (state.boStatus) url.searchParams.set("status", state.boStatus);
+    else url.searchParams.delete("status");
+    history.replaceState(null, "", url);
+  } catch (error) { /* navegador sem History API */ }
+}
+
+async function loadBo() {
+  const pathValue = $("bo-path").value.trim();
+  const jobId = $("bo-job").value;
+  let payload;
+  try {
+    if (pathValue) {
+      payload = await api(`/api/bo?path=${encodeURIComponent(pathValue)}`);
+    } else if (jobId) {
+      payload = await api(`/api/jobs/${encodeURIComponent(jobId)}/bo`);
+    } else {
+      showError("Escolha um job ou informe o caminho da campanha de BO.");
+      return;
+    }
+  } catch (error) {
+    state.bo = null;
+    $("bo-summary").innerHTML = "";
+    $("bo-meta").textContent = "";
+    $("bo-table-meta").textContent = "";
+    $("bo-warnings").innerHTML =
+      `<div class="banner show"><b>BO:</b> ${esc(error.message)}</div>`;
+    showError(`Falha ao carregar BO: ${error.message}`);
+    return;
+  }
+  showError("");
+  state.bo = payload;
+  state.boAlgorithm = null;
+  state.boParam = null;
+  state.boStatus = "";
+  $("bo-path").value = payload.root;
+  const deep = new URLSearchParams(window.location.search);
+  const alg = deep.get("alg");
+  if (alg && (payload.campaigns || []).some(
+          campaign => campaign.algorithm === alg)) {
+    state.boAlgorithm = alg;
+  }
+  state.boParam = deep.get("param");
+  state.boStatus = deep.get("status") || "";
+  renderBo();
+}
+
+function renderBoWarnings(payload, entry) {
+  const warnings = [...(payload.warnings || []), ...(entry.warnings || [])];
+  $("bo-warnings").innerHTML = warnings.length
+    ? `<div class="banner show"><b>Avisos (${warnings.length})</b><ul>${
+        warnings.map(warning => `<li>${esc(warning)}</li>`).join("")
+      }</ul></div>`
+    : "";
+}
+
+function renderBoSummary(entry) {
+  const improvement = entry.improvement || {};
+  const pills = [
+    ["trials", entry.n_trials],
+    ["ok", entry.n_ok],
+    ["falhos", entry.n_failed],
+    ["melhor score", boNum(entry.best_score)],
+    ["mediana", boNum(improvement.median_score)],
+    ["primeiro", boNum(improvement.first_score)],
+    ["fonte", entry.source],
+  ];
+  $("bo-summary").innerHTML = pills.map(([label, value]) =>
+    `<span class="pill"><b>${esc(label)}:</b> ${esc(value)}</span>`).join("");
+  const bestParams = improvement.best_params || {};
+  const final = improvement.final;
+  const parts = [
+    `Diretório: ${entry.directory}`,
+    `Fonte: ${entry.source}`,
+  ];
+  if (Object.keys(bestParams).length) {
+    parts.push(`Melhores parâmetros: ${JSON.stringify(bestParams)}`);
+  }
+  if (final) {
+    parts.push(`Validação final: score ${boNum(final.reward_mean)}${
+      final.held_out === true ? " (seed held-out)" : " (seed de seleção)"}`);
+  }
+  $("bo-meta").textContent = parts.join(" · ");
+}
+
+function renderBoConvergence(selected) {
+  const traces = [];
+  (state.bo.campaigns || []).forEach(campaign => {
+    const active = campaign === selected;
+    traces.push({
+      x: (campaign.best_so_far || []).map(point => point.index),
+      y: (campaign.best_so_far || []).map(point => point.best),
+      name: `${campaign.algorithm} · best-so-far`,
+      type: "scatter", mode: "lines",
+      line: {width: active ? 3 : 1.5, dash: active ? "solid" : "dot"},
+      opacity: active ? 1 : .5,
+      hovertemplate: "trial %{x}<br>melhor %{y:.2f}<extra></extra>",
+    });
+    traces.push({
+      x: campaign.trials.map(trial => trial.index),
+      y: campaign.trials.map(trial => trial.score),
+      text: campaign.trials.map(trial => trial.status),
+      name: `${campaign.algorithm} · score`,
+      type: "scatter", mode: "markers",
+      marker: {size: active ? 7 : 5, opacity: active ? .8 : .4},
+      hovertemplate: "trial %{x}<br>score %{y:.2f}<br>%{text}<extra></extra>",
+    });
+    const best = campaign.trials.find(trial => trial.is_best);
+    if (best) {
+      traces.push({
+        x: [best.index], y: [best.score],
+        name: `${campaign.algorithm} · melhor`,
+        type: "scatter", mode: "markers",
+        marker: {symbol: "star", size: 15, color: "#f59e0b"},
+        hovertemplate: "melhor trial %{x}: %{y:.2f}<extra></extra>",
+      });
+    }
+    const finals = campaign.trials.filter(trial =>
+      trial.kind === "final" && trial.score !== null);
+    if (finals.length) {
+      traces.push({
+        x: finals.map(trial => trial.index),
+        y: finals.map(trial => trial.score),
+        name: `${campaign.algorithm} · final`,
+        type: "scatter", mode: "markers",
+        marker: {symbol: "diamond", size: 12, color: "#10b981"},
+        hovertemplate: "validação final: %{y:.2f}<extra></extra>",
+      });
+    }
+  });
+  if (!traces.length) return boMessage("bo-convergence", "Sem trials.");
+  Plotly.newPlot("bo-convergence", traces, boLayout({
+    xaxis: {title: "trial"}, yaxis: {title: "score"},
+  }), BO_CONFIG);
+}
+
+function renderBoEffect(entry) {
+  const params = entry.params || [];
+  const param = params.find(item => item.name === state.boParam) || params[0];
+  if (!param) {
+    return boMessage("bo-effect",
+      "Nenhum parâmetro com trials válidos suficientes.");
+  }
+  if (param.kind === "numeric") {
+    const points = param.points || [];
+    const bins = param.bins || [];
+    const traces = [{
+      x: points.map(point => point.x),
+      y: points.map(point => point.score),
+      name: "trials",
+      type: "scatter", mode: "markers",
+      marker: {size: 6, opacity: .5},
+      hovertemplate: "%{x}<br>score %{y:.2f}<extra></extra>",
+    }, {
+      x: bins.map(bin_ => (bin_.lo + bin_.hi) / 2),
+      y: bins.map(bin_ => bin_.mean),
+      text: bins.map(bin_ => `n=${bin_.n}`),
+      name: "média por faixa",
+      type: "scatter", mode: "lines+markers",
+      line: {width: 2, color: "#2563eb"},
+      marker: {size: 8, color: "#2563eb"},
+      error_y: {
+        type: "data", symmetric: false,
+        array: bins.map(bin_ => bin_.ci95 ? bin_.ci95[1] - bin_.mean : 0),
+        arrayminus: bins.map(bin_ => bin_.ci95 ? bin_.mean - bin_.ci95[0] : 0),
+      },
+      hovertemplate: "%{text}<br>média %{y:.2f}<extra></extra>",
+    }];
+    Plotly.newPlot("bo-effect", traces, boLayout({
+      xaxis: {title: param.name}, yaxis: {title: "score"},
+      title: {text: `Spearman ρ = ${boNum(param.spearman)} · n = ${param.n}`,
+              font: {size: 12}},
+    }), BO_CONFIG);
+  } else {
+    const traces = (param.groups || []).map(group => ({
+      type: "box", name: String(group.value), y: group.scores,
+      boxpoints: "all", jitter: .35, pointpos: 0,
+      marker: {size: 4, opacity: .55},
+      line: {width: 1},
+      hovertemplate: `${group.value}<br>n=${group.n}<extra></extra>`,
+    }));
+    Plotly.newPlot("bo-effect", traces, boLayout({
+      xaxis: {title: param.name}, yaxis: {title: "score"},
+      showlegend: false,
+      title: {text: `η² = ${boNum(param.eta_squared)} · n = ${param.n}`,
+              font: {size: 12}},
+    }), BO_CONFIG);
+  }
+}
+
+function renderBoImportance(entry) {
+  const ranked = (entry.params || [])
+    .filter(param => param.importance !== null &&
+                     param.importance !== undefined)
+    .sort((a, b) => a.importance - b.importance);
+  if (!ranked.length) {
+    return boMessage("bo-importance", "Sem estimativas de importância.");
+  }
+  Plotly.newPlot("bo-importance", [{
+    type: "bar", orientation: "h",
+    x: ranked.map(param => param.importance),
+    y: ranked.map(param => param.name),
+    text: ranked.map(param =>
+      param.kind === "numeric" ? "|ρ|" : "η²"),
+    textposition: "outside",
+    marker: {color: ranked.map(param =>
+      param.kind === "numeric" ? "#2563eb" : "#10b981")},
+    hovertemplate: "%{y}<br>%{x:.3f}<extra></extra>",
+  }], boLayout({
+    margin: {l: 110, r: 30, t: 20, b: 45},
+    xaxis: {title: "|Spearman| (numérico) ou η² (categórico)"},
+    showlegend: false,
+  }), BO_CONFIG);
+}
+
+function renderBoImprovement(entry) {
+  const series = (entry.best_so_far || [])
+    .filter(point => point.best !== null);
+  const improvement = entry.improvement || {};
+  if (!series.length) {
+    return boMessage("bo-improvement", "Sem trials válidos.");
+  }
+  const traces = [{
+    x: series.map(point => point.index),
+    y: series.map(point => point.best),
+    name: "best-so-far", type: "scatter", mode: "lines",
+    line: {width: 2.5, color: "#2563eb"},
+    fill: "tozeroy", fillcolor: "rgba(37,99,235,.08)",
+    hovertemplate: "trial %{x}<br>melhor %{y:.2f}<extra></extra>",
+  }];
+  const shapes = [];
+  if (improvement.median_score !== null &&
+      improvement.median_score !== undefined) {
+    shapes.push({
+      type: "line", xref: "paper", x0: 0, x1: 1,
+      y0: improvement.median_score, y1: improvement.median_score,
+      line: {dash: "dash", color: "#94a3b8", width: 1.5},
+    });
+    traces.push({
+      x: [series[0].index, series[series.length - 1].index],
+      y: [improvement.median_score, improvement.median_score],
+      name: "mediana dos trials", type: "scatter", mode: "lines",
+      line: {dash: "dash", color: "#94a3b8"},
+      hoverinfo: "skip",
+    });
+  }
+  const finals = entry.trials.filter(trial =>
+    trial.kind === "final" && trial.score !== null);
+  if (finals.length) {
+    traces.push({
+      x: finals.map(trial => trial.index),
+      y: finals.map(trial => trial.score),
+      name: "validação final", type: "scatter", mode: "markers",
+      marker: {symbol: "diamond", size: 12, color: "#10b981"},
+      hovertemplate: "final: %{y:.2f}<extra></extra>",
+    });
+  }
+  Plotly.newPlot("bo-improvement", traces, boLayout({
+    xaxis: {title: "trial"}, yaxis: {title: "score"},
+    shapes,
+    title: {
+      text: `melhor − mediana: ${boNum(improvement.delta_vs_median)} · ` +
+            `melhor − primeiro: ${boNum(improvement.delta_vs_first)}`,
+      font: {size: 12},
+    },
+  }), BO_CONFIG);
+}
+
+function renderBoInteraction(entry) {
+  const interaction = entry.interaction;
+  if (!interaction) {
+    return boMessage("bo-interaction",
+      "Não há dois parâmetros numéricos com trials suficientes.");
+  }
+  Plotly.newPlot("bo-interaction", [{
+    type: "heatmap",
+    z: interaction.means,
+    x: interaction.x_labels,
+    y: interaction.y_labels,
+    text: interaction.counts.map(row => row.map(n => `n=${n}`)),
+    hovertemplate: `${interaction.y_param} %{y}<br>` +
+      `${interaction.x_param} %{x}<br>média %{z:.2f}<br>%{text}<extra></extra>`,
+    colorscale: "Viridis",
+  }], boLayout({
+    xaxis: {title: interaction.x_param},
+    yaxis: {title: interaction.y_param},
+    margin: {l: 70, r: 20, t: 30, b: 50},
+  }), BO_CONFIG);
+}
+
+function renderBoParallel(entry) {
+  const numeric = (entry.params || [])
+    .filter(param => param.kind === "numeric").slice(0, 6);
+  const rows = (entry.trials || []).filter(trial =>
+    trial.ok && trial.score !== null);
+  if (!numeric.length || rows.length < 2) {
+    return boMessage("bo-parallel",
+      "Não há parâmetros numéricos suficientes para o parallel coordinates.");
+  }
+  const dimensions = numeric.map(param => ({
+    label: param.name,
+    values: rows.map(trial => Number(trial.params[param.name])),
+  }));
+  dimensions.push({label: "score", values: rows.map(trial => trial.score)});
+  Plotly.newPlot("bo-parallel", [{
+    type: "parcoords",
+    line: {
+      color: rows.map(trial => trial.score),
+      colorscale: "Viridis", showscale: true,
+      colorbar: {title: "score"},
+    },
+    dimensions,
+    labelfont: {size: 11},
+  }], boLayout({margin: {l: 70, r: 30, t: 30, b: 30}}), BO_CONFIG);
+}
+
+function boStatusClass(status) {
+  if (status === "ok") return "s-done";
+  if (status === "erro" || status === "failed") return "s-failed";
+  return "s-unknown";
+}
+
+function renderBoTable(entry) {
+  const trials = boFilteredTrials(entry);
+  const shown = trials.slice(0, 500);
+  const arrow = key => state.boSort.key === key
+    ? (state.boSort.dir > 0 ? " ▲" : " ▼") : "";
+  const columns = [
+    ["index", "#"], ["status", "status"], ["score", "score"],
+    ["reward", "reward"], ["coins", "moedas"], ["deaths", "mortes"],
+    ["duration_seconds", "duração"], ["params", "parâmetros"],
+    ["artifact", "artefato"],
+  ];
+  const head = columns.map(([key, label]) =>
+    `<th class="sortable" data-bo-sort="${key}">${esc(label)}${arrow(key)}</th>`
+  ).join("") + "<th>erro</th>";
+  const rows = shown.map(trial => {
+    const params = JSON.stringify(trial.params || {});
+    const shortParams = params.length > 90
+      ? params.slice(0, 87) + "…" : params;
+    const link = trial.log
+      ? `<a href="/api/files?path=${encodeURIComponent(trial.log)}" ` +
+        `target="_blank" rel="noopener">log</a>`
+      : (trial.artifact
+          ? `<span class="mono" title="${esc(trial.artifact)}">pasta</span>`
+          : "—");
+    return `<tr>
+      <td class="mono">${esc(trial.index)}${
+        trial.is_best ? ' <span class="badge">best</span>' : ''}${
+        trial.kind === "final" ? ' <span class="badge">final</span>' : ''}</td>
+      <td><span class="status ${boStatusClass(trial.status)}">${
+        esc(trial.status)}</span></td>
+      <td>${boNum(trial.score)}</td>
+      <td>${boNum(trial.reward)}</td>
+      <td>${boNum(trial.coins, 1)}</td>
+      <td>${boNum(trial.deaths, 1)}</td>
+      <td>${fmtSeconds(trial.duration_seconds)}</td>
+      <td><span class="mono" title="${esc(params)}">${esc(shortParams)}</span></td>
+      <td>${link}</td>
+      <td class="muted">${esc(trial.error || "")}</td>
+    </tr>`;
+  }).join("");
+  $("bo-trials").innerHTML = `<thead><tr>${head}</tr></thead>` +
+    `<tbody>${rows || '<tr><td colspan="10" class="muted">Nenhum trial no filtro.</td></tr>'}</tbody>`;
+  $("bo-table-meta").textContent =
+    `${trials.length} trial(s) no filtro · exibindo ${shown.length}` +
+    (trials.length > shown.length ? " (limite de 500 linhas)" : "") +
+    " · filtros e parâmetro ficam na URL";
+  document.querySelectorAll("#bo-trials th[data-bo-sort]").forEach(th => {
+    th.addEventListener("click", () => {
+      const key = th.dataset.boSort;
+      state.boSort = {key,
+                      dir: state.boSort.key === key ? -state.boSort.dir : 1};
+      renderBoTable(entry);
+    });
+  });
+}
+
+function renderBo() {
+  const payload = state.bo;
+  if (!payload) return;
+  const campaigns = payload.campaigns || [];
+  if (!campaigns.length) {
+    $("bo-summary").innerHTML = "";
+    $("bo-meta").textContent = "";
+    $("bo-table-meta").textContent = "";
+    boMessage("bo-convergence", "Nenhuma campanha encontrada.");
+    return;
+  }
+  if (!campaigns.some(campaign =>
+          campaign.algorithm === state.boAlgorithm)) {
+    state.boAlgorithm = campaigns[0].algorithm;
+  }
+  const entry = boCampaign();
+  $("bo-alg").innerHTML = campaigns.map(campaign =>
+    `<option value="${esc(campaign.algorithm)}">${
+      esc(campaign.algorithm)} · ${esc(campaign.source)}</option>`).join("");
+  $("bo-alg").value = entry.algorithm;
+
+  const statuses = [...new Set((entry.trials || [])
+    .map(trial => trial.status))].sort();
+  $("bo-status").innerHTML = '<option value="">todos</option>' +
+    statuses.map(status =>
+      `<option value="${esc(status)}">${esc(status)}</option>`).join("");
+  if (!statuses.includes(state.boStatus)) state.boStatus = "";
+  $("bo-status").value = state.boStatus;
+
+  const params = entry.params || [];
+  $("bo-param").innerHTML = params.map(param =>
+    `<option value="${esc(param.name)}">${esc(param.name)} · ${
+      esc(param.kind)}</option>`).join("");
+  if (!params.some(param => param.name === state.boParam)) {
+    state.boParam = params.length ? params[0].name : "";
+  }
+  $("bo-param").value = state.boParam;
+
+  renderBoWarnings(payload, entry);
+  renderBoSummary(entry);
+  renderBoConvergence(entry);
+  renderBoEffect(entry);
+  renderBoImportance(entry);
+  renderBoImprovement(entry);
+  renderBoInteraction(entry);
+  renderBoParallel(entry);
+  renderBoTable(entry);
+  updateBoUrl();
+}
+
+function boDownload(filename, text, type) {
+  const blob = new Blob([text], {type});
+  const link = document.createElement("a");
+  link.href = URL.createObjectURL(blob);
+  link.download = filename;
+  link.click();
+  URL.revokeObjectURL(link.href);
+}
+
+function boExport(kind) {
+  const entry = boCampaign();
+  if (!entry) {
+    showError("Carregue uma campanha antes de exportar.");
+    return;
+  }
+  const trials = boFilteredTrials(entry);
+  if (kind === "json") {
+    boDownload(`bo-${entry.algorithm}-trials.json`,
+      JSON.stringify({campaign: state.bo.root, algorithm: entry.algorithm,
+                      source: entry.source, trials}, null, 2),
+      "application/json");
+    return;
+  }
+  const quote = value => `"${String(value ?? "").replace(/"/g, '""')}"`;
+  const head = ["index", "kind", "status", "score", "reward", "coins",
+                "deaths", "duration_seconds", "params"];
+  const lines = [head.join(",")];
+  trials.forEach(trial => {
+    lines.push([trial.index, trial.kind, trial.status, trial.score,
+                trial.reward, trial.coins, trial.deaths,
+                trial.duration_seconds, JSON.stringify(trial.params)]
+      .map(quote).join(","));
+  });
+  boDownload(`bo-${entry.algorithm}-trials.csv`, lines.join("\n"),
+             "text/csv;charset=utf-8");
+}
+
+$("bo-load").addEventListener("click", loadBo);
+$("bo-job").addEventListener("change", () => {
+  $("bo-path").value = "";
+  loadBo();
+});
+$("bo-alg").addEventListener("change", (event) => {
+  state.boAlgorithm = event.target.value;
+  state.boParam = null;
+  renderBo();
+});
+$("bo-status").addEventListener("change", (event) => {
+  state.boStatus = event.target.value;
+  renderBoTable(boCampaign());
+  updateBoUrl();
+});
+$("bo-param").addEventListener("change", (event) => {
+  state.boParam = event.target.value;
+  renderBoEffect(boCampaign());
+  updateBoUrl();
+});
+$("bo-export-csv").addEventListener("click", () => boExport("csv"));
+$("bo-export-json").addEventListener("click", () => boExport("json"));
+
+// ---------------------------------------------------------------------
 // Aba: proposta de experimentos
 
 function proposalFields() {
@@ -1258,10 +1951,20 @@ setInterval(refreshLog, 2000);
 const params = new URLSearchParams(window.location.search);
 const deepTab = params.get("tab");
 const deepJob = params.get("job");
+const deepBo = params.get("bo");
+const deepBoJob = params.get("bojob");
 if (deepTab) switchTab(deepTab);
 if (deepJob) {
   switchTab("queue");
   setTimeout(() => openExperiment(deepJob), 900);
+}
+if (deepBo || deepBoJob) {
+  setTimeout(() => {
+    if (deepBo) $("bo-path").value = deepBo;
+    if (deepBoJob) $("bo-job").value = deepBoJob;
+    switchTab("bo");
+    loadBo();
+  }, 900);
 }
 </script>
 </body>

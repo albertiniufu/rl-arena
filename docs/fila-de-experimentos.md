@@ -176,12 +176,13 @@ POST /api/jobs/<id>/experiment/status  # grava o status efetivo no YAML
 GET  /api/files?path=<rel>             # serve o arquivo (somente dentro do repo)
 ```
 
-## Abas de algoritmos, análise e proposta
+## Abas de algoritmos, análise, BO e proposta
 
 As abas separam operação, referência, análise e proposta para não misturar o
 que já rodou com o que ainda vai rodar. O deep link `?job=<id>` continua
 abrindo o painel do experimento na aba **Fila**; `?tab=algorithms`,
-`?tab=analysis` e `?tab=proposal` abrem as abas novas.
+`?tab=analysis`, `?tab=bo` e `?tab=proposal` abrem as abas novas. O botão
+**Ver BO** no painel do experimento leva direto à campanha daquele job.
 
 ### Algoritmos
 
@@ -234,6 +235,50 @@ A interface explicita a unidade independente:
 Arquivos precisam estar dentro do repositório. A aba aceita filtros
 `campo=valor` e não executa comandos.
 
+### BO
+
+A aba **BO** lê as campanhas de `scripts/bo_campaign.py` e
+`scripts/asha_campaign.py` direto dos diretórios que elas já gravam — não
+recalcula treino nem inventa trials:
+
+```text
+experiments/<campanha>/
+  campaign.json          # manifesto (algoritmos, espaço, config base)
+  ppo/
+    trials.jsonl         # um trial por linha (BO ou ASHA)
+    best.json            # melhor trial, validação final
+    results.csv          # ASHA (opcional)
+  eppo/ ...
+```
+
+Escolha um job (o botão **Ver BO** do painel do experimento) ou informe o
+caminho da campanha. A tela mostra:
+
+- **convergência**: score por trial, melhor score acumulado (best-so-far),
+  marcação do trial escolhido (★) e da validação final (◆), com um algoritmo
+  por cor;
+- **efeito de cada parâmetro**: dispersão parâmetro × score, média por faixa
+  com IC de 95%, correlação de Spearman (numéricos) e box/strip com η²
+  (categóricos, usando o tipo declarado no espaço de busca);
+- **importância**: ranking por |Spearman| ou η²;
+- **melhoria**: best-so-far contra a mediana e o primeiro trial válido, com
+  os parâmetros do melhor trial comparados à config base;
+- **interação**: heatmap de média/contagem para os dois parâmetros numéricos
+  mais importantes;
+- **parallel coordinates** dos trials válidos;
+- **tabela de trials**: índice, status, score, reward, moedas, mortes,
+  duração, parâmetros, log/artefato e erro — ordenável e filtrável por status.
+
+Tudo é **exploratório**: a aba avisa quando há menos de 10 trials válidos,
+lista falhos e outliers e não afirma causalidade. Filtros (algoritmo,
+parâmetro e status) ficam na URL (`?tab=bo&bo=...&alg=...&param=...&status=...`)
+e os trials filtrados podem ser exportados em CSV/JSON. Os gráficos usam o
+mesmo Plotly do relatório estatístico (CDN).
+
+Backend: [`arenas/common/bo_analysis.py`](../arenas/common/bo_analysis.py)
+normaliza trials de BO e ASHA (inclusive `results.csv`), valida todos os
+caminhos dentro do repositório e devolve as séries/estatísticas prontas.
+
 ### Proposta de experimentos
 
 ![Prévia da aba de proposta](fila-de-proposta.png)
@@ -262,6 +307,8 @@ Endpoints novos:
 GET  /api/algorithms          # catálogo por arena + links de docs
 GET  /docs/<caminho-do-repo>  # Markdown renderizado ou arquivo de docs
 GET  /api/jobs/<id>/results   # arquivos, métricas, seeds e algoritmos
+GET  /api/bo?path=<rel>       # campanha BO/ASHA normalizada
+GET  /api/jobs/<id>/bo        # campanha do job (artefatos/--out/cwd)
 POST /api/jobs/<id>/analysis  # relatório de um job
 POST /api/analysis            # relatório de um caminho manual
 POST /api/proposals/preview   # MD + YAML + erros (sem gravar)

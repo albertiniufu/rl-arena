@@ -27,7 +27,7 @@ o item foi implementado (arquivo + testes) quando terminar.
 | Sincronizar status do YAML com a Fila | ✅ concluído | [`arenas/common/job_queue.py`](arenas/common/job_queue.py) |
 | Abas de análise e proposta na Fila | ✅ concluído | [`arenas/common/job_queue_ui.py`](arenas/common/job_queue_ui.py) |
 | Aba de algoritmos por arena na Fila | ✅ concluído | [`arenas/common/algorithm_catalog.py`](arenas/common/algorithm_catalog.py) |
-| Visualização da evolução do BO na Fila | ⏳ pendente | — |
+| Visualização da evolução do BO na Fila | ✅ concluído | [`arenas/common/bo_analysis.py`](arenas/common/bo_analysis.py) |
 | Experimentos no nível 4 — custo da visão local | ⏳ pendente | — |
 | Experimentos no nível 5 — mundo procedural | ⏳ pendente | — |
 | Nível 4 — visão local limitada | ✅ concluído | [`arenas/seek_coin/arena/observations.py`](arenas/seek_coin/arena/observations.py) |
@@ -41,34 +41,6 @@ o item foi implementado (arquivo + testes) quando terminar.
 | The Option Keyboard | ⏳ pendente | — |
 
 ## Pendentes
-
-### Visualização da evolução do BO na Fila de Experimentos
-
-- [ ] **Adicionar à Fila de Experimentos uma visualização da evolução do BO de cada algoritmo em cada experimento.**
-  - Motivação: os dados brutos (`trials.jsonl`, `campaign.json`, `best.json`) já ficam no diretório do experimento, mas investigar convergência, efeito dos hiperparâmetros e melhoria exige abrir arquivos e montar gráficos manualmente.
-  - Acesso: botão/aba **BO** no painel do experimento e/ou seção na aba **Análise de resultados**, filtrável por experimento e algoritmo (`ppo`, `eppo`, etc.).
-  - Fonte de dados: ler `campaign.json`, `best.json` e `trials.jsonl` de cada algoritmo; suportar também os `trials.jsonl`/`results.csv` do ASHA. Não recalcular treino nem inventar trials.
-  - Tabela de trials: índice, status, score, reward, coins, deaths, duração, parâmetros testados, caminho do log e link para o artefato; ordenável e filtrável por status.
-  - **Convergência do BO**:
-    - score por trial e melhor score acumulado (*best-so-far*) ao longo dos trials/tempo;
-    - reward/coins/deaths do melhor trial ao longo da campanha;
-    - marcação do trial escolhido como `best` e da validação final;
-    - comparação lado a lado entre algoritmos no mesmo experimento.
-  - **Efeito de cada parâmetro**:
-    - para parâmetros numéricos: dispersão `parâmetro × score`, com tendência/µ de bins e correlação de Spearman;
-    - para parâmetros categóricos: box/violin/strip por escolha;
-    - *marginal effect*: score médio por faixa do parâmetro, com n e IC quando houver trials suficientes;
-    - ranking de importância dos parâmetros (ex.: Spearman absoluto, variância explicada ou permutation importance) com aviso de que 32 trials é amostra pequena;
-    - parallel coordinates dos melhores trials e heatmap de interação para os dois parâmetros mais relevantes.
-  - **Melhoria**:
-    - comparar o melhor trial com o default/base e com a mediana dos trials;
-    - mostrar `best_so_far − baseline` e a curva de melhoria;
-    - separar ganho por algoritmo e por faixa de orçamento (trial curto × validação final).
-  - Backend: endpoints para listar campanhas BO de um experimento e devolver trials normalizados; validar caminhos dentro do repo e não executar código arbitrário.
-  - UI: reutilizar Plotly (como em `report_html.py`), manter filtros/estado na URL e permitir exportar os dados filtrados em CSV/JSON.
-  - Estatística: deixar explícito que os plots são **exploratórios**; com poucos trials não declarar causalidade nem “melhor parâmetro” sem incerteza. Reportar trials falhos e não esconder outliers.
-  - Testes: parser de `trials.jsonl`/ASHA, normalização de parâmetros, best-so-far, agregação por bin, parâmetro categórico, trial falho, campanha ausente e API/rota.
-  - Documentar em `docs/fila-de-experimentos.md` e no README de `scripts/bo_campaign.py`/`asha_campaign.py`.
 
 ### Experimentos no nível 4 — custo da visão local
 
@@ -191,6 +163,35 @@ o item foi implementado (arquivo + testes) quando terminar.
 
 > Os detalhes abaixo preservam o plano original; use-os como registro do
 > que foi implementado, não como tarefas em aberto.
+
+### Visualização da evolução do BO na Fila de Experimentos
+
+> Implementado em [`arenas/common/bo_analysis.py`](arenas/common/bo_analysis.py)
+> (descoberta de campanhas, parser de `trials.jsonl`/`results.csv` BO e ASHA,
+> normalização, best-so-far, bins/IC, Spearman, η², importância, interação e
+> melhoria), endpoints `GET /api/bo?path=` e `GET /api/jobs/<id>/bo` em
+> [`scripts/job_queue_server.py`](scripts/job_queue_server.py), aba **BO** em
+> [`arenas/common/job_queue_ui.py`](arenas/common/job_queue_ui.py) (Plotly,
+> tabela ordenável/filtrável, URL state e export CSV/JSON) e botão **Ver BO**
+> no painel do experimento. Documentação em
+> [`docs/fila-de-experimentos.md`](docs/fila-de-experimentos.md) e nos
+> docstrings de [`scripts/bo_campaign.py`](scripts/bo_campaign.py)/
+> [`scripts/asha_campaign.py`](scripts/asha_campaign.py). Testes:
+> `test_bo_analysis.py`, `test_queue_workbench_api.py` e smoke headless da UI.
+
+- [x] **Adicionar à Fila de Experimentos uma visualização da evolução do BO de cada algoritmo em cada experimento.**
+  - Motivação: os dados brutos (`trials.jsonl`, `campaign.json`, `best.json`) já ficam no diretório do experimento, mas investigar convergência, efeito dos hiperparâmetros e melhoria exige abrir arquivos e montar gráficos manualmente.
+  - Acesso: aba **BO** e botão **Ver BO** no painel do experimento, filtrável por experimento, algoritmo, parâmetro e status.
+  - Fonte de dados: `campaign.json`, `best.json` e `trials.jsonl` de cada algoritmo; ASHA via `results.csv`/`trials.jsonl`. Nada é recalculado nem inventado.
+  - Tabela de trials: índice, status, score, reward, coins, deaths, duração, parâmetros, log/artefato e erro; ordenável e filtrável por status.
+  - **Convergência do BO**: score por trial e best-so-far, marcação do `best` (★) e da validação final (◆), comparação entre algoritmos.
+  - **Efeito de cada parâmetro**: dispersão + média por faixa com IC e Spearman; box/strip com η² para categóricos; ranking de importância; parallel coordinates e heatmap de interação dos dois parâmetros mais relevantes.
+  - **Melhoria**: melhor vs mediana/primeiro/default (params da config base) e faixas de orçamento (rungs do ASHA e validação final do BO).
+  - Backend: rotas com validação de caminhos dentro do repositório, sem execução de código.
+  - UI: Plotly, estado na URL e exportação dos trials filtrados em CSV/JSON.
+  - Estatística: avisos de amostra pequena, trials falhos e outliers explícitos; gráficos exploratórios.
+  - Testes: parser/ASHA, normalização, best-so-far, bins, categórico, trial falho, campanha ausente, rotas e smoke headless da aba.
+  - Documentado em `docs/fila-de-experimentos.md` e nos scripts de campanha.
 
 ### Nível 4 — visão local limitada
 

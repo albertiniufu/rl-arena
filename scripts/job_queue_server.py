@@ -30,6 +30,11 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from arenas.common.algorithm_catalog import algorithm_catalog  # noqa: E402
+from arenas.common.bo_analysis import (  # noqa: E402
+    BoAnalysisError,
+    load_bo,
+    load_bo_for_job,
+)
 from arenas.common.experiment_analysis import (  # noqa: E402
     AnalysisError,
     analyze_results,
@@ -243,6 +248,25 @@ class Handler(BaseHTTPRequestHandler):
                 relative = parse_qs(parsed.query).get("path", [""])[0]
                 self._serve_file(relative)
                 return
+            if parsed.path == "/api/bo":
+                path = parse_qs(parsed.query).get("path", [""])[0]
+                if not path:
+                    raise ValueError("informe `path` da campanha de BO/ASHA")
+                self._json(200, load_bo(path))
+                return
+            if (parsed.path.startswith("/api/jobs/")
+                    and parsed.path.endswith("/bo")):
+                job_id = parsed.path[len("/api/jobs/"):-len("/bo")].strip("/")
+                job = self.queue.get(job_id)
+                if job is None:
+                    raise KeyError(job_id)
+                try:
+                    data = self.queue.experiment_data(job_id)
+                except (KeyError, OSError, ValueError):
+                    data = None
+                self._json(200, {"id": job_id,
+                                 **load_bo_for_job(job.to_dict(), data)})
+                return
             if parsed.path.startswith("/api/jobs/") and parsed.path.endswith("/experiment"):
                 job_id = parsed.path[len("/api/jobs/"):-len("/experiment")].strip("/")
                 text = self.queue.experiment_yaml_text(job_id)
@@ -272,6 +296,8 @@ class Handler(BaseHTTPRequestHandler):
             self._error(404, "rota não encontrada")
         except KeyError as exc:
             self._error(404, f"job não encontrado: {exc}")
+        except (AnalysisError, BoAnalysisError, ValueError) as exc:
+            self._error(400, str(exc))
         except Exception as exc:  # noqa: BLE001
             self._error(500, str(exc))
 

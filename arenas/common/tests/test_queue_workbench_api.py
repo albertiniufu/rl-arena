@@ -224,3 +224,81 @@ def test_proposal_enqueue_endpoint(live):
     assert job["experiment_yaml"].endswith(".yaml")
     assert queue.get(job["id"]) is not None
     assert (root / payload["proposal"]["yaml_path"]).exists()
+
+
+def make_bo_campaign(root: Path, name: str = "BO-api") -> Path:
+    campaign = root / "experiments" / name
+    ppo = campaign / "ppo"
+    ppo.mkdir(parents=True)
+    (campaign / "campaign.json").write_text(json.dumps({
+        "algorithms": ["ppo"], "hours_per_alg": 0.1,
+        "base_config": "configs/base.yaml",
+    }), encoding="utf-8")
+    rows = []
+    for index in range(5):
+        rows.append(json.dumps({
+            "algorithm": "ppo", "index": index,
+            "params": {"lr": 0.001 * (index + 1), "batch_size": 64},
+            "reward_mean": 10.0 + index, "coins_mean": 5.0,
+            "deaths_mean": 1.0, "score": 10.0 + index,
+            "seconds": 60.0, "status": "ok", "trial_dir": "",
+            "error": "",
+        }))
+    (ppo / "trials.jsonl").write_text("\n".join(rows) + "\n",
+                                      encoding="utf-8")
+    (ppo / "best.json").write_text(json.dumps({
+        "algorithm": "ppo", "best_trial": 4,
+        "best_params": {"lr": 0.005, "batch_size": 64},
+        "best_low_fidelity": {"score": 14.0},
+    }), encoding="utf-8")
+    yaml_path = root / "docs" / "experimentos" / f"{name}.yaml"
+    yaml_path.parent.mkdir(parents=True, exist_ok=True)
+    yaml_path.write_text(f"""id: {name}
+status: running
+question: "BO pela API?"
+execution:
+  command: ["python", "-c", "pass"]
+  cwd: "."
+artifacts:
+  experiment_dir: experiments/{name}
+""", encoding="utf-8")
+    return yaml_path
+
+
+def test_bo_endpoints_load_campaign(live):
+    url, queue, root = live
+    exp = make_bo_campaign(root)
+    status, payload = call(url, "/api/bo?path=experiments/BO-api")
+    assert status == 200
+    assert payload["root"] == "experiments/BO-api"
+    assert payload["campaigns"][0]["algorithm"] == "ppo"
+    assert payload["campaigns"][0]["n_trials"] == 5
+    assert payload["campaigns"][0]["best_so_far"][-1]["best"] == 14.0
+
+    job = queue.add_experiment(exp)
+    status, payload = call(url, f"/api/jobs/{job.id}/bo")
+    assert status == 200
+    assert payload["id"] == job.id
+    assert payload["campaigns"][0]["algorithm"] == "ppo"
+
+
+def test_bo_endpoints_reject_bad_paths(live):
+    url, queue, root = live
+    status, error = call(url, "/api/bo")
+    assert status == 400
+    status, error = call(url, "/api/bo?path=../../fora")
+    assert status == 400
+    assert "fora do repositório" in error["error"]
+    (root / "experiments" / "vazio").mkdir(parents=True)
+    status, error = call(url, "/api/bo?path=experiments/vazio")
+    assert status == 400
+    assert "nenhum trials" in error["error"]
+
+
+def test_ui_exposes_bo_tab():
+    html = server_module.HTML
+    assert 'data-tab="bo"' in html
+    assert 'id="bo-convergence"' in html
+    assert 'id="bo-trials"' in html
+    assert 'id="experiment-bo"' in html
+    assert "plotly-2.35.2" in html
