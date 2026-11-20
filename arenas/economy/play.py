@@ -10,6 +10,7 @@ import argparse
 import numpy as np
 
 from arenas.algs.alg_registry import checkpoint_meta
+from arenas.common.yaml_config import add_config_args, apply_yaml_defaults
 from arenas.common.checkpoint import agent_from_checkpoint
 from arenas.economy import bank_demo
 from arenas.economy.bank import BankConfig
@@ -24,12 +25,14 @@ HEADER = (
 
 def parse_args(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
+    add_config_args(parser)
     parser.add_argument("--checkpoint", default=None)
     parser.add_argument("--policy", choices=["risk-aware", "naive", "random"],
                         default="risk-aware")
     parser.add_argument("--steps", type=int, default=24)
     parser.add_argument("--seed", type=int, default=0)
     parser.add_argument("--every", type=int, default=4)
+    apply_yaml_defaults(parser, argv, "play")
     return parser.parse_args(argv)
 
 

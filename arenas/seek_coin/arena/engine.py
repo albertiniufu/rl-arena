@@ -4,7 +4,8 @@ from dataclasses import dataclass
 from .actions import JUMP, LEFT, PUSH_INTENSITY, PUSH_LEFT, PUSH_RIGHT, RIGHT, STOP
 from .config import ArenaConfig, COLLECTOR_ROLE, PUSHER_ROLE
 from .levels import (
-    get_fixed_coins, get_hazard_kinds, get_level, get_moving_coins)
+    get_buttons, get_fixed_coins, get_hazard_kinds, get_level,
+    get_moving_coins, get_super_coin_position)
 
 @dataclass
 class Character:
@@ -44,6 +45,14 @@ class Hazard:
     platform_index: int
     timer: float
 
+
+@dataclass
+class SuperCoin:
+    """Moeda especial do nível 3, separada das moedas normais."""
+    x: float
+    y: float
+    timer: float
+
 class ArenaEngine:
     """Small fixed-map platformer physics engine. Coordinates are pixels."""
     def __init__(self, config=None):
@@ -56,6 +65,11 @@ class ArenaEngine:
         self.characters = []
         self.coins = []
         self.hazards = []
+        self.buttons = list(get_buttons(self.level))
+        self.super_coin_position = get_super_coin_position(self.level)
+        self.super_coin: SuperCoin | None = None
+        self.super_coin_cooldown = 0.0
+        self._button_state: dict[str, bool] = {}
         self.sim_time = 0.0
 
     def _platforms_at(self, t: float):
@@ -117,6 +131,9 @@ class ArenaEngine:
         for kind in self.hazard_kinds:
             for _ in range(max(0, int(self.cfg.hazard_count))):
                 self._spawn_hazard(kind)
+        self.super_coin = None
+        self.super_coin_cooldown = 0.0
+        self._button_state = {button.kind: False for button in self.buttons}
         return self
 
     def _spawn_coin(self):
@@ -346,6 +363,74 @@ class ArenaEngine:
             c.sand_timer = 0.0
             c.push_cooldown = 0.0
 
+    def _button_touching(self, character, button):
+        half = self.cfg.player_size / 2.0
+        return (
+            character.alive
+            and character.x + half > button.x
+            and character.x - half < button.x + button.w
+            and character.y + half > button.y
+            and character.y - half < button.y + button.h
+        )
+
+    def _update_super_coin(self, dt):
+        """Atualiza a super moeda e os botões de contato do nível 3.
+
+        Devolve `(collected, activated, cancelled, expired)`, em que
+        `collected` tem uma entrada por personagem. A coleta tem prioridade
+        sobre a expiração no mesmo substep.
+        """
+        collected = [0] * len(self.characters)
+        activated = cancelled = expired = False
+        self.super_coin_cooldown = max(0.0, self.super_coin_cooldown - dt)
+
+        if self.super_coin is not None:
+            for i, c in enumerate(self.characters):
+                if not c.alive or self._role(i) == PUSHER_ROLE:
+                    continue
+                if math.hypot(
+                        c.x - self.super_coin.x,
+                        (c.y - self.cfg.player_size / 2.0) - self.super_coin.y
+                ) < 18:
+                    c.coins += int(self.cfg.super_coin_coins)
+                    collected[i] = 1
+                    self.super_coin = None
+                    self.super_coin_cooldown = float(
+                        self.cfg.super_coin_cooldown)
+                    break
+            if self.super_coin is not None:
+                self.super_coin.timer -= dt
+                if self.super_coin.timer <= 0:
+                    self.super_coin = None
+                    self.super_coin_cooldown = float(
+                        self.cfg.super_coin_cooldown)
+                    expired = True
+
+        current = {
+            button.kind: any(
+                self._button_touching(c, button) for c in self.characters)
+            for button in self.buttons
+        }
+        for button in self.buttons:
+            pressed = current.get(button.kind, False)
+            was = self._button_state.get(button.kind, False)
+            self._button_state[button.kind] = pressed
+            if not (pressed and not was):
+                continue
+            if button.kind == "activate":
+                if (self.super_coin is None
+                        and self.super_coin_cooldown <= 0
+                        and self.super_coin_position is not None):
+                    x, y = self.super_coin_position
+                    self.super_coin = SuperCoin(
+                        float(x), float(y), float(self.cfg.super_coin_seconds))
+                    activated = True
+            elif button.kind == "cancel" and self.super_coin is not None:
+                self.super_coin = None
+                self.super_coin_cooldown = float(self.cfg.super_coin_cooldown)
+                cancelled = True
+        return collected, activated, cancelled, expired
+
     def step(self, actions, dt):
         self.sim_time += dt
         self._advance_platforms(self.sim_time)
@@ -407,8 +492,14 @@ class ArenaEngine:
                     c.coins += 1
                     collected[i] += 1
                     self._spawn_coin()
+        super_collected, super_activated, super_cancelled, super_expired = (
+            self._update_super_coin(dt))
         return {
             "collected": collected,
             "deaths_delta": [c.deaths - before_deaths[i] for i, c in enumerate(self.characters)],
             "coins_transferred": coins_transferred,
+            "super_coin_collected": super_collected,
+            "super_coin_activated": super_activated,
+            "super_coin_cancelled": super_cancelled,
+            "super_coin_expired": super_expired,
         }

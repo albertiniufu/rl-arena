@@ -11,6 +11,7 @@ from __future__ import annotations
 import argparse
 import inspect
 
+from arenas.common.yaml_config import add_config_args, apply_yaml_defaults
 from arenas.risk.agents import RiskBot
 from arenas.risk.board import (
     CONTINENTS,
@@ -178,6 +179,7 @@ def run_checkpoint(env, agent, seed: int) -> None:
 
 def main(argv=None) -> None:
     parser = argparse.ArgumentParser(description=__doc__)
+    add_config_args(parser)
     parser.add_argument("--players", type=int, default=2,
                         help="número de jogadores (humano = J1)")
     parser.add_argument("--armies", type=int, default=20,
@@ -188,6 +190,7 @@ def main(argv=None) -> None:
                         help="bots contra bots, sem entrada humana")
     parser.add_argument("--checkpoint", default=None,
                         help="checkpoint que joga como J1 contra bots")
+    apply_yaml_defaults(parser, argv, "play")
     args = parser.parse_args(argv)
 
     if args.checkpoint and args.demo:

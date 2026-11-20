@@ -22,7 +22,7 @@ from gymnasium import spaces
 from .actions import N_ACTIONS, PUSH_LEFT, PUSH_RIGHT, STOP
 from .config import ArenaConfig
 from .engine import ArenaEngine
-from .levels import get_hazard_kinds
+from .levels import get_level_channel_names
 from .observations import render_grid
 from .reward_shaping import coin_potential
 from .scenario import Scenario
@@ -51,10 +51,10 @@ class ArenaMultiEnv:
         self.action_space = spaces.Discrete(N_ACTIONS)
         self.grid_h = self.cfg.height // self.cfg.cell
         self.grid_w = self.cfg.width // self.cfg.cell
-        self.hazard_channels = len(get_hazard_kinds(self.cfg.level))
+        self.extra_channels = len(get_level_channel_names(self.cfg.level))
         self.observation_space = spaces.Box(
             0.0, 1.0,
-            shape=((N_CHANNELS + self.hazard_channels)
+            shape=((N_CHANNELS + self.extra_channels)
                    * self.cfg.frame_stack, self.grid_h, self.grid_w),
             dtype=np.float32,
         )
@@ -69,7 +69,7 @@ class ArenaMultiEnv:
     def _observation(self, viewer):
         return render_grid(
             self.engine, self.cfg, viewer=viewer,
-            channels=N_CHANNELS + self.hazard_channels,
+            channels=N_CHANNELS + self.extra_channels,
             team_ids=self.scenario.team_ids)
 
     def _stacked(self):
@@ -78,7 +78,9 @@ class ArenaMultiEnv:
         ])
 
     def _info(self, rewards=None, raw=None, collected=None, deaths=None,
-              transferred=None, pbrs=None):
+              transferred=None, pbrs=None, super_collected=None,
+              super_activated=False, super_cancelled=False,
+              super_expired=False):
         agents = []
         for i, c in enumerate(self.engine.characters):
             agents.append({
@@ -92,6 +94,8 @@ class ArenaMultiEnv:
                 "deaths_this_step": 0 if deaths is None else int(deaths[i]),
                 "coins_transferred_this_step": (
                     0 if transferred is None else int(transferred[i])),
+                "super_coin_collected_this_step": (
+                    0 if super_collected is None else int(super_collected[i])),
                 "pbrs_this_step": 0.0 if pbrs is None else float(pbrs[i]),
             })
         teams = []
@@ -109,6 +113,13 @@ class ArenaMultiEnv:
             "team_ids": tuple(self.scenario.team_ids),
             "agents": agents,
             "teams": teams,
+            "super_coin_active": self.engine.super_coin is not None,
+            "super_coin_timer": (
+                None if self.engine.super_coin is None
+                else float(self.engine.super_coin.timer)),
+            "super_coin_activated_this_step": bool(super_activated),
+            "super_coin_cancelled_this_step": bool(super_cancelled),
+            "super_coin_expired_this_step": bool(super_expired),
         }
 
     def reset(self, seed=None, options=None):
@@ -189,6 +200,8 @@ class ArenaMultiEnv:
         collected = np.zeros(self.n_agents, dtype=np.int64)
         deaths = np.zeros(self.n_agents, dtype=np.int64)
         transferred = np.zeros(self.n_agents, dtype=np.int64)
+        super_collected = np.zeros(self.n_agents, dtype=np.int64)
+        super_activated = super_cancelled = super_expired = False
         for _ in range(self.cfg.frame_skip):
             event = self.engine.step(effective.tolist(), dt)
             self.elapsed += dt
@@ -196,12 +209,21 @@ class ArenaMultiEnv:
             step_deaths = np.asarray(event["deaths_delta"], dtype=np.int64)
             # Transferência assinada: ganha quem empurra, perde o alvo.
             step_transferred = np.asarray(event["coins_transferred"], dtype=np.int64)
+            step_super = np.asarray(event["super_coin_collected"], dtype=np.int64)
             raw += (step_collected * self.cfg.coin_reward
                     + step_deaths * self.cfg.death_penalty
-                    + step_transferred * self.cfg.push_coin_reward)
+                    + step_transferred * self.cfg.push_coin_reward
+                    + step_super * self.cfg.super_coin_reward)
             collected += step_collected
             deaths += step_deaths
             transferred += step_transferred
+            super_collected += step_super
+            super_activated = super_activated or bool(
+                event["super_coin_activated"])
+            super_cancelled = super_cancelled or bool(
+                event["super_coin_cancelled"])
+            super_expired = super_expired or bool(
+                event["super_coin_expired"])
             if render_intermediate and self.render_mode == "human":
                 self.render()
 
@@ -225,7 +247,9 @@ class ArenaMultiEnv:
         terminated = np.zeros(self.n_agents, dtype=bool)
         truncated = np.full(
             self.n_agents, self.elapsed >= self.cfg.episode_seconds, dtype=bool)
-        info = self._info(rewards, raw, collected, deaths, transferred, pbrs)
+        info = self._info(
+            rewards, raw, collected, deaths, transferred, pbrs,
+            super_collected, super_activated, super_cancelled, super_expired)
         self._last_info = info
         if self.render_mode == "human" and not render_intermediate:
             self.render()

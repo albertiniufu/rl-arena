@@ -51,7 +51,7 @@ def parse_args(argv=None):
     parser.add_argument("--frame-skip", type=int, default=3)
     parser.add_argument("--frame-stack", type=int, default=4)
     parser.add_argument("--coin-count", type=int, default=10)
-    parser.add_argument("--episode-seconds", type=float, default=45.0)
+    parser.add_argument("--episode-seconds", type=float, default=90.0)
     parser.add_argument("--obs-dtype",
                         choices=["float32", "float16", "bfloat16", "uint8"],
                         default="float32")

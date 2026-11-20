@@ -26,10 +26,16 @@ class ArenaConfig:
     # 0 preserva o comportamento legado (sem recarga).
     push_cooldown: float = 0.0
     player_size: int = 25
-    episode_seconds: float = 45.0
+    episode_seconds: float = 90.0
     respawn_seconds: float = 5.0
     coin_lifetime: float = 60.0
     coin_reward: float = 1.0
+    # Nível 3: botão liga uma super moeda por uma janela curta; ela some se
+    # o adversário cancelar, se ninguém coletar a tempo ou se alguém coletar.
+    super_coin_seconds: float = 12.0
+    super_coin_cooldown: float = 5.0
+    super_coin_reward: float = 25.0
+    super_coin_coins: int = 10
     death_penalty: float = -2.0
     stop_penalty: float = -0.1 # escolher STOP (ficar parado) a cada step do agente
     push_miss_penalty: float = -0.1 # empurrar sem oponente em contato no início do step
@@ -44,7 +50,7 @@ class ArenaConfig:
     frame_stack: int = 1 # quantos frames compõem a observação
     frame_skip: int = 1 # quantos substeps de física cada step do agente executa
     map_version: str = "arena-v1"
-    level: int = 0  # 0 = mapa histórico; 1 = plataformas móveis; 2 = areia/gelo
+    level: int = 0  # 0 = histórico; 1 = plataformas móveis; 2 = areia/gelo; 3 = botões/super moeda
     agent_roles: tuple = ()  # papéis por agente (HAPPO); () = simétrico
 
     # Hazards temporários do nível 2 (ignorados nos níveis 0/1)

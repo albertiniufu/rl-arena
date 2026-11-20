@@ -13,7 +13,7 @@ set -u
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)"
 cd "$ROOT"
-PY="${PY:-$HOME/venvs/main/bin/python}"
+PY="${PY:-python}"
 TAG="${TAG:-overnight_l2}"
 LEVEL="${LEVEL:-2}"
 EPPO_HOURS="${EPPO_HOURS:-5.4208333}"   # bloco cheio do IPPO (~5h25)

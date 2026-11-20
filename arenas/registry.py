@@ -23,6 +23,9 @@ class ArenaSpec:
     play_entry: str | None
     default_algorithm: str
     action_space: str  # "discrete" ou "box"
+    # Algoritmos aceitos por `--alg`; None = todos compatíveis com a ação
+    # (descobertos em `arenas/algs`).
+    algorithms: tuple[str, ...] | None = None
     supports_render: bool = False
 
 
@@ -36,6 +39,7 @@ ARENAS: dict[str, ArenaSpec] = {
         play_entry="arenas.seek_coin.play",
         default_algorithm="dqn",
         action_space="discrete",
+        algorithms=None,
         supports_render=True,
     ),
     "risk": ArenaSpec(
@@ -47,6 +51,7 @@ ARENAS: dict[str, ArenaSpec] = {
         play_entry="arenas.risk.play",
         default_algorithm="dqn",
         action_space="discrete",
+        algorithms=("dqn", "doubledqn_per_dueling", "ppo", "a2c"),
     ),
     "economy": ArenaSpec(
         name="economy",
@@ -57,12 +62,32 @@ ARENAS: dict[str, ArenaSpec] = {
         play_entry="arenas.economy.play",
         default_algorithm="ppo_continuous",
         action_space="box",
+        algorithms=("ppo_continuous", "ddpg", "td3", "sac"),
     ),
 }
 
 
 def available_arenas() -> tuple[str, ...]:
     return tuple(sorted(ARENAS))
+
+
+def algorithms_for_arena(name: str) -> tuple[str, ...]:
+    """Algoritmos aceitos por `--alg` na arena.
+
+    Arenas com lista explícita devolvem-na; `None` significa "todos os
+    pacotes compatíveis com o espaço de ação", descobertos na hora. A
+    importação de `alg_registry` (e de torch) é adiada até esta chamada.
+    """
+    spec = get_arena(name)
+    if spec.algorithms is not None:
+        return tuple(spec.algorithms)
+    from .algs.alg_registry import available_algorithms, load_algorithm
+    continuous = spec.action_space == "box"
+    return tuple(
+        alg for alg in available_algorithms()
+        if bool(getattr(load_algorithm(alg).Agent, "continuous", False))
+        is continuous
+    )
 
 
 def get_arena(name: str) -> ArenaSpec:

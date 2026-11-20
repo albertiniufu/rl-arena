@@ -10,12 +10,14 @@ import argparse
 from datetime import datetime
 from pathlib import Path
 
+from arenas.common.yaml_config import add_config_args, apply_yaml_defaults
 from arenas.common.agent_factory import build_agent
 from arenas.common.trainer import train_agent
+from arenas.registry import algorithms_for_arena
 from arenas.risk.config import RiskConfig
 from arenas.risk.env import RiskEnv
 
-AGENTS = ("dqn", "doubledqn_per_dueling", "ppo", "a2c")
+AGENTS = algorithms_for_arena("risk")
 
 
 def risk_metrics(info: dict) -> dict:
@@ -30,6 +32,7 @@ def risk_metrics(info: dict) -> dict:
 
 def parse_args(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
+    add_config_args(parser)
     parser.add_argument("--alg", choices=AGENTS, default="dqn")
     parser.add_argument("--episodes", type=int, default=300,
                         help="episódios adicionais ao retomar; com "
@@ -65,6 +68,7 @@ def parse_args(argv=None):
     parser.add_argument("--video-dir", default=None,
                         help="pasta dos vídeos (padrão: <checkpoint>/videos)")
     parser.add_argument("--video-fps", type=int, default=4)
+    apply_yaml_defaults(parser, argv, "train")
     return parser.parse_args(argv)
 
 

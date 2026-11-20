@@ -6,7 +6,7 @@ set -u
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)"
 cd "$ROOT"
-PY="${PY:-$HOME/venvs/main/bin/python}"
+PY="${PY:-python}"
 TAG="${TAG:-overnight_l2}"
 LEVEL="${LEVEL:-2}"
 PPO_HOURS="${PPO_HOURS:-1.4125}"       # ~1h24m45 restantes do bloco original

@@ -10,7 +10,7 @@ set -u
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)"
 cd "$ROOT"
 
-PY="${PY:-$HOME/venvs/main/bin/python}"
+PY="${PY:-python}"
 CKPT="${CKPT:-checkpoints/risk_world}"
 LOGS="${LOGS:-logs/risk_world}"
 DEADLINE="${DEADLINE:-2026-11-12 07:00}"

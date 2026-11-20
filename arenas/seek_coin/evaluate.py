@@ -13,21 +13,27 @@ from arenas.seek_coin.arena.multi_environment import ArenaMultiEnv
 from arenas.seek_coin.arena.scenario import Scenario
 from arenas.seek_coin.arena.config import ArenaConfig
 from arenas.seek_coin.arena.skins import list_skins
+from arenas.common.yaml_config import add_config_args, apply_yaml_defaults
 from arenas.algs.alg_registry import algorithm_from_checkpoint, apply_env_config, load_checkpoint
 
 def parse_args(argv=None):
     """Argumentos da CLI; separado de `main` para poder ser testado."""
     ap = argparse.ArgumentParser()
+    add_config_args(ap)
     ap.add_argument("--checkpoint", default="checkpoints/best.pt")
     ap.add_argument("--episodes", type=int, default=20)
     ap.add_argument("--render", action="store_true")
     ap.add_argument("--seed", type=int, default=1000)
     ap.add_argument("--level", type=int, default=None,
                     help="sobrescreve o nível gravado no checkpoint")
+    ap.add_argument("--episode-seconds", type=float, default=None,
+                    help="sobrescreve a duração do episódio gravada no "
+                         "checkpoint")
     ap.add_argument("--opponent", choices=["rule", "random", "coins"], default="rule",
                     help="política do adversário na avaliação (padrão: rule)")
     ap.add_argument("--skin", choices=list_skins(), default=None,
                     help="visual do renderer (arena/renderer_<skin>.py; padrão: clássico)")
+    apply_yaml_defaults(ap, argv, "evaluate")
     return ap.parse_args(argv)
 
 
@@ -95,6 +101,8 @@ def main():
     apply_env_config(cfg, meta)
     if args.level is not None:
         cfg.level = args.level
+    if args.episode_seconds is not None:
+        cfg.episode_seconds = args.episode_seconds
     if getattr(alg.Agent, "multi_agent", False) or cfg.n_agents > 1:
         _evaluate_multi(args, alg, cfg)
         return

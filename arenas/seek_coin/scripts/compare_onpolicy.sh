@@ -28,6 +28,7 @@ COMMON=(
   --frame-skip 3
   --batch-size 64
   --tensorboard
+  --budget-snapshots
 )
 
 run_alg() {

@@ -6,7 +6,7 @@ set -u
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)"
 cd "$ROOT"
-PY="${PY:-$HOME/venvs/main/bin/python}"
+PY="${PY:-python}"
 TAG="${TAG:-overnight}"
 OUT="checkpoints/$TAG/videos"
 LOG="logs/$TAG/videos.log"

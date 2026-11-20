@@ -8,8 +8,8 @@ from gymnasium import spaces
 from arenas.seek_coin.agents.baseline import PolicyContext, make_policy
 from .actions import N_ACTIONS, PUSH_LEFT, PUSH_RIGHT, STOP
 from .config import ArenaConfig
-from .engine import ArenaEngine, Character, Coin, Hazard
-from .levels import get_hazard_kinds
+from .engine import ArenaEngine, Character, Coin, Hazard, SuperCoin
+from .levels import get_level_channel_names
 from .observations import render_grid
 from .reward_shaping import coin_potential
 from .skins import load_renderer_class
@@ -35,10 +35,10 @@ class ArenaEnv(gym.Env):
         self.action_space = spaces.Discrete(N_ACTIONS)
         self.grid_h = self.cfg.height // self.cfg.cell
         self.grid_w = self.cfg.width // self.cfg.cell
-        self.hazard_channels = len(get_hazard_kinds(self.cfg.level))
+        self.extra_channels = len(get_level_channel_names(self.cfg.level))
         self.observation_space = spaces.Box(
             0.0, 1.0,
-            shape=((5 + self.hazard_channels) * self.cfg.frame_stack,
+            shape=((5 + self.extra_channels) * self.cfg.frame_stack,
                    self.grid_h, self.grid_w),
             dtype=np.float32,
         )
@@ -57,7 +57,7 @@ class ArenaEnv(gym.Env):
         """
         return render_grid(
             self.engine, self.cfg,
-            channels=5 + self.hazard_channels)
+            channels=5 + self.extra_channels)
 
     def _stacked(self):
         """Observação do agente: pilha de frames (5 * frame_stack, H, W), do mais antigo ao mais novo."""
@@ -81,6 +81,8 @@ class ArenaEnv(gym.Env):
             rng=self.np_random,
             self_character=self.engine.characters[index],
             player_character=self.engine.characters[0],
+            super_coin=self.engine.super_coin,
+            buttons=self.engine.buttons,
             # Pilha do início do step: `_frames` só ganha o frame novo no fim
             # de `step()`, então aqui é exatamente o que o DQN do adversário
             # viu em treino (frames dos steps anteriores).
@@ -122,6 +124,7 @@ class ArenaEnv(gym.Env):
         dt = 1.0 / self.cfg.fps
         reward = 0.0
         collected = deaths = transferred = 0
+        super_collected = super_activated = super_cancelled = super_expired = 0
         for _ in range(self.cfg.frame_skip):
             # Observação pré-substep: é o estado sobre o qual as políticas decidem.
             policy_obs = self._observation()
@@ -133,10 +136,15 @@ class ArenaEnv(gym.Env):
                 + event["deaths_delta"][0] * self.cfg.death_penalty
                 # Transferência assinada: ganha quem empurra, perde o alvo.
                 + event["coins_transferred"][0] * self.cfg.push_coin_reward
+                + event["super_coin_collected"][0] * self.cfg.super_coin_reward
             )
             collected += event["collected"][0]
             deaths += event["deaths_delta"][0]
             transferred += event["coins_transferred"][0]
+            super_collected += event["super_coin_collected"][0]
+            super_activated += int(event["super_coin_activated"])
+            super_cancelled += int(event["super_coin_cancelled"])
+            super_expired += int(event["super_coin_expired"])
         pbrs = 0.0
         if self.cfg.pbrs_coef:
             phi_after = coin_potential(self.engine, 0)
@@ -159,6 +167,14 @@ class ArenaEnv(gym.Env):
             "collected_this_step": collected,
             "deaths_this_step": deaths,
             "coins_transferred_this_step": transferred,
+            "super_coin_collected_this_step": super_collected,
+            "super_coin_activated_this_step": bool(super_activated),
+            "super_coin_cancelled_this_step": bool(super_cancelled),
+            "super_coin_expired_this_step": bool(super_expired),
+            "super_coin_active": self.engine.super_coin is not None,
+            "super_coin_timer": (
+                None if self.engine.super_coin is None
+                else float(self.engine.super_coin.timer)),
             "pbrs_this_step": pbrs,
         }
         self._last_info = info
@@ -175,6 +191,10 @@ class ArenaEnv(gym.Env):
             "characters": [asdict(c) for c in self.engine.characters],
             "coins": [asdict(c) for c in self.engine.coins],
             "hazards": [asdict(h) for h in self.engine.hazards],
+            "super_coin": (asdict(self.engine.super_coin)
+                           if self.engine.super_coin is not None else None),
+            "super_coin_cooldown": self.engine.super_coin_cooldown,
+            "button_state": dict(self.engine._button_state),
         }
 
     def set_state(self, state):
@@ -184,6 +204,12 @@ class ArenaEnv(gym.Env):
         self.engine.coins = [Coin(**c) for c in state["coins"]]
         self.engine.hazards = [
             Hazard(**h) for h in state.get("hazards", [])]
+        super_coin = state.get("super_coin")
+        self.engine.super_coin = (
+            SuperCoin(**super_coin) if super_coin is not None else None)
+        self.engine.super_coin_cooldown = float(
+            state.get("super_coin_cooldown", 0.0))
+        self.engine._button_state = dict(state.get("button_state", {}))
 
     def render(self):
         if self._renderer is None:

@@ -1,3 +1,32 @@
+"""Trainer completo da arena seek_coin.
+
+Este é o trainer “histórico” da arena original. Ele cobre currículo de
+oponentes, multiagente (IPPO/MAPPO/HAPPO), vetorização, sobreposição de
+coleta/update, TensorBoard e orçamento por tempo de parede. As arenas
+`risk` e `economy` usam o trainer genérico `arenas/common/trainer.py`; o
+seek_coin mantém o seu porque o laço tem bem mais casos.
+
+Mapa do arquivo (busque pelos nomes):
+
+- utilidades: `resolve_resume_path`, `budget_snapshots`,
+  `time_budget_reached`, `epsilon_for_episode`, `schedule_epsilon`;
+- argparse: `_DefaultHelpFormatter`, `parse_args`, `tensorboard_run_name`,
+  `validate_train_args`;
+- treino single-agent: `_train_vectorized`;
+- multiagente: `_train_multi_agent`;
+- treino on-policy vetorizado: `_train_vectorized_on_policy`;
+- entrada: `main`.
+
+As peças reutilizáveis ficam no pacote `arenas.seek_coin.training/`:
+`common.py` (helpers vetorizados e orçamento de tempo), `telemetry.py`
+(CSV, stats, checkpoint final, imagem da observação), `opponents.py`
+(currículo `auto` e load tolerante), `evaluation.py` (avaliação gulosa e
+vídeo) e `overlap.py` (coleta CPU sobreposta ao update GPU).
+
+Use o CLI da raiz (`python train.py --arena seek_coin ...`) ou rode este
+arquivo diretamente (`python arenas/seek_coin/train.py ...`).
+"""
+
 import sys
 from pathlib import Path
 
@@ -5,22 +34,47 @@ from pathlib import Path
 if __package__ in (None, ""):
     sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
-import argparse, copy, csv, os, queue, random, threading, time, warnings
-from pathlib import Path
+import argparse, csv, os, random, time
 import numpy as np
 import torch
-from arenas.seek_coin.agents.baseline import make_policy
 from arenas.seek_coin.arena.environment import ArenaEnv
 from arenas.seek_coin.arena.multi_environment import ArenaMultiEnv
 from arenas.seek_coin.arena.scenario import Scenario
 from arenas.seek_coin.arena.actions import PUSH_INTENSITY
 from arenas.seek_coin.arena.config import ArenaConfig
 from arenas.seek_coin.arena.skins import list_skins
+from arenas.seek_coin.arena.levels import get_level_channel_names
 from arenas.seek_coin.arena.vector import make_vector_env
+from arenas.seek_coin.training.common import (
+    _append_rollout_segment,
+    _final_observation,
+    _rollout_target,
+    _worker_final_info,
+    time_budget_reached,
+)
+from arenas.seek_coin.training.evaluation import (
+    greedy_evaluation,
+    multi_greedy_evaluation,
+    record_multi_episode,
+)
+from arenas.seek_coin.training.opponents import (
+    AutoOpponent,
+    _try_load_checkpoint,  # reexportado para os testes
+)
+from arenas.seek_coin.training.overlap import (
+    _act_batch_on_cpu,  # reexportado para os testes
+    _train_on_policy_overlap,
+)
+from arenas.seek_coin.training.telemetry import (
+    _episode_stats,
+    _finish_training,
+    _record_episode,
+    _training_csv,
+    obs_to_image,
+)
+from arenas.common.yaml_config import add_config_args, apply_yaml_defaults
 from arenas.algs.alg_registry import (
-    CheckpointPolicy,
     available_algorithms,
-    checkpoint_meta,
     load_algorithm,
     load_checkpoint,
     save_checkpoint,
@@ -35,6 +89,36 @@ def resolve_resume_path(resume, checkpoint_dir):
     return path
 
 
+def _coerce_agent_param(value: str):
+    """Converte `KEY=VALUE` em bool/int/float/str para o agente."""
+    low = value.strip().lower()
+    if low in ("true", "false"):
+        return low == "true"
+    try:
+        return int(value)
+    except ValueError:
+        pass
+    try:
+        return float(value)
+    except ValueError:
+        return value
+
+
+def parse_agent_params(items):
+    """Transforma `--agent-param k=v` em um dicionário tipado."""
+    params = {}
+    for item in items:
+        if "=" not in item:
+            raise SystemExit(
+                f"--agent-param inválido: {item!r} (use KEY=VALUE)")
+        key, value = item.split("=", 1)
+        key = key.strip()
+        if not key:
+            raise SystemExit(f"--agent-param sem chave: {item!r}")
+        params[key] = _coerce_agent_param(value.strip())
+    return params
+
+
 def budget_snapshots(total_episodes):
     """Episódios (absolutos) em que vale salvar um snapshot de orçamento.
 
@@ -43,182 +127,6 @@ def budget_snapshots(total_episodes):
     """
     return {b for b in (50, 100, 150, 300) if b <= total_episodes}
 
-
-def time_budget_reached(start, max_hours, now=None):
-    """O orçamento wall-clock do treino terminou?
-
-    `max_hours=None` desliga o orçamento. O relógio é monotônico e pode ser
-    injetado (`now`) para os testes; o treino checa ao fim de cada episódio.
-    """
-    if max_hours is None:
-        return False
-    now = time.monotonic() if now is None else now
-    return (now - start) >= max_hours * 3600.0
-
-
-def obs_to_image(obs, n_channels=5):
-    """Grade semântica (C, H, W) -> imagem RGB (H, W, 3) para o TensorBoard.
-
-    Com frame stack a observação tem `C * frame_stack` canais; usa apenas os
-    últimos `n_channels` (o frame atual). `n_channels=6` no modo multiagente
-    (IPPO/MAPPO), em que o canal 5 marca os aliados.
-    Canais: 0 plataformas, 1 jogador, 2 oponentes, 3 moedas, 4 mortos/respawn,
-    5 aliados (multiagente).
-    """
-    frame = obs[-n_channels:]
-    h, w = frame.shape[1], frame.shape[2]
-    img = np.zeros((h, w, 3), dtype=np.uint8)
-    colors = {
-        0: (120, 130, 140),
-        1: (70, 190, 250),
-        2: (240, 90, 95),
-        3: (245, 195, 55),
-        4: (180, 120, 200),
-        5: (120, 230, 140),
-    }
-    for channel, color in colors.items():
-        if channel < frame.shape[0]:
-            img[frame[channel] > 0] = color
-    return img
-
-
-def greedy_evaluation(agent, env, episodes, seed):
-    """Roda `episodes` episódios gulosos e devolve médias/desvios.
-
-    O ambiente é dedicado e as seeds são fixas (`seed + i`, como no
-    `evaluate.py`), então a avaliação é comparável entre algoritmos, seeds de
-    treino e retomadas. `act(..., greedy=True)` não usa ε nem atualiza pesos;
-    `reset(seed=...)` semeia os RNGs do próprio ambiente, de modo que os RNGs
-    do treino não são consumidos.
-    """
-    rows = []
-    for i in range(episodes):
-        obs, _ = env.reset(seed=seed + i)
-        total, info = 0.0, {}
-        while True:
-            action = agent.act(obs, greedy=True)
-            obs, reward, terminated, truncated, info = env.step(action)
-            total += reward
-            if terminated or truncated:
-                break
-        rows.append({
-            "reward": total,
-            "coins": info.get("coins", 0),
-            "deaths": info.get("deaths", 0),
-        })
-    rewards = np.array([r["reward"] for r in rows], dtype=float)
-    coins = np.array([r["coins"] for r in rows], dtype=float)
-    deaths = np.array([r["deaths"] for r in rows], dtype=float)
-    return {
-        "reward_mean": float(rewards.mean()),
-        "reward_std": float(rewards.std()),
-        "coins_mean": float(coins.mean()),
-        "coins_std": float(coins.std()),
-        "deaths_mean": float(deaths.mean()),
-        "deaths_std": float(deaths.std()),
-    }
-
-
-def _try_load_checkpoint(path, agent, frame_stack=None):
-    """Carrega `path` em `agent`; devolve False (com aviso) se não der.
-
-    Um `.pt` de outra arquitetura (ou corrompido) no diretório de checkpoints
-    não pode quebrar o treino do adversário `auto`: o arquivo é pulado.
-    Com `frame_stack` informado, checkpoints gravados com outro valor são
-    pulados antes do load. O motivo não é só a mensagem de erro: como a
-    primeira conv recebe `5 * frame_stack` canais, o `load_state_dict`
-    estoura no meio e deixa os tensores anteriores já sobrescritos — pular
-    antes evita esse carregamento parcial de pesos incompatíveis.
-    """
-    try:
-        if frame_stack is not None:
-            saved = int(checkpoint_meta(path)["config"].get("frame_stack", 1))
-            if saved != frame_stack:
-                warnings.warn(
-                    f"Checkpoint ignorado ({path}): frame_stack={saved} difere do "
-                    f"treino atual ({frame_stack})", UserWarning)
-                return False
-        load_checkpoint(path, agent, resume=False)
-    except Exception as exc:  # arquitetura antiga, arquivo corrompido, etc.
-        warnings.warn(f"Checkpoint ignorado ({path}): {exc}", UserWarning)
-        return False
-    return True
-
-
-class AutoOpponent:
-    """Currículo de adversários do `--opponent auto` (padrão).
-
-    Por episódio global (1-based; independe de `--episodes` e de retomadas):
-      - episódios 1..`random_episodes`: RandomPolicy
-      - próximos `baseline_episodes`: alterna `coins` e `rule`
-      - resto: joga contra o melhor checkpoint até o momento (guloso),
-        com probabilidade `alt_prob` de alternar para `random`, `coins`,
-        `rule` ou outro checkpoint disponível em `checkpoints/`.
-    As fases usam contagens absolutas (não frações do total) justamente para
-    a retomada reproduzível: o mesmo episódio global recebe a mesma política
-    em qualquer segmentação da execução. A aleatoriedade vem do módulo
-    `random` (seedado pelo --seed).
-    """
-    def __init__(self, env, alg, checkpoint_dir="checkpoints",
-                 random_episodes=50, baseline_episodes=100, alt_prob=0.1):
-        self.env = env
-        self.alg = alg
-        self.checkpoint_dir = Path(checkpoint_dir)
-        self.random_episodes = random_episodes
-        self.baseline_episodes = baseline_episodes
-        self.alt_prob = alt_prob
-        shape, n_actions = env.observation_space.shape, env.action_space.n
-        # Os agentes oponentes usam o MESMO algoritmo do treino: o state_dict
-        # do melhor checkpoint é copiado para cá em `update_best`, e as chaves
-        # precisam casar.
-        self.checkpoint_agent = alg.Agent(shape, n_actions)
-        self.alt_agent = alg.Agent(shape, n_actions)
-
-    def init_from_disk(self):
-        """Na retomada, carrega o melhor checkpoint existente como oponente.
-
-        Checkpoint incompatível é ignorado com aviso; o agente fica com os
-        pesos iniciais até o primeiro `update_best`.
-        """
-        best = self.checkpoint_dir / "best.pt"
-        if best.exists():
-            _try_load_checkpoint(best, self.checkpoint_agent,
-                                 frame_stack=self.env.cfg.frame_stack)
-        return self
-
-    def update_best(self, agent):
-        """Congela os pesos atuais do treino como 'melhor até o momento'."""
-        self.checkpoint_agent.online.load_state_dict(agent.online.state_dict())
-
-    def _checkpoints(self):
-        if not self.checkpoint_dir.is_dir():
-            return []
-        return sorted(self.checkpoint_dir.glob("*.pt"))
-
-    def choose(self, episode_number):
-        """Política do adversário para o episódio global (1-based)."""
-        n = episode_number
-        if n <= self.random_episodes:
-            return make_policy("random")
-        if n <= self.random_episodes + self.baseline_episodes:
-            return make_policy("coins" if n % 2 else "rule")
-        # Fase de checkpoint: melhor até o momento, com alternância ocasional.
-        if random.random() < self.alt_prob:
-            options = ["random", "coins", "rule"]
-            checkpoints = self._checkpoints()
-            if checkpoints:
-                options.append("checkpoint")
-            pick = random.choice(options)
-            if pick == "checkpoint":
-                # Tenta os arquivos em ordem sorteada; incompatíveis são
-                # pulados com aviso. Se nenhum carregar, cai para random.
-                for path in random.sample(checkpoints, len(checkpoints)):
-                    if _try_load_checkpoint(path, self.alt_agent,
-                                            frame_stack=self.env.cfg.frame_stack):
-                        return CheckpointPolicy(self.alt_agent)
-                return make_policy("random")
-            return make_policy(pick)
-        return CheckpointPolicy(self.checkpoint_agent)
 
 def epsilon_for_episode(ep, ramp_end, floor):
     """Rampa linear de epsilon por episódio: 1 → `floor` em `ramp_end`.
@@ -258,6 +166,7 @@ class _DefaultHelpFormatter(argparse.HelpFormatter):
         "run_name": "gerado da config",
         "max_hours": "sem limite",
         "skin": "clássico",
+        "episode_seconds": "90 (ArenaConfig)",
         "learn_every": "4 (com --envs 1) ou 1 (vetorizado)",
     }
 
@@ -280,16 +189,22 @@ class _DefaultHelpFormatter(argparse.HelpFormatter):
 def parse_args(argv=None):
     """Argumentos da CLI; separado de `main` para poder ser testado."""
     ap = argparse.ArgumentParser(formatter_class=_DefaultHelpFormatter)
+    add_config_args(ap)
     ap.add_argument("--episodes", type=int, default=300,
                     help="episódios de treino (adicionais ao retomar)")
     ap.add_argument("--level", type=int, default=0,
-                    help="nível do mapa (0 = mapa histórico; 1 = plataforma móvel)")
+                    help="nível do mapa (0 = histórico; 1 = plataformas móveis; "
+                         "2 = areia/gelo; 3 = botões/super moeda)")
+    ap.add_argument("--episode-seconds", type=float, default=None,
+                    help="duração do episódio em segundos; omitido usa o "
+                         "ArenaConfig")
     ap.add_argument("--render", action="store_true",
                     help="abre a janela do renderer durante o treino")
     ap.add_argument("--resume", type=str, default=None,
                     help="checkpoint de onde retomar (pesos, otimizador e contadores)")
     ap.add_argument("--save-every", type=int, default=10,
-                    help="salva latest.pt a cada N episódios")
+                    help="salva latest.pt a cada N episódios; 0 desliga o "
+                         "save periódico (o checkpoint final ainda é gravado)")
     ap.add_argument("--seed", type=int, default=7,
                     help="seed de random/numpy/torch; cada episódio usa seed+ep")
     ap.add_argument("--opponent", choices=["rule", "random", "coins", "auto"], default="auto",
@@ -314,6 +229,9 @@ def parse_args(argv=None):
     ap.add_argument("--stats", action="store_true",
                     help="coleta estatísticas do treino da CNN (perda, gradiente, Q) "
                          "em logs/stats.csv e no terminal")
+    ap.add_argument("--budget-snapshots", action="store_true",
+                    help="salva snapshots pesos-only em <checkpoint-dir>/budget/ "
+                         "nos episódios 50/100/150/300 (protocolo A/B)")
     ap.add_argument("--tensorboard", action="store_true",
                     help="grava escalares, histogramas e a observação em "
                          "logs/runs/<run-name> (abra com: tensorboard --logdir logs/runs)")
@@ -362,9 +280,10 @@ def parse_args(argv=None):
                          "de parede (0 desliga; multiagente)")
     ap.add_argument("--alg",
                     choices=[name for name in available_algorithms()
-                             if name != "ppo_continuous"],
+                             if name not in
+                             {"ppo_continuous", "ddpg", "td3", "sac"}],
                     default="dqn",
-                    help="algoritmo de RL: pacote alg_<nome> em algs/ "
+                    help="algoritmo de RL: pacote alg_<nome> em arenas/algs/ "
                          "(dqn = DQN enxuto; doubledqn_per_dueling = Double DQN "
                          "+ PER + dueling; ppo = PPO; eppo = PPO com crítico "
                          "evidencial; ppo_aes = PPO com entropia adaptativa; "
@@ -375,6 +294,11 @@ def parse_args(argv=None):
                          "restaurado do checkpoint sobrepõe este valor)")
     ap.add_argument("--batch-size", type=int, default=64,
                     help="tamanho do batch amostrado do replay buffer por learn()")
+    ap.add_argument("--agent-param", action="append", default=[],
+                    metavar="KEY=VALUE",
+                    help="hiperparâmetro extra do agente (ex.: "
+                         "rollout_steps=2048); pode repetir. Usado por "
+                         "campanhas de tuning/YAML.")
     ap.add_argument("--epsilon-ramp-episodes", type=int, default=150,
                     help="rampa linear de epsilon (1 → --epsilon-min) ao longo "
                          "destes episódios absolutos; 0 desliga a rampa e usa o "
@@ -398,6 +322,7 @@ def parse_args(argv=None):
                          "treino on-policy: a coleta do próximo rollout roda "
                          "enquanto a GPU atualiza o anterior (política "
                          "defasada em 1 rollout; exige PPO/A2C)")
+    apply_yaml_defaults(ap, argv, "train")
     args = ap.parse_args(argv)
     # O número de agentes depende do algoritmo: IPPO/MAPPO são multiagente.
     if args.agents is None:
@@ -452,6 +377,15 @@ def validate_train_args(args):
     if args.learn_every < 1:
         raise SystemExit(
             f"--learn-every deve ser >= 1 (recebido {args.learn_every})")
+    save_every = getattr(args, "save_every", 10)
+    if save_every < 0:
+        raise SystemExit(
+            f"--save-every deve ser >= 0 (recebido {save_every}); "
+            "0 desliga o save periódico")
+    episode_seconds = getattr(args, "episode_seconds", None)
+    if episode_seconds is not None and episode_seconds <= 0:
+        raise SystemExit(
+            f"--episode-seconds deve ser > 0 (recebido {episode_seconds})")
     eval_every = getattr(args, "eval_every", 0)
     if eval_every < 0:
         raise SystemExit(
@@ -542,40 +476,6 @@ def validate_train_args(args):
             raise SystemExit(f"{mode} é incompatível com {flag}: {reason}")
 
 
-def _final_observation(infos, index):
-    """Observação terminal do worker `index`, se o VectorEnv a expôs.
-
-    O gymnasium >= 1.0 usa a chave `final_obs`; versões/forks antigos usam
-    `final_observation`. Devolve `None` quando não há (autoreset NEXT_STEP,
-    em que o próprio `next_obs` do passo terminal já é o estado final).
-    """
-    for key in ("final_observation", "final_obs"):
-        array = infos.get(key)
-        if array is not None and array[index] is not None:
-            return array[index]
-    return None
-
-
-def _worker_final_info(infos, index):
-    """Info final do worker `index`, cobrindo os formatos do gymnasium.
-
-    Com autoreset NEXT_STEP (padrão do gymnasium >= 1.0), o `info` do passo
-    terminal já é o info final do episódio. Com SAME_STEP (ou versões
-    antigas), o info original vem em `final_info`, como dict de arrays por
-    worker ou array de objetos. As chaves internas de máscara (`_key`) e o
-    próprio `final_info` não fazem parte do info do episódio.
-    """
-    final = infos.get("final_info")
-    if isinstance(final, dict):
-        return {key: value[index] for key, value in final.items()
-                if not str(key).startswith("_")}
-    if final is not None and isinstance(final[index], dict):
-        return final[index]
-    return {key: value[index] for key, value in infos.items()
-            if not str(key).startswith("_") and key != "final_info"
-            and hasattr(value, "__getitem__")}
-
-
 def _train_vectorized(args, cfg, agent, ckpt_dir, start_ep, last_ep, best, budgets,
                       start_time):
     """Loop de treino com coleta vetorizada (`--envs > 1`, Fase 5).
@@ -595,8 +495,6 @@ def _train_vectorized(args, cfg, agent, ckpt_dir, start_ep, last_ep, best, budge
     decisão da Fase 5 (K=4 mantido), não um schedule equivalente.
     """
     n_envs = args.envs
-    log_path = Path("logs/training.csv")
-    new_file = not log_path.exists() or not args.resume
     total_episodes = start_ep - 1
     last_total = 0.0
     # Orçamentos já cruzados antes desta execução (retomada) não são regravados:
@@ -616,12 +514,7 @@ def _train_vectorized(args, cfg, agent, ckpt_dir, start_ep, last_ep, best, budge
         # Com autoreset NEXT_STEP, o passo seguinte ao fim de um episódio só
         # devolve a observação resetada; ele não vira transição de treino.
         pending_reset = np.zeros(n_envs, dtype=bool)
-        with log_path.open("w" if new_file else "a", newline="") as f:
-            writer = csv.DictWriter(f, fieldnames=[
-                "episode", "steps", "reward", "coins", "deaths",
-                "mean_loss", "epsilon"])
-            if new_file:
-                writer.writeheader()
+        with _training_csv(args.resume) as (f, writer):
             while total_episodes < last_ep:
                 schedule_epsilon(agent, total_episodes + 1,
                                  args.epsilon_ramp_episodes, args.epsilon_min)
@@ -666,43 +559,15 @@ def _train_vectorized(args, cfg, agent, ckpt_dir, start_ep, last_ep, best, budge
                     total_episodes += 1
                     info = _worker_final_info(infos, i)
                     reward = float(worker_rewards[i])
-                    row = {
-                        "episode": total_episodes,
-                        "steps": int(worker_steps[i]),
-                        "reward": reward,
-                        "coins": info.get("coins", 0),
-                        "deaths": info.get("deaths", 0),
-                        "mean_loss": mean_loss,
-                        "epsilon": agent.epsilon,
-                    }
-                    writer.writerow(row)
-                    f.flush()
-                    last_total = reward
-                    if reward > best:
-                        best = reward
-                        save_checkpoint(ckpt_dir / "best.pt", agent, cfg,
-                                        {"episode": total_episodes, "reward": reward,
-                                         "episodes_done": total_episodes,
-                                         "best_reward": best},
-                                        episodes=total_episodes)
-                    if total_episodes % args.save_every == 0:
-                        save_checkpoint(ckpt_dir / "latest.pt", agent, cfg,
-                                        {"episode": total_episodes, "reward": reward,
-                                         "episodes_done": total_episodes,
-                                         "best_reward": best},
-                                        episodes=total_episodes)
-                    # Snapshot ao CRUZAR o orçamento: o total pode pular o
-                    # valor exato, então não dá para comparar por igualdade.
-                    for budget in sorted(budgets - fired_budgets):
-                        if total_episodes >= budget:
-                            save_checkpoint(ckpt_dir / "budget" / f"ep{budget:03d}.pt",
-                                            agent, cfg, {"episode": budget},
-                                            episodes=budget)
-                            fired_budgets.add(budget)
+                    mean_loss = (float(np.mean(losses_since_row))
+                                 if losses_since_row else "")
                     ep_seconds = time.monotonic() - worker_ep_start[i]
-                    print(f"episode={total_episodes} reward={reward:.2f} "
-                          f"coins={row['coins']} deaths={row['deaths']} "
-                          f"epsilon={agent.epsilon:.3f} time={ep_seconds:.2f}s")
+                    last_total = reward
+                    best = _record_episode(
+                        f, writer, args, agent, cfg, ckpt_dir, budgets,
+                        fired_budgets, best, total_episodes, reward,
+                        int(worker_steps[i]), info.get("coins", 0),
+                        info.get("deaths", 0), mean_loss, ep_seconds)
                     worker_rewards[i] = 0.0
                     worker_steps[i] = 0
                     worker_ep_start[i] = time.monotonic()
@@ -713,156 +578,19 @@ def _train_vectorized(args, cfg, agent, ckpt_dir, start_ep, last_ep, best, budge
                     break
     finally:
         venv.close()
-    save_checkpoint(ckpt_dir / "latest.pt", agent, cfg,
-                    {"episode": total_episodes, "reward": last_total,
-                     "episodes_done": total_episodes, "best_reward": best},
-                    episodes=total_episodes)
+    _finish_training(agent, cfg, ckpt_dir, total_episodes, last_total, best)
 
 
-def _rollout_target(agent):
-    """Transições por update: `rollout_steps` no PPO, `n_steps` no A2C."""
-    target = getattr(agent, "rollout_steps", None) or getattr(agent, "n_steps", 1)
-    return max(1, int(target))
-
-
-def _append_rollout_segment(agent, segment):
-    """Adiciona um trecho contíguo de um worker ao rollout on-policy.
-
-    O buffer é uma lista plana; para o GAE/n-step não atravessar de um worker
-    para outro, o último passo de cada trecho é marcado como fim de episódio.
-    O alvo ainda faz bootstrap pelo `next_state` guardado, como num
-    truncamento — só a propagação da vantagem é interrompida.
-    """
-    last = len(segment) - 1
-    for k, (state, action, reward, next_state, terminated, log_prob, done) in \
-            enumerate(segment):
-        agent.buffer.add(state, action, reward, next_state, terminated,
-                         log_prob)
-        if done or k == last:
-            agent.buffer.mark_episode_end()
-
-
-def _record_episode(f, writer, args, agent, cfg, ckpt_dir, budgets,
-                    fired_budgets, best, episode, reward, steps, coins,
-                    deaths, mean_loss, ep_seconds):
-    """Grava a linha do episódio, salva checkpoints e imprime o resumo.
-
-    Usado pelos loops de coleta concorrentes (vetorizado e `--overlap`); os
-    checkpoints são salvos sempre na thread principal, nunca na de coleta.
-    """
-    row = {
-        "episode": episode,
-        "steps": steps,
-        "reward": reward,
-        "coins": coins,
-        "deaths": deaths,
-        "mean_loss": mean_loss,
-        "epsilon": agent.epsilon,
-    }
-    writer.writerow(row)
-    f.flush()
-    if reward > best:
-        best = reward
-        save_checkpoint(ckpt_dir / "best.pt", agent, cfg,
-                        {"episode": episode, "reward": reward,
-                         "episodes_done": episode, "best_reward": best},
-                        episodes=episode)
-    if episode % args.save_every == 0:
-        save_checkpoint(ckpt_dir / "latest.pt", agent, cfg,
-                        {"episode": episode, "reward": reward,
-                         "episodes_done": episode, "best_reward": best},
-                        episodes=episode)
-    for budget in sorted(budgets - fired_budgets):
-        if episode >= budget:
-            save_checkpoint(ckpt_dir / "budget" / f"ep{budget:03d}.pt",
-                            agent, cfg, {"episode": budget}, episodes=budget)
-            fired_budgets.add(budget)
-    print(f"episode={episode} reward={reward:.2f} coins={coins} "
-          f"deaths={deaths} epsilon={agent.epsilon:.3f} "
-          f"time={ep_seconds:.2f}s")
-    return best
-
-
-def multi_greedy_evaluation(agent, env, episodes, seed):
-    """Avaliação gulosa multiagente com seeds fixas (`seed + i`).
-
-    Devolve médias/desvios globais e médias por time, no mesmo espírito de
-    `greedy_evaluation`, mas consumindo ações conjuntas.
-    """
-    rows = []
-    for i in range(episodes):
-        obs, _ = env.reset(seed=seed + i)
-        totals = np.zeros(env.n_agents, dtype=np.float64)
-        agents = []
-        while True:
-            actions = agent.act_batch(obs, greedy=True)
-            obs, rewards, terminated, truncated, info = env.step(actions)
-            totals += rewards
-            agents = info.get("agents", [])
-            if bool(np.all(truncated)):
-                break
-        rows.append({
-            "reward": totals,
-            "coins": np.array([a["coins"] for a in agents], dtype=float),
-            "deaths": np.array([a["deaths"] for a in agents], dtype=float),
-        })
-    rewards = np.stack([r["reward"] for r in rows])
-    coins = np.stack([r["coins"] for r in rows])
-    deaths = np.stack([r["deaths"] for r in rows])
-    metrics = {
-        "reward_mean": float(rewards.mean()),
-        "reward_std": float(rewards.std()),
-        "coins_mean": float(coins.mean()),
-        "coins_std": float(coins.std()),
-        "deaths_mean": float(deaths.mean()),
-        "deaths_std": float(deaths.std()),
-    }
-    for team in sorted(set(env.scenario.team_ids)):
-        idx = [i for i, t in enumerate(env.scenario.team_ids) if t == team]
-        metrics[f"team{team}_reward_mean"] = float(rewards[:, idx].mean())
-        metrics[f"team{team}_coins_mean"] = float(coins[:, idx].mean())
-        metrics[f"team{team}_deaths_mean"] = float(deaths[:, idx].mean())
-    return metrics
-
-
-def record_multi_episode(agent, env, path, seed):
-    """Grava um episódio guloso em MP4 e devolve o caminho.
-
-    Usa um ambiente dedicado e `act_batch(greedy=True)`: não consome o RNG do
-    treino. Headless com `SDL_VIDEODRIVER=dummy` (definido pelo chamador).
-    """
-    try:
-        import imageio
-        import pygame
-        import pygame.surfarray  # noqa: F401 — submódulo precisa de import explícito
-    except ImportError as exc:
-        raise SystemExit(
-            "Gravar vídeo requer: pip install imageio imageio-ffmpeg") from exc
-    path = Path(path)
-    path.parent.mkdir(parents=True, exist_ok=True)
-    writer = imageio.get_writer(
-        str(path), fps=env.cfg.fps, codec="libx264",
-        output_params=["-pix_fmt", "yuv420p", "-crf", "23",
-                       "-movflags", "+faststart"])
-
-    def append_frame():
-        frame = np.transpose(
-            pygame.surfarray.array3d(pygame.display.get_surface()), (1, 0, 2))
-        writer.append_data(frame)
-
-    try:
-        obs, _ = env.reset(seed=seed)
-        env.render()
-        append_frame()
-        while True:
-            actions = agent.act_batch(obs, greedy=True)
-            obs, _, _, truncated, _ = env.step(actions)
-            append_frame()
-            if bool(np.all(truncated)):
-                break
-    finally:
-        writer.close()
-    return path
+def _conv_weights(agent):
+    """Primeira conv para o histograma, inclusive em agentes com ModuleDict."""
+    online = agent.online
+    features = getattr(online, "features", None)
+    if features is None and "actor" in getattr(online, "keys", lambda: [])():
+        actor = online["actor"]
+        features = getattr(actor, "features", None)
+    if features is not None and len(features) > 0:
+        return features[0].weight
+    return None
 
 
 def _train_multi_agent(args, cfg, scenario, env, agent, ckpt_dir, start_ep,
@@ -876,8 +604,6 @@ def _train_multi_agent(args, cfg, scenario, env, agent, ckpt_dir, start_ep,
     `logs/training.csv`.
     """
     n_agents = scenario.n_agents
-    log_path = Path("logs/training.csv")
-    new_file = not log_path.exists() or not args.resume
     eval_env = None
     if args.eval_every > 0:
         eval_env = ArenaMultiEnv(cfg, scenario=scenario, render_mode=None)
@@ -917,12 +643,7 @@ def _train_multi_agent(args, cfg, scenario, env, agent, ckpt_dir, start_ep,
     last_total = 0.0
     fired_budgets = {b for b in budgets if b <= start_ep - 1}
     try:
-        with log_path.open("w" if new_file else "a", newline="") as f:
-            writer = csv.DictWriter(f, fieldnames=[
-                "episode", "steps", "reward", "coins", "deaths",
-                "mean_loss", "epsilon"])
-            if new_file:
-                writer.writeheader()
+        with _training_csv(args.resume) as (f, writer):
             for ep in range(start_ep, last_ep + 1):
                 ep_start = time.monotonic()
                 obs, info = env.reset(seed=args.seed + ep)
@@ -1004,10 +725,14 @@ def _train_multi_agent(args, cfg, scenario, env, agent, ckpt_dir, start_ep,
                             f"train/team{t}/deaths", team["deaths"], ep)
                     tb_writer.add_image(
                         "env/observation",
-                        obs_to_image(obs[0], n_channels=6), ep,
-                        dataformats="HWC")
-                    tb_writer.add_histogram(
-                        "weights/conv1", agent.online.features[0].weight, ep)
+                        obs_to_image(
+                            obs[0],
+                            n_channels=6 + len(
+                                get_level_channel_names(cfg.level))),
+                        ep, dataformats="HWC")
+                    conv = _conv_weights(agent)
+                    if conv is not None:
+                        tb_writer.add_histogram("weights/conv1", conv, ep)
                     tb_writer.add_histogram(
                         "weights/head", agent.head_weights(), ep)
                     tb_writer.flush()
@@ -1036,17 +761,7 @@ def _train_multi_agent(args, cfg, scenario, env, agent, ckpt_dir, start_ep,
                         tb_writer.add_text("videos/ultimo", str(video_path), ep)
                         tb_writer.flush()
                 if stats_writer is not None:
-                    agg = {
-                        "mean_loss": mean_loss,
-                        "min_loss": float(np.min(losses)) if losses else 0.0,
-                        "max_loss": float(np.max(losses)) if losses else 0.0,
-                        "grad_mean": (float(np.mean(grad_norms))
-                                      if grad_norms else 0.0),
-                        "grad_max": (float(np.max(grad_norms))
-                                     if grad_norms else 0.0),
-                        "q_mean": float(np.mean(q_means)) if q_means else 0.0,
-                        "q_max": float(np.max(q_maxes)) if q_maxes else 0.0,
-                    }
+                    agg = _episode_stats(losses, grad_norms, q_means, q_maxes)
                     stats_row = {
                         "episode": ep, "steps": steps, "reward": reward_mean,
                         **agg, "epsilon": agent.epsilon,
@@ -1093,14 +808,7 @@ def _train_multi_agent(args, cfg, scenario, env, agent, ckpt_dir, start_ep,
             video_env.close()
         env.close()
     # O rollout parcial final é consumido antes de gravar o checkpoint.
-    if hasattr(agent, "finish_training"):
-        tail = agent.finish_training()
-        if tail is not None:
-            print(f"finish_training loss={tail:.5f}")
-    save_checkpoint(ckpt_dir / "latest.pt", agent, cfg,
-                    {"episode": total_episodes, "reward": last_total,
-                     "episodes_done": total_episodes, "best_reward": best},
-                    episodes=total_episodes)
+    _finish_training(agent, cfg, ckpt_dir, total_episodes, last_total, best)
 
 
 def _train_vectorized_on_policy(args, cfg, agent, ckpt_dir, start_ep, last_ep,
@@ -1115,8 +823,6 @@ def _train_vectorized_on_policy(args, cfg, agent, ckpt_dir, start_ep, last_ep,
     dividido por `--envs`, então cada update consome um rollout completo.
     """
     n_envs = args.envs
-    log_path = Path("logs/training.csv")
-    new_file = not log_path.exists() or not args.resume
     total_episodes = start_ep - 1
     last_total = 0.0
     fired_budgets = {b for b in budgets if b <= start_ep - 1}
@@ -1129,12 +835,7 @@ def _train_vectorized_on_policy(args, cfg, agent, ckpt_dir, start_ep, last_ep,
         worker_steps = np.zeros(n_envs, dtype=np.int64)
         worker_ep_start = np.full(n_envs, time.monotonic(), dtype=np.float64)
         pending_reset = np.zeros(n_envs, dtype=bool)
-        with log_path.open("w" if new_file else "a", newline="") as f:
-            writer = csv.DictWriter(f, fieldnames=[
-                "episode", "steps", "reward", "coins", "deaths",
-                "mean_loss", "epsilon"])
-            if new_file:
-                writer.writeheader()
+        with _training_csv(args.resume) as (f, writer):
             while total_episodes < last_ep:
                 # Trechos por worker: a ordem de inserção no buffer será
                 # worker-major, para cada trajetória ficar contígua.
@@ -1196,186 +897,7 @@ def _train_vectorized_on_policy(args, cfg, agent, ckpt_dir, start_ep, last_ep,
     finally:
         venv.close()
     # O último rollout pode ter ficado incompleto (fim dos episódios/max-hours).
-    if hasattr(agent, "finish_training"):
-        tail = agent.finish_training()
-        if tail is not None:
-            print(f"finish_training loss={tail:.5f}")
-    save_checkpoint(ckpt_dir / "latest.pt", agent, cfg,
-                    {"episode": total_episodes, "reward": last_total,
-                     "episodes_done": total_episodes, "best_reward": best},
-                    episodes=total_episodes)
-
-
-@torch.no_grad()
-def _act_batch_on_cpu(net, obs, generator):
-    """Ações e log-probs de um lote, pela cópia CPU da política.
-
-    O coletor roda numa thread separada e não toca na rede da GPU: assim a
-    coleta (CPU) e o update (GPU) acontecem de fato ao mesmo tempo. O
-    `generator` é exclusivo do coletor — o RNG default do torch é global
-    entre threads, e usar um gerador próprio evita que a amostragem da
-    coleta corrompa/consuma o RNG do update.
-    """
-    x = torch.as_tensor(np.asarray(obs), dtype=torch.float32)
-    logits, _ = net(x)
-    probs = torch.softmax(logits, dim=1)
-    actions = torch.multinomial(probs, 1, generator=generator).squeeze(1)
-    log_probs = torch.log_softmax(logits, dim=1).gather(
-        1, actions.unsqueeze(1)).squeeze(1)
-    return actions.numpy(), log_probs.numpy()
-
-
-def _train_on_policy_overlap(args, cfg, agent, ckpt_dir, start_ep, last_ep,
-                             best, budgets, start_time):
-    """Coleta (CPU) sobreposta ao update (GPU) para PPO/A2C.
-
-    Uma thread coleta rollouts com uma cópia CPU da política e os entrega por
-    uma fila de tamanho 1; a thread principal aplica o rollout ao buffer e faz
-    o update na GPU. Enquanto o update roda, o coletor já está no próximo
-    rollout, usando os pesos de antes do update — por isso a política fica
-    defasada em uma atualização. O PPO compensa isso guardando o log-prob da
-    ação no momento da coleta (`RolloutBuffer.log_probs_array`), então o ratio
-    compara com a política de comportamento correta; no A2C o único update por
-    rollout já é aproximadamente on-policy com a defasagem.
-
-    A fila limitada a 1 garante que o coletor fique no máximo um rollout à
-    frente: o ganho é a sobreposição, sem deixar a política envelhecer sem
-    limite.
-    """
-    n_envs = args.envs
-    chunk_steps = max(1, _rollout_target(agent) // n_envs)
-    log_path = Path("logs/training.csv")
-    new_file = not log_path.exists() or not args.resume
-    total_episodes = start_ep - 1
-    last_total = 0.0
-    fired_budgets = {b for b in budgets if b <= start_ep - 1}
-
-    venv = make_vector_env(n_envs, cfg, args.opponent, asynchronous=True)
-    # A rede de coleta vive na CPU; a rede de treino continua no device
-    # escolhido (GPU quando disponível). `eval()` desliga dropout/BN (não há),
-    # mas documenta que esta cópia nunca é treinada.
-    rollout_net = copy.deepcopy(agent.online).cpu().eval()
-    actor_net = copy.deepcopy(rollout_net)
-    weights_lock = threading.Lock()
-    payloads = queue.Queue(maxsize=1)
-    stop_event = threading.Event()
-    # Gerador da amostragem da coleta, separado do RNG global do update.
-    action_gen = torch.Generator().manual_seed(args.seed + 1)
-
-    def collect():
-        try:
-            obs, _ = venv.reset(seed=args.seed)
-            worker_rewards = np.zeros(n_envs, dtype=np.float64)
-            worker_steps = np.zeros(n_envs, dtype=np.int64)
-            worker_ep_start = np.full(n_envs, time.monotonic(),
-                                      dtype=np.float64)
-            pending_reset = np.zeros(n_envs, dtype=bool)
-            total = start_ep - 1
-            while not stop_event.is_set():
-                # Pesos do início do rollout: uma sincronização do update
-                # pode terminar no meio, mas só vale para o próximo rollout.
-                with weights_lock:
-                    rollout_net.load_state_dict(actor_net.state_dict())
-                segments = [[] for _ in range(n_envs)]
-                episodes = []
-                reason = None
-                for _ in range(chunk_steps):
-                    actions, log_probs = _act_batch_on_cpu(
-                        rollout_net, obs, action_gen)
-                    next_obs, rewards, terminations, truncations, infos = \
-                        venv.step(actions)
-                    for i in range(n_envs):
-                        if pending_reset[i]:
-                            pending_reset[i] = False
-                            worker_ep_start[i] = time.monotonic()
-                            continue
-                        done = bool(terminations[i]) or bool(truncations[i])
-                        final_obs = _final_observation(infos, i) if done else None
-                        next_state = final_obs if final_obs is not None else next_obs[i]
-                        segments[i].append((
-                            obs[i], int(actions[i]), float(rewards[i]),
-                            next_state, bool(terminations[i]),
-                            float(log_probs[i]), done))
-                        worker_rewards[i] += float(rewards[i])
-                        worker_steps[i] += 1
-                        if not done:
-                            continue
-                        if final_obs is None:
-                            pending_reset[i] = True
-                        total += 1
-                        info = _worker_final_info(infos, i)
-                        episodes.append({
-                            "episode": total,
-                            "reward": float(worker_rewards[i]),
-                            "steps": int(worker_steps[i]),
-                            "coins": info.get("coins", 0),
-                            "deaths": info.get("deaths", 0),
-                            "seconds": time.monotonic() - worker_ep_start[i],
-                        })
-                        worker_rewards[i] = 0.0
-                        worker_steps[i] = 0
-                        worker_ep_start[i] = time.monotonic()
-                    obs = next_obs
-                    if total >= last_ep:
-                        reason = "episodes"
-                        break
-                    if time_budget_reached(start_time, args.max_hours):
-                        reason = "budget"
-                        break
-                payloads.put({"segments": segments, "episodes": episodes,
-                              "total": total, "reason": reason})
-                if reason is not None:
-                    break
-        finally:
-            venv.close()
-
-    thread = threading.Thread(target=collect, name="coleta", daemon=True)
-    thread.start()
-    last_loss = None
-    with log_path.open("w" if new_file else "a", newline="") as f:
-        writer = csv.DictWriter(f, fieldnames=[
-            "episode", "steps", "reward", "coins", "deaths",
-            "mean_loss", "epsilon"])
-        if new_file:
-            writer.writeheader()
-        try:
-            while True:
-                payload = payloads.get()
-                for i in range(n_envs):
-                    _append_rollout_segment(agent, payload["segments"][i])
-                loss = agent.learn()
-                if loss is not None:
-                    last_loss = float(loss)
-                total_episodes = payload["total"]
-                for rec in payload["episodes"]:
-                    last_total = rec["reward"]
-                    best = _record_episode(
-                        f, writer, args, agent, cfg, ckpt_dir, budgets,
-                        fired_budgets, best, rec["episode"], rec["reward"],
-                        rec["steps"], rec["coins"], rec["deaths"],
-                        last_loss if last_loss is not None else "",
-                        rec["seconds"])
-                # Publica os pesos pós-update para o próximo rollout.
-                with weights_lock:
-                    actor_net.load_state_dict(
-                        {key: value.detach().cpu()
-                         for key, value in agent.online.state_dict().items()})
-                if payload["reason"] is not None:
-                    if payload["reason"] == "budget":
-                        print(f"orçamento de {args.max_hours:g} h atingido; "
-                              f"encerrando após o episódio {total_episodes}")
-                    break
-        finally:
-            stop_event.set()
-            thread.join(timeout=5)
-    if hasattr(agent, "finish_training"):
-        tail = agent.finish_training()
-        if tail is not None:
-            print(f"finish_training loss={tail:.5f}")
-    save_checkpoint(ckpt_dir / "latest.pt", agent, cfg,
-                    {"episode": total_episodes, "reward": last_total,
-                     "episodes_done": total_episodes, "best_reward": best},
-                    episodes=total_episodes)
+    _finish_training(agent, cfg, ckpt_dir, total_episodes, last_total, best)
 
 
 def main():
@@ -1391,6 +913,8 @@ def main():
     torch.manual_seed(args.seed)
     cfg = ArenaConfig()
     cfg.level = args.level
+    if args.episode_seconds is not None:
+        cfg.episode_seconds = args.episode_seconds
     cfg.frame_stack, cfg.frame_skip = args.frame_stack, args.frame_skip
     if args.push_coin_transfer is not None:
         cfg.push_coin_transfer = args.push_coin_transfer
@@ -1432,6 +956,7 @@ def main():
             opponent_policy="random" if args.opponent == "auto" else args.opponent,
             skin=args.skin)
     agent_kwargs = dict(lr=args.lr, batch_size=args.batch_size)
+    agent_kwargs.update(parse_agent_params(args.agent_param))
     if multi_agent:
         agent_kwargs.update(n_agents=scenario.n_agents,
                             team_ids=tuple(scenario.team_ids))
@@ -1457,10 +982,7 @@ def main():
             payload = load_checkpoint(resume_path, agent, resume=True)
         except ValueError as exc:
             raise SystemExit(f"Não foi possível retomar: {exc}") from exc
-        episodes_done = payload.get("episodes")
-        if episodes_done is None:
-            # Checkpoints sem o campo (ex.: salvos sem `episodes`) caem para o extra histórico.
-            episodes_done = payload.get("extra", {}).get("episodes_done", 0)
+        episodes_done = payload.get("episodes") or 0
         start_ep = int(episodes_done) + 1
         best = float(payload.get("extra", {}).get("best_reward", -float("inf")))
         saved_level = int((payload.get("config") or {}).get("level", 0))
@@ -1489,7 +1011,10 @@ def main():
     last_ep = start_ep + args.episodes - 1
     # Orçamentos contam episódios absolutos (retomada continua a numeração),
     # então o snapshot compara fases com o mesmo total de treino.
-    budgets = budget_snapshots(last_ep)
+    budgets = (budget_snapshots(last_ep)
+               if getattr(args, "budget_snapshots", False) else set())
+    # Orçamentos já cruzados antes desta execução (retomada) não são regravados.
+    fired_budgets = {b for b in budgets if b <= start_ep - 1}
     Path("logs").mkdir(exist_ok=True)
     # parents=True: o protocolo de A/B usa caminhos aninhados
     # (ex.: checkpoints/ab/fase0-branch/seed7-100).
@@ -1498,8 +1023,6 @@ def main():
         _train_multi_agent(args, cfg, scenario, env, agent, ckpt_dir,
                            start_ep, last_ep, best, budgets, start_time)
         return
-    log_path = Path("logs/training.csv")
-    new_file = not log_path.exists() or not args.resume
     if getattr(args, "overlap", False):
         # Coleta e update sobrepostos: o env de episódio único serviu só para
         # montar espaços/agente; o coletor cria os próprios workers.
@@ -1549,9 +1072,7 @@ def main():
         # então retomar com os mesmos argumentos continua as curvas.
         tb_writer = SummaryWriter(
             str(Path("logs/runs") / tensorboard_run_name(args)))
-    with log_path.open("w" if new_file else "a", newline="") as f:
-        writer = csv.DictWriter(f, fieldnames=["episode", "steps", "reward", "coins", "deaths", "mean_loss", "epsilon"])
-        if new_file: writer.writeheader()
+    with _training_csv(args.resume) as (f, writer):
         last_total = 0.0
         last_done = start_ep - 1
         # Contador global de passos: com --learn-every K o update acontece a
@@ -1597,20 +1118,8 @@ def main():
                 losses.append(end_loss)
             ep_seconds = time.monotonic() - ep_start
             last_total = total
-            row = {"episode": ep, "steps": steps, "reward": total, "coins": info.get("coins", 0),
-                   "deaths": info.get("deaths", 0),
-                   "mean_loss": float(np.mean(losses)) if losses else "", "epsilon": agent.epsilon}
-            writer.writerow(row); f.flush()
             if args.stats or tb_writer is not None:
-                agg = {
-                    "mean_loss": float(np.mean(losses)) if losses else 0.0,
-                    "min_loss": float(np.min(losses)) if losses else 0.0,
-                    "max_loss": float(np.max(losses)) if losses else 0.0,
-                    "grad_mean": float(np.mean(grad_norms)) if grad_norms else 0.0,
-                    "grad_max": float(np.max(grad_norms)) if grad_norms else 0.0,
-                    "q_mean": float(np.mean(q_means)) if q_means else 0.0,
-                    "q_max": float(np.max(q_maxes)) if q_maxes else 0.0,
-                }
+                agg = _episode_stats(losses, grad_norms, q_means, q_maxes)
             if tb_writer is not None:
                 tb_writer.add_scalar("train/reward", total, ep)
                 tb_writer.add_scalar("train/coins", info.get("coins", 0), ep)
@@ -1619,8 +1128,14 @@ def main():
                     tb_writer.add_scalar(f"train/{name}", agg[name], ep)
                 tb_writer.add_scalar("train/epsilon", agent.epsilon, ep)
                 tb_writer.add_scalar("train/buffer_size", len(agent.buffer), ep)
-                tb_writer.add_image("env/observation", obs_to_image(obs), ep, dataformats="HWC")
-                tb_writer.add_histogram("weights/conv1", agent.online.features[0].weight, ep)
+                tb_writer.add_image(
+                    "env/observation",
+                    obs_to_image(
+                        obs, n_channels=5 + len(get_level_channel_names(cfg.level))),
+                    ep, dataformats="HWC")
+                conv = _conv_weights(agent)
+                if conv is not None:
+                    tb_writer.add_histogram("weights/conv1", conv, ep)
                 # Cada algoritmo expõe a última camada que faz o papel de
                 # cabeça (no dueling, o ramo de valor escalar).
                 tb_writer.add_histogram("weights/head", agent.head_weights(), ep)
@@ -1636,25 +1151,14 @@ def main():
                 print(f"  stats: loss={stats_row['mean_loss']:.5f} q_mean={stats_row['q_mean']:.2f} "
                       f"q_max={stats_row['q_max']:.2f} grad={stats_row['grad_mean']:.2f} "
                       f"buffer={stats_row['buffer_size']}")
-            if total > best:
-                best = total
-                save_checkpoint(ckpt_dir / "best.pt", agent, cfg,
-                                {"episode": ep, "reward": total, "episodes_done": ep, "best_reward": best},
-                                episodes=ep)
-                if auto is not None:
-                    auto.update_best(agent)
-            if ep % args.save_every == 0:
-                save_checkpoint(ckpt_dir / "latest.pt", agent, cfg,
-                                {"episode": ep, "reward": total, "episodes_done": ep, "best_reward": best},
-                                episodes=ep)
-            if ep in budgets:
-                # Snapshot de orçamento só com pesos: fica fora do glob
-                # não-recursivo do `auto` e serve ao protocolo de A/B.
-                save_checkpoint(ckpt_dir / "budget" / f"ep{ep:03d}.pt", agent, cfg,
-                                {"episode": ep}, episodes=ep)
-            print(f"episode={ep} reward={total:.2f} coins={row['coins']} "
-                  f"deaths={row['deaths']} epsilon={agent.epsilon:.3f} "
-                  f"time={ep_seconds:.2f}s")
+            prev_best = best
+            best = _record_episode(
+                f, writer, args, agent, cfg, ckpt_dir, budgets,
+                fired_budgets, best, ep, total, steps, info.get("coins", 0),
+                info.get("deaths", 0),
+                float(np.mean(losses)) if losses else "", ep_seconds)
+            if auto is not None and best > prev_best:
+                auto.update_best(agent)
             if eval_env is not None and ep % args.eval_every == 0:
                 metrics = greedy_evaluation(
                     agent, eval_env, args.eval_episodes, args.eval_seed)
@@ -1678,14 +1182,7 @@ def main():
         tb_writer.close()
     # O PPO pode terminar com um rollout parcial; consumi-lo antes do
     # checkpoint final evita desperdiçar as últimas transições.
-    if hasattr(agent, "finish_training"):
-        tail_loss = agent.finish_training()
-        if tail_loss is not None:
-            print(f"finish_training loss={tail_loss:.5f}")
-    save_checkpoint(ckpt_dir / "latest.pt", agent, cfg,
-                    {"episode": last_done, "reward": last_total,
-                     "episodes_done": last_done, "best_reward": best},
-                    episodes=last_done)
+    _finish_training(agent, cfg, ckpt_dir, last_done, last_total, best)
     if eval_env is not None:
         eval_env.close()
     env.close()

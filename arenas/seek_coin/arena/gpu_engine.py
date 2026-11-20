@@ -29,6 +29,10 @@ class GpuSeekCoin:
                  team_ids=None):
         if device == "cuda" and not torch.cuda.is_available():
             device = "cpu"
+        if int(level) == 3:
+            raise NotImplementedError(
+                "nível 3 (botões/super moeda) ainda não está implementado "
+                "no GpuArenaVecEnv; use o ambiente CPU ou outro nível")
         self.device = torch.device(device)
         self.n_envs = int(n_envs)
         self.n_chars = int(n_chars)

@@ -1,0 +1,105 @@
+# Proposta estruturada de experimento.
+# Preencha todos os campos; use null apenas quando o campo não se aplica.
+id: EXP-AAAAMMDD-slug
+status: planned  # planned | running | done | aborted
+created_at: "YYYY-MM-DDTHH:MM:SS-03:00"
+author: "<nome>"
+title: "<título curto>"
+
+question: "<pergunta testável em uma frase>"
+hypothesis: "<o que se espera e por quê>"
+falsification: "<resultado que refutaria a hipótese>"
+claim_allowed: "<o que será possível afirmar se o resultado vier>"
+
+evidence:
+  prior_experiments: []
+  existing_setups: []
+  gap: "<lacuna concreta>"
+  analysis_only: false
+
+setup:
+  arena: "<seek_coin|risk|economy>"
+  level: null
+  scenario: null
+  setup_id: "<S0|S1|...>"
+  config_files: []
+  frame_stack: null
+  frame_skip: null
+  episode_seconds: null
+  reward: "<recompensa/objetivo>"
+
+algorithms:
+  candidates: []
+  baseline: []
+  ablations: []
+
+metrics:
+  primary:
+    name: "<reward|coins|raroc|steps_to_target>"
+    direction: "<maximize|minimize>"
+    definition: "<definição operacional>"
+    target: null
+  secondary: []
+
+budget:
+  seeds_train: []
+  seeds_eval: []
+  eval_episodes: null
+  env_steps_per_run: null
+  wall_hours_per_run: null
+  n_runs: null
+  hardware: "<CPU/GPU, concorrência>"
+
+tuning:
+  method: "<none|bo|asha|grid|random>"
+  space_file: null
+  budget_hours: null
+  trials: null
+  validation_seeds: []
+  selection_rule: "<como a melhor config será escolhida>"
+
+evaluation:
+  checkpoint: "<latest|best_validation|fixed_step>"
+  greedy: true
+  truncation: "<bootstrap|zero|...>"
+  same_protocol: true
+
+statistics:
+  independent_unit: "<train_seed|run|...>"
+  paired: null
+  test: "<wilcoxon|mann_whitney|bootstrap|...>"
+  confidence: 0.95
+  effect_size: "<cohens_d|cliffs_delta|...>"
+  correction: "<holm|bh|none>"
+  primary_analysis: "<análise por seed de treino>"
+  secondary_analysis: "<análise por episódio, com ressalva>"
+
+risks: []
+decision_criteria:
+  support: "<critério para suportar>"
+  inconclusive: "<critério para considerar inconclusivo>"
+  abandon: "<critério para abandonar/repetir>"
+
+execution:
+  command: ["python", "train.py", "--config", "configs/...yaml"]
+  cwd: "."
+  max_runtime: 21600
+  priority: 0
+  depends_on: []
+
+artifacts:
+  experiment_dir: "experiments/<id>"
+  checkpoints: []
+  results_csv: null
+  reports: []
+  videos: []
+  stats: []
+  documents: []
+commands: []
+
+registration:
+  registry_entry: null
+  setup_entry: null
+  backlog_item: null
+
+references: []

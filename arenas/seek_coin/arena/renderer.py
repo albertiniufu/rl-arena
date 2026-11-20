@@ -327,6 +327,43 @@ class ArenaRenderer:
                              (rect.right - 2, rect.y + 1), 1)
             pygame.draw.rect(surf, edge, rect, 1, border_radius=3)
 
+    def _draw_buttons(self, surf, engine):
+        for button in getattr(engine, "buttons", ()):
+            pressed = bool(getattr(engine, "_button_state", {}).get(
+                button.kind, False))
+            if button.kind == "activate":
+                body = (90, 205, 135) if pressed else (55, 160, 105)
+                edge = (190, 255, 215)
+            else:
+                body = (225, 100, 105) if pressed else (170, 65, 75)
+                edge = (255, 190, 195)
+            rect = pygame.Rect(int(button.x), int(button.y),
+                               int(button.w), int(button.h))
+            pygame.draw.rect(surf, (8, 10, 20), rect.move(2, 3),
+                             border_radius=4)
+            pygame.draw.rect(surf, body, rect, border_radius=4)
+            pygame.draw.rect(surf, edge, rect, 1, border_radius=4)
+
+    def _draw_super_coin(self, surf, engine):
+        coin = getattr(engine, "super_coin", None)
+        if coin is None:
+            return
+        pulse = 1.0 + 0.12 * math.sin(self.t * 8)
+        r = int(16 * pulse)
+        cx, cy = int(coin.x), int(coin.y)
+        if self.show_glow:
+            surf.blit(self._glow(34, (255, 220, 90)),
+                      (cx - 34, cy - 34))
+        pygame.draw.circle(surf, (255, 210, 50), (cx, cy), r)
+        pygame.draw.circle(surf, (255, 245, 180), (cx, cy), max(2, r - 4))
+        pygame.draw.circle(surf, (255, 255, 255), (cx - r // 3, cy - r // 3),
+                           max(1, r // 5))
+        for k in range(6):
+            ang = self.t * 2 + k * math.pi / 3
+            x = cx + int((r + 7) * math.cos(ang))
+            y = cy + int((r + 7) * math.sin(ang))
+            pygame.draw.circle(surf, (255, 240, 150), (x, y), 2)
+
     def _draw_coins(self, surf, engine):
         for co in engine.coins:
             ph = (co.x * 0.05) % 6.28
@@ -514,6 +551,8 @@ class ArenaRenderer:
         self._draw_background(self.world)
         self._draw_platforms(self.world, engine)
         self._draw_hazards(self.world, engine)
+        self._draw_buttons(self.world, engine)
+        self._draw_super_coin(self.world, engine)
         self._draw_coins(self.world, engine)
         coins = [c.coins for c in engine.characters]
         leader = coins.index(max(coins)) if coins and max(coins) > 0 and coins.count(max(coins)) == 1 else None

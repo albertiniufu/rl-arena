@@ -1,16 +1,19 @@
-"""Treino do banco-agente na arena economy (PPO contínuo)."""
+"""Treino do banco-agente na arena economy (algoritmos contínuos)."""
 from __future__ import annotations
 
 import argparse
 from pathlib import Path
 from types import SimpleNamespace
 
+from arenas.common.yaml_config import add_config_args, apply_yaml_defaults
 from arenas.common.agent_factory import build_agent
 from arenas.common.trainer import train_agent
 from arenas.economy.bank import BankConfig
 from arenas.economy.bank_env import BankEnv
 from arenas.economy.config import EconomyConfig
+from arenas.registry import algorithms_for_arena
 
+AGENTS = algorithms_for_arena("economy")
 METRIC_KEYS = ("raroc", "default_rate", "capital", "net_income", "ead_total")
 
 
@@ -21,8 +24,8 @@ def bank_metrics(info: dict) -> dict:
 
 def parse_args(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--alg", default="ppo_continuous",
-                        choices=["ppo_continuous"])
+    add_config_args(parser)
+    parser.add_argument("--alg", default="ppo_continuous", choices=AGENTS)
     parser.add_argument("--episodes", type=int, default=200,
                         help="episódios adicionais ao retomar")
     parser.add_argument("--seed", type=int, default=7)
@@ -38,6 +41,7 @@ def parse_args(argv=None):
     parser.add_argument("--checkpoint-dir", default="checkpoints/economy")
     parser.add_argument("--log-dir", default="logs/economy")
     parser.add_argument("--resume", default=None)
+    apply_yaml_defaults(parser, argv, "train")
     return parser.parse_args(argv)
 
 
@@ -51,14 +55,17 @@ def main(argv=None) -> None:
     )
     bank_cfg = BankConfig(max_steps=args.horizon, seed=args.seed)
     env = BankEnv(economy_cfg, bank_cfg)
+    agent_kwargs = dict(lr=args.lr, batch_size=args.batch_size)
+    if args.alg == "ppo_continuous":
+        agent_kwargs.update(rollout_steps=args.rollout_steps,
+                            epochs=args.epochs)
     agent = build_agent(
-        "ppo_continuous", env.observation_space.shape, env.action_space,
-        lr=args.lr, batch_size=args.batch_size,
-        rollout_steps=args.rollout_steps, epochs=args.epochs,
+        args.alg, env.observation_space.shape, env.action_space,
+        **agent_kwargs,
     )
     config = SimpleNamespace(
         economy=vars(economy_cfg), bank=vars(bank_cfg))
-    print(f"arena=economy alg=ppo_continuous device={agent.device} "
+    print(f"arena=economy alg={args.alg} device={agent.device} "
           f"obs={env.observation_space.shape} "
           f"actions={env.action_space.shape}")
     train_agent(

@@ -157,14 +157,18 @@ def load_checkpoint(path, agent, resume=False, map_location=None):
 
 
 def apply_env_config(cfg, meta):
-    """Aplica frame_stack/frame_skip e o cenário do checkpoint ao cfg.
+    """Aplica frame_stack/frame_skip, duração e cenário do checkpoint ao cfg.
 
     Checkpoints antigos não têm `n_agents`/`team_ids`; nesse caso os defaults
-    do `ArenaConfig` (0 e ()) mantêm o caminho single-agent.
+    do `ArenaConfig` (0 e ()) mantêm o caminho single-agent. O mesmo vale para
+    `episode_seconds`: checkpoints antigos mantêm o default atual.
     """
     config = (meta or {}).get("config") or {}
     if hasattr(cfg, "level"):
         cfg.level = int(config.get("level", cfg.level))
+    if hasattr(cfg, "episode_seconds"):
+        cfg.episode_seconds = float(
+            config.get("episode_seconds", cfg.episode_seconds))
     cfg.frame_stack = int(config.get("frame_stack", cfg.frame_stack))
     cfg.frame_skip = int(config.get("frame_skip", cfg.frame_skip))
     cfg.n_agents = int(config.get("n_agents", cfg.n_agents))

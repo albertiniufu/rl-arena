@@ -1,0 +1,148 @@
+id: EXP-20261120-ppo-vs-eppo-level3-10seeds
+status: running
+created_at: "2026-11-20T12:09:00-03:00"
+author: "equipe rl-arena"
+title: "PPO vs EPPO no nível 3 — confirmação com 10 seeds"
+
+question: "Com os presets tunados da BO e 2 h de treino por run, o EPPO supera o PPO no nível 3 do seek_coin em recompensa gulosa?"
+hypothesis: "O EPPO mantém vantagem em recompensa sobre o PPO quando o treino é repetido em 10 seeds, porque o crítico evidencial reduz a variância da estimativa de valor."
+falsification: "A hipótese é refutada se o EPPO não for superior ao PPO em recompensa, se o IC pareado incluir zero ou se o PPO tiver recompensa significativamente maior."
+claim_allowed: "Se o resultado vier na direção esperada, será possível afirmar que, neste setup S6, com estes presets fixos e 2 h por run, o EPPO tem recompensa gulosa média superior ao PPO. Não será possível generalizar para outros orçamentos, níveis ou hiperparâmetros."
+
+evidence:
+  prior_experiments:
+    - EXP-20261115-bo-level3-6h
+    - EXP-20261115-ppo-vs-eppo-30min
+  existing_setups:
+    - S6
+  gap: "A campanha BO no nível 3 favoreceu o EPPO, mas usou 1 seed de treino; a comparação de 30 min foi no nível 0. Falta uma confirmação multi-seed no nível 3 com presets fixos."
+  analysis_only: false
+
+setup:
+  arena: seek_coin
+  level: 3
+  scenario: "single-agent contra adversário rule"
+  setup_id: S6
+  config_files:
+    - configs/seek_coin/ppo-level3.yaml
+    - configs/seek_coin/eppo-level3.yaml
+  frame_stack: 4
+  frame_skip: 3
+  episode_seconds: 90
+  reward: "recompensa do ambiente no nível 3 (moedas, super moeda e sobrevivência)"
+
+algorithms:
+  candidates:
+    - ppo
+    - eppo
+  baseline:
+    - ppo
+  ablations: []
+
+metrics:
+  primary:
+    name: reward
+    direction: maximize
+    definition: "reward guloso médio em 50 episódios de avaliação, por seed de treino"
+    target: null
+  secondary:
+    - coins
+    - deaths
+    - duration_steps
+    - env_steps_real
+
+budget:
+  seeds_train: [7, 42, 123, 314, 999, 2024, 2025, 2026, 2718, 3141]
+  seeds_eval: [2000]
+  eval_episodes: 50
+  env_steps_per_run: "~4M (estimativa; o orçamento controlado é 2 h de parede e o valor real será registrado no results.csv)"
+  wall_hours_per_run: 2
+  n_runs: 20
+  hardware: "1× RTX 3050 6 GB; PPO+EPPO em paralelo por seed, batches sequenciais"
+
+tuning:
+  method: none
+  space_file: null
+  budget_hours: null
+  trials: null
+  validation_seeds: []
+  selection_rule: "presets fixos da BO (configs/seek_coin/{ppo,eppo}-level3.yaml); sem tuning novo"
+
+evaluation:
+  checkpoint: latest
+  greedy: true
+  truncation: "sem bootstrap; recompensa acumulada do episódio"
+  same_protocol: true
+
+statistics:
+  independent_unit: train_seed
+  paired: true
+  test: wilcoxon
+  confidence: 0.95
+  effect_size: cohens_d
+  correction: holm
+  primary_analysis: "uma linha por seed de treino; Wilcoxon pareado e Cohen's d"
+  secondary_analysis: "por episódio, apenas como diagnóstico e com ressalva de pseudo-replicação"
+
+risks:
+  - "Orçamento de parede: PPO e EPPO podem dar números diferentes de passos de ambiente em 2 h."
+  - "PPO e EPPO rodam em paralelo na mesma GPU; a contenção é compartilhada, mas pode afetar os dois de forma diferente."
+  - "Os presets foram escolhidos em trials de 10 min; 2 h pode mudar o ranking."
+  - "10 seeds melhoram o poder, mas ainda não cobrem toda a variabilidade de hardware e ambiente."
+  - "Checkpoint latest pode não ser a melhor política de cada run."
+
+decision_criteria:
+  support: "EPPO > PPO em reward, com IC 95% da diferença pareada inteiramente acima de zero, p corrigido < 0,05 e Cohen's d >= 0,5."
+  inconclusive: "IC da diferença inclui zero ou o p corrigido não é significativo; não declarar vencedor."
+  abandon: "PPO é significativamente melhor ou o EPPO falha de forma sistemática; registrar o resultado negativo e revisar os presets."
+
+execution:
+  command:
+    - python
+    - scripts/rigorous_validation.py
+    - --hours
+    - "2"
+    - --seeds
+    - "7,42,123,314,999,2024,2025,2026,2718,3141"
+    - --eval-episodes
+    - "50"
+    - --eval-seed
+    - "2000"
+    - --ppo-config
+    - configs/seek_coin/ppo-level3.yaml
+    - --eppo-config
+    - configs/seek_coin/eppo-level3.yaml
+    - --out
+    - experiments/EXP-20261120-ppo-vs-eppo-level3-10seeds
+  cwd: "."
+  max_runtime: 108000
+  priority: 0
+  depends_on: []
+
+artifacts:
+  experiment_dir: "experiments/EXP-20261120-ppo-vs-eppo-level3-10seeds"
+  checkpoints:
+    - "experiments/EXP-20261120-ppo-vs-eppo-level3-10seeds/seed-*/{ppo,eppo}/checkpoints/latest.pt"
+  results_csv: "experiments/EXP-20261120-ppo-vs-eppo-level3-10seeds/results-by-train-seed.csv"
+  reports:
+    - "experiments/EXP-20261120-ppo-vs-eppo-level3-10seeds/report-by-seed-reward.md"
+    - "experiments/EXP-20261120-ppo-vs-eppo-level3-10seeds/report-by-seed-coins.md"
+    - "experiments/EXP-20261120-ppo-vs-eppo-level3-10seeds/report-by-seed-deaths.md"
+  videos: []
+  stats:
+    - "experiments/EXP-20261120-ppo-vs-eppo-level3-10seeds/results.csv"
+    - "experiments/EXP-20261120-ppo-vs-eppo-level3-10seeds/campaign.json"
+  documents:
+    - "docs/experimentos/EXP-20261120-ppo-vs-eppo-level3-10seeds.md"
+    - "docs/experimentos/EXP-20261120-ppo-vs-eppo-level3-10seeds.yaml"
+  commands: []
+
+registration:
+  registry_entry: "docs/experimentos/registro.md"
+  setup_entry: "S6"
+  backlog_item: null
+
+references:
+  - "Patterson et al., Empirical Design in Reinforcement Learning, JMLR, arXiv:2304.01315"
+  - "docs/experimentos/EXP-20261115-bo-level3-6h.md"
+  - "docs/experimentos/empirical-design.md"

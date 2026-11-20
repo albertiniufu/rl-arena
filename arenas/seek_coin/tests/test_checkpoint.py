@@ -121,12 +121,15 @@ def test_load_checkpoint_rejects_corrupt_target_without_touching_online(tmp_path
 def test_apply_env_config():
     cfg = ArenaConfig()
     assert cfg.frame_stack == 1 and cfg.frame_skip == 1
-    apply_env_config(cfg, {"config": {"frame_stack": 4, "frame_skip": 3}})
+    apply_env_config(cfg, {"config": {
+        "frame_stack": 4, "frame_skip": 3, "episode_seconds": 120.0}})
     assert cfg.frame_stack == 4 and cfg.frame_skip == 3
-    # Checkpoint sem as chaves: mantém os defaults 1/1 de um cfg novo.
+    assert cfg.episode_seconds == 120.0
+    # Checkpoint sem as chaves: mantém os defaults de um cfg novo.
     cfg = ArenaConfig()
     apply_env_config(cfg, {"config": {}})
     assert cfg.frame_stack == 1 and cfg.frame_skip == 1
+    assert cfg.episode_seconds == 90.0
 
 
 def test_try_load_checkpoint_skips_frame_stack_mismatch(tmp_path):
@@ -154,12 +157,16 @@ def test_play_parse_args():
     args = parse_args(["--player", "coins", "--record", "x.mp4"])
     assert args.player == "coins"
     assert args.record == "x.mp4"
+    assert defaults.episode_seconds is None
+    assert parse_args(["--episode-seconds", "45"]).episode_seconds == 45.0
 
 
 def test_evaluate_opponent_flag():
     from arenas.seek_coin.evaluate import parse_args
 
     assert parse_args([]).opponent == "rule"
+    assert parse_args([]).episode_seconds is None
+    assert parse_args(["--episode-seconds", "45"]).episode_seconds == 45.0
     for name in ("rule", "random", "coins"):
         assert parse_args(["--opponent", name]).opponent == name
 

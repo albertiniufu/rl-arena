@@ -9,7 +9,7 @@ set -u
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)"
 cd "$ROOT"
-PY="${PY:-$HOME/venvs/main/bin/python}"
+PY="${PY:-python}"
 TAG="${TAG:-long1900}"
 DEADLINE="${DEADLINE:-$(date '+%Y-%m-%d') 19:00:00}"
 OUT="${OUT:-logs/$TAG}"

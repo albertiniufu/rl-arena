@@ -29,7 +29,7 @@ def build_agent(alg_name: str, obs_shape, action_space, *, lr=None,
     if is_box and not continuous:
         raise SystemExit(
             f"O algoritmo {alg_name!r} não suporta ações contínuas; "
-            "use `--alg ppo_continuous`.")
+            "use ppo_continuous, ddpg, td3 ou sac.")
     if not is_box and continuous:
         raise SystemExit(
             f"O algoritmo {alg_name!r} é só para ações contínuas; "

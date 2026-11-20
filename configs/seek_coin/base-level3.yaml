@@ -1,0 +1,18 @@
+# Configuração base do nível 3 usada pelas campanhas de BO.
+# O campo `arena` permite rodar: python train.py --config configs/seek_coin/base-level3.yaml
+arena: seek_coin
+setup: S6
+level: 3
+episode_seconds: 90
+frame_stack: 4
+frame_skip: 3
+opponent: rule
+seed: 7
+
+training:
+  episodes: 1000000
+  save_every: 10
+
+evaluation:
+  episodes: 20
+  seed: 1000

@@ -1,0 +1,44 @@
+# Espaço de busca do EPPO para a campanha BO genérica.
+algorithm: eppo
+params:
+  - name: lr
+    type: float
+    low: 0.0001
+    high: 0.001
+    log: true
+  - name: batch_size
+    type: choice
+    choices: [64, 128, 256]
+  - name: rollout_steps
+    type: choice
+    choices: [1024, 2048, 4096]
+  - name: epochs
+    type: choice
+    choices: [4, 10]
+  - name: clip
+    type: float
+    low: 0.1
+    high: 0.3
+  - name: entropy_coef
+    type: float
+    low: 0.0
+    high: 0.02
+  - name: gae_lambda
+    type: float
+    low: 0.9
+    high: 0.99
+  - name: max_grad_norm
+    type: float
+    low: 0.5
+    high: 10.0
+  - name: ucb_radius
+    type: float
+    low: 0.0
+    high: 0.05
+  - name: evidential_coef
+    type: float
+    low: 0.0
+    high: 0.05
+  - name: gae_variant
+    type: choice
+    choices: [cor, ind]
