@@ -8,6 +8,7 @@
 | `rigorous_validation.py` | Validação multi-seed com presets fixos de config ou `best.json` de BO; análise primária por seed de treino. |
 | `job_queue_server.py` | Servidor local da fila de experimentos + interface web. |
 | `experiment.py` | Submete um experimento novo à fila; inicia o servidor se necessário. |
+| `retomar_experimentos.sh` | Depois de um reboot: checa memória, sobe a Fila, despausa e dá `retry` no job pendente. Use `--status` para só inspecionar. Ver [`docs/experimentos/retomada-20261120.md`](../docs/experimentos/retomada-20261120.md). |
 
 Exemplo:
 
