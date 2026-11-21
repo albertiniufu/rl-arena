@@ -137,7 +137,7 @@ execution:
     - configs/seek_coin/eppo-level4.yaml
     - --out
     - /home/albertini@win.ufu.br/rl-arena/experiments/EXP-20261120-ppo-vs-eppo-level4-7seeds
-  cwd: "/home/albertini@win.ufu.br/rl-arena/.claude/worktrees/level-4-visao-local"
+  cwd: "."
   max_runtime: 144000
   priority: 0
   depends_on:
