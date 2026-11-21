@@ -6,7 +6,7 @@ set -u
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)"
 cd "$ROOT"
-PY="${PY:-$HOME/venvs/main/bin/python}"
+PY="${PY:-python}"
 OUT="${OUT:-logs/compare15}"
 CKPT="${CKPT:-checkpoints/compare15}"
 mkdir -p "$OUT" "$CKPT" logs/runs

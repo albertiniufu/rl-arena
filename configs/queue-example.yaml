@@ -1,0 +1,31 @@
+# Exemplo de fila para a interface web.
+# Uso:
+#   python scripts/job_queue_server.py --load configs/queue-example.yaml
+jobs:
+  - name: ppo-level3-15min
+    command: >-
+      python train.py --config configs/seek_coin/ppo-level3.yaml
+      --set training.max_hours=0.25
+      --set training.checkpoint_dir=experiments/queue-runs/ppo
+    cwd: .
+    priority: 10
+    max_runtime: 1200
+    tags:
+      arena: seek_coin
+      alg: ppo
+    artifacts:
+      - experiments/queue-runs/ppo
+
+  - name: eppo-level3-15min
+    command: >-
+      python train.py --config configs/seek_coin/eppo-level3.yaml
+      --set training.max_hours=0.25
+      --set training.checkpoint_dir=experiments/queue-runs/eppo
+    cwd: .
+    priority: 9
+    max_runtime: 1200
+    tags:
+      arena: seek_coin
+      alg: eppo
+    artifacts:
+      - experiments/queue-runs/eppo

@@ -5,9 +5,13 @@ venv/
 # Artefatos gerados
 checkpoints/
 logs/
+experiments/
+videos/
 __pycache__/
 *.pyc
 .pytest_cache/
+.ipynb_checkpoints/
+*.egg-info/
 
 # Pacote para o Colab (gerado por colab/build_zip.sh)
 dist/

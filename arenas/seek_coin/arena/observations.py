@@ -13,6 +13,8 @@ usa 6 canais e renderiza a grade **do ponto de vista de cada agente**:
 """
 import numpy as np
 
+from .levels import get_level_channel_names
+
 
 def render_grid(engine, cfg, viewer=0, channels=5, team_ids=None):
     """Monta a grade `(channels, H, W)` vista pelo agente `viewer`.
@@ -51,16 +53,33 @@ def render_grid(engine, cfg, viewer=0, channels=5, team_ids=None):
         col = 0 if col < 0 else (gw - 1 if col >= gw else col)
         row = 0 if row < 0 else (gh - 1 if row >= gh else row)
         g[3, row, col] = 1.0
-    # Hazards do nível 2: canais extras logo após os canais base.
+    # Canais extras do nível (hazards, botões e super moeda) logo após os base.
     base_channels = 6 if team_ids is not None else 5
-    for hazard in getattr(engine, "hazards", ()):
-        channel = base_channels + (0 if hazard.kind == "sand" else 1)
-        if hazard.kind not in ("sand", "ice") or channel >= channels:
-            continue
-        c0 = max(0, int(hazard.x // cell))
-        c1 = min(gw, int((hazard.x + hazard.w) // cell))
-        r0 = max(0, int(hazard.y // cell))
-        r1 = min(gh, max(int((hazard.y + hazard.h) // cell),
-                         int(hazard.y // cell) + 1))
+
+    def fill_rect(channel, x, y, w, h):
+        c0 = max(0, int(x // cell))
+        c1 = min(gw, max(int((x + w) // cell), int(x // cell) + 1))
+        r0 = max(0, int(y // cell))
+        r1 = min(gh, max(int((y + h) // cell), int(y // cell) + 1))
         g[channel, r0:r1, c0:c1] = 1.0
+
+    for offset, name in enumerate(get_level_channel_names(cfg.level)):
+        channel = base_channels + offset
+        if channel >= channels:
+            continue
+        if name in ("sand", "ice"):
+            for hazard in getattr(engine, "hazards", ()):
+                if hazard.kind == name:
+                    fill_rect(channel, hazard.x, hazard.y,
+                              hazard.w, hazard.h)
+        elif name in ("activate_button", "cancel_button"):
+            kind = "activate" if name == "activate_button" else "cancel"
+            for button in getattr(engine, "buttons", ()):
+                if button.kind == kind:
+                    fill_rect(channel, button.x, button.y,
+                              button.w, button.h)
+        elif name == "super_coin":
+            coin = getattr(engine, "super_coin", None)
+            if coin is not None:
+                fill_rect(channel, coin.x - 8, coin.y - 8, 16, 16)
     return g

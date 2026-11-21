@@ -12,6 +12,9 @@ A partir da raiz do repositório:
 
 ```bash
 python train.py --arena economy --alg ppo_continuous --episodes 200
+python train.py --arena economy --alg ddpg --episodes 200
+python train.py --arena economy --alg td3 --episodes 200
+python train.py --arena economy --alg sac --episodes 200
 python evaluate.py --arena economy --checkpoint checkpoints/economy/best.pt
 python play.py --arena economy --checkpoint checkpoints/economy/best.pt
 
@@ -22,8 +25,8 @@ python -m arenas.economy.demo --steps 24          # modo governo
 pytest -q arenas/economy
 ```
 
-O treino usa o PPO contínuo compartilhado (`arenas/algs/alg_ppo_continuous`),
-com checkpoint no mesmo formato das demais arenas.
+O treino aceita `ppo_continuous`, `ddpg`, `td3` e `sac`; todos usam
+ações `Box` e o mesmo formato de checkpoint das demais arenas.
 
 ## Agente banco (`BankEnv`)
 

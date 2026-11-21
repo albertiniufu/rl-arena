@@ -75,3 +75,4 @@ Nomes de territórios aceitam prefixo único (ex.: `ala` → `Alaska`).
 | `env.py` | `RiskEnv`: ambiente Gymnasium com máscara de ações. |
 | `play.py` | Modo jogável em texto e demo bot × bot. |
 | `tests/test_risk.py` | Tabuleiro, regras, combate, bot e contrato Gym. |
+| `scripts/train_risk_night.sh` | Treino noturno com TensorBoard, vídeos e retomada — ver [`scripts/README.md`](scripts/README.md). |

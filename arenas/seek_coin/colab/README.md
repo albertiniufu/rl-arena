@@ -34,8 +34,9 @@
 - treina com `train.py` (`--alg dqn` ou `--alg doubledqn_per_dueling`,
   frame stack 4, frame skip 3; tudo ajustável na célula de configuração);
 - mostra o TensorBoard (`logs/runs`);
-- avalia `best.pt` e os snapshots de orçamento (`budget/ep*.pt`) contra o
-  adversário `rule`, no protocolo do A/B (20 episódios, seed 1000);
+- avalia `best.pt` e os snapshots de orçamento (`budget/ep*.pt`, gerados com
+  `--budget-snapshots`) contra o adversário `rule`, no protocolo do A/B
+  (20 episódios, seed 1000);
 - plota a curva de treino;
 - empacota `checkpoints/` e `logs/` em `rl-arena-resultados.zip`.
 

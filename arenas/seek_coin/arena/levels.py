@@ -7,6 +7,12 @@ alcançáveis apenas quando a plataforma mais alta está no ponto máximo
 (y=145); na posição baixa (y=185) o pulo não chega. O nível 2 usa o mesmo
 mapa do nível 1 e acrescenta hazards temporários: areia (reduz a velocidade)
 e gelo (escorrega ~1/5 da largura da tela numa direção aleatória).
+
+O nível 3 usa o mapa do nível 1 com dois botões de contato e uma super moeda:
+pisar no botão de ativação (chão da esquerda) liga a super moeda no chão da
+direita por `super_coin_seconds`; o botão de cancelamento fica na plataforma
+central e desliga a super moeda. Qualquer personagem pode ativar, cancelar ou
+coletar; a coleta paga `super_coin_reward` e adiciona `super_coin_coins`.
 """
 from __future__ import annotations
 
@@ -33,6 +39,17 @@ class MovingPlatform:
         if self.axis == "x":
             return (self.x + offset, self.y, self.w, self.h)
         return (self.x, self.y + offset, self.w, self.h)
+
+
+@dataclass(frozen=True)
+class ButtonSpec:
+    """Botão de contato do nível 3 (sem ação extra: pisar já ativa)."""
+
+    kind: str  # "activate" ou "cancel"
+    x: float
+    y: float
+    w: float
+    h: float
 
 
 STATIC_PLATFORMS = {
@@ -97,6 +114,40 @@ HAZARD_KINDS = {
     0: (),
     1: (),
     2: ("sand", "ice"),
+    3: (),
+}
+
+# Nível 3: mesmo mapa do nível 1, com botões e uma super moeda.
+STATIC_PLATFORMS[3] = STATIC_PLATFORMS[1]
+FIXED_COIN_POSITIONS[3] = FIXED_COIN_POSITIONS[1]
+MOVING_COIN_SPECS[3] = MOVING_COIN_SPECS[1]
+MOVING_PLATFORMS[3] = MOVING_PLATFORMS[1]
+
+# Ativação no chão da esquerda; cancelamento na plataforma central.
+BUTTONS = {
+    0: (),
+    1: (),
+    2: (),
+    3: (
+        ButtonSpec("activate", 25.0, 348.0, 55.0, 12.0),
+        ButtonSpec("cancel", 270.0, 203.0, 60.0, 12.0),
+    ),
+}
+
+# A super moeda nasce no chão da direita; o agente precisa atravessar o mapa.
+SUPER_COIN_POSITIONS = {
+    0: None,
+    1: None,
+    2: None,
+    3: (610.0, 342.0),
+}
+
+# Canais extras de observação, na ordem em que entram na grade.
+LEVEL_CHANNEL_NAMES = {
+    0: (),
+    1: (),
+    2: ("sand", "ice"),
+    3: ("activate_button", "cancel_button", "super_coin"),
 }
 
 
@@ -131,10 +182,40 @@ def get_moving_coins(level: int):
 
 
 def get_hazard_kinds(level: int):
-    """Tipos de hazard que aparecem no nível (vazio nos níveis 0/1)."""
+    """Tipos de hazard que aparecem no nível (vazio nos níveis 0/1/3)."""
     level = int(level)
     if level not in STATIC_PLATFORMS:
         raise ValueError(
             f"nível desconhecido: {level} "
             f"(disponíveis: {sorted(STATIC_PLATFORMS)})")
     return HAZARD_KINDS[level]
+
+
+def get_buttons(level: int):
+    """Botões de contato do nível (vazio fora do nível 3)."""
+    level = int(level)
+    if level not in STATIC_PLATFORMS:
+        raise ValueError(
+            f"nível desconhecido: {level} "
+            f"(disponíveis: {sorted(STATIC_PLATFORMS)})")
+    return BUTTONS[level]
+
+
+def get_super_coin_position(level: int):
+    """Posição onde a super moeda nasce, ou `None` se o nível não tem uma."""
+    level = int(level)
+    if level not in STATIC_PLATFORMS:
+        raise ValueError(
+            f"nível desconhecido: {level} "
+            f"(disponíveis: {sorted(STATIC_PLATFORMS)})")
+    return SUPER_COIN_POSITIONS[level]
+
+
+def get_level_channel_names(level: int):
+    """Nomes dos canais extras de observação do nível."""
+    level = int(level)
+    if level not in STATIC_PLATFORMS:
+        raise ValueError(
+            f"nível desconhecido: {level} "
+            f"(disponíveis: {sorted(STATIC_PLATFORMS)})")
+    return LEVEL_CHANNEL_NAMES[level]

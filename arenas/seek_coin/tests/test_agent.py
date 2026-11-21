@@ -326,6 +326,38 @@ def test_parse_args_defaults_epsilon_ramp():
     assert parse_args(["--envs", "4"]).learn_every == 1
 
 
+def test_episode_seconds_default_and_cli():
+    from arenas.seek_coin.arena.config import ArenaConfig
+
+    assert ArenaConfig().episode_seconds == 90.0
+    assert parse_args([]).episode_seconds is None
+    assert parse_args(["--episode-seconds", "45"]).episode_seconds == 45.0
+
+
+def test_parse_agent_params_coerces_types():
+    from arenas.seek_coin.train import parse_agent_params
+
+    params = parse_agent_params([
+        "rollout_steps=2048", "entropy_coef=0.01",
+        "gae_variant=cor", "flag=true",
+    ])
+    assert params == {
+        "rollout_steps": 2048,
+        "entropy_coef": 0.01,
+        "gae_variant": "cor",
+        "flag": True,
+    }
+    with pytest.raises(SystemExit):
+        parse_agent_params(["sem_igual"])
+
+
+def test_validate_rejects_bad_episode_seconds():
+    args = parse_args([])
+    args.episode_seconds = 0
+    with pytest.raises(SystemExit):
+        validate_train_args(args)
+
+
 def test_validate_rejects_bad_learn_every():
     """`--learn-every` precisa ser >= 1 e não se combina com `--envs > 1`."""
     args = parse_args([])

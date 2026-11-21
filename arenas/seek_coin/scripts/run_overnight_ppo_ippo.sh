@@ -6,7 +6,7 @@ set -u
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)"
 cd "$ROOT"
-PY="${PY:-$HOME/venvs/main/bin/python}"
+PY="${PY:-python}"
 TAG="${TAG:-overnight}"
 LEVEL="${LEVEL:-1}"
 DEADLINE="${DEADLINE:-2026-11-14 08:00:00}"

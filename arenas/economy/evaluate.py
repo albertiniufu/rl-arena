@@ -4,6 +4,7 @@ from __future__ import annotations
 import argparse
 
 from arenas.algs.alg_registry import checkpoint_meta
+from arenas.common.yaml_config import add_config_args, apply_yaml_defaults
 from arenas.common.checkpoint import agent_from_checkpoint
 from arenas.common.evaluator import evaluate_agent
 from arenas.economy.bank import BankConfig
@@ -14,9 +15,11 @@ from arenas.economy.train import METRIC_KEYS, bank_metrics
 
 def parse_args(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
+    add_config_args(parser)
     parser.add_argument("--checkpoint", required=True)
     parser.add_argument("--episodes", type=int, default=20)
     parser.add_argument("--seed", type=int, default=1000)
+    apply_yaml_defaults(parser, argv, "evaluate")
     return parser.parse_args(argv)
 
 

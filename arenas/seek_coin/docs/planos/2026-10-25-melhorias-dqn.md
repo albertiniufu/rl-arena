@@ -1,14 +1,16 @@
 # Melhorias do DQN — Plano de Implementação
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **Documento histórico.** Este plano foi executado e registra as decisões
+> da época; ele não é um guia de uso atual. Para o estado atual, veja o
+> [`README`](../../README.md) e o [`docs/algoritmos.md`](../../../../docs/algoritmos.md).
 
 **Goal:** Fazer o DQN do RL Arena aprender mais rápido (≥2× no orçamento de 150 episódios) e treinar mais rápido (≥3×), por fases medidas.
 
 **Architecture:** Fases incrementais sobre a stack atual (Gymnasium + PyTorch, CPU). Cada fase termina com gate de A/B (15% de ganho sobre a fase anterior, média de 3 seeds, orçamento 150 eps). Checkpoints viram pesos-only; o ambiente ganha frame stack/skip; o agente ganha warmup, Double DQN, n-step, PER, dueling; a Fase 5 vetoriza o treino em 8 processos.
 
-**Tech Stack:** Python 3.10+, PyTorch, Gymnasium, NumPy, pytest (venv existente em `venv/`).
+**Tech Stack:** Python 3.10+, PyTorch, Gymnasium, NumPy, pytest.
 
-**Spec:** `docs/superpowers/specs/2026-10-24-melhorias-dqn-design.md` — o plano argumenta a partir do spec; leia os dois juntos.
+**Spec:** [`2026-10-24-melhorias-dqn-design.md`](2026-10-24-melhorias-dqn-design.md) — o plano argumenta a partir do spec; leia os dois juntos.
 
 ## Global Constraints
 

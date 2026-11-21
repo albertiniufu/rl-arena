@@ -9,7 +9,7 @@ set -u
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)"
 cd "$ROOT"
 
-PY="${PY:-$HOME/venvs/main/bin/python}"
+PY="${PY:-python}"
 OUT="${OUT:-logs/level1}"
 mkdir -p "$OUT"
 echo "=== aguardando o risk terminar $(date '+%F %T') ===" >> "$OUT/queue.log"

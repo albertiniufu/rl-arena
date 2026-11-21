@@ -26,6 +26,8 @@ class PolicyContext:
     rng: np.random.Generator
     self_character: object = None
     player_character: object = None
+    super_coin: object = None
+    buttons: tuple = ()
     stacked_obs: np.ndarray = None
 
 
@@ -56,8 +58,18 @@ class PushRulePolicy:
 
 
 class CoinRulePolicy:
-    """Vai na direção da moeda visível mais próxima e pula de vez em quando."""
+    """Vai na direção da moeda visível mais próxima e pula de vez em quando.
+
+    No nível 3, se a super moeda estiver ativa, ela tem prioridade sobre as
+    moedas comuns.
+    """
     def act(self, ctx):
+        if getattr(ctx, "super_coin", None) is not None and ctx.self_character:
+            c = ctx.self_character
+            target = ctx.super_coin
+            if abs(target.x - c.x) < 18:
+                return JUMP if target.y < c.y - 10 else STOP
+            return LEFT if target.x < c.x else RIGHT
         ys, xs = np.where(ctx.obs[3] > 0)
         py, px = np.where(ctx.obs[1] > 0)
         if len(xs) and len(px):

@@ -127,19 +127,21 @@ Com `--opponent human` a janela também abre sozinha e o adversário usa o mesmo
 
 ### 6. Experimentar
 
-- Algoritmo: `--alg dqn` (padrão), `doubledqn_per_dueling`, `ppo`, `eppo`, `ppo_aes`, `gtr`, `a2c`, `ippo` ou `mappo` — veja [Algoritmos](#algoritmos).
+- Algoritmo: `--alg dqn` (padrão), `doubledqn_per_dueling`, `mka`, `ppo`, `eppo`, `ppo_aes`, `gtr`, `a2c`, `sac_discrete`, `ippo`, `mappo` ou `happo` — veja [Algoritmos](#algoritmos) e `docs/algoritmos.md`.
 - Adversário: `--opponent random`, `coins` ou `rule` (o padrão `auto` é um currículo — veja [Adversários](#adversários)).
 - Semente: `--seed N` (treinos com a mesma semente são idênticos).
+- Duração: `--episode-seconds N` (padrão 90; o valor fica no checkpoint e é reaplicado no `evaluate.py`/`play.py`).
+- Níveis: `--level 2` adiciona areia/gelo; `--level 3` adiciona botões de ativação/cancelamento e uma super moeda de alto valor. No nível 3, o botão de ativação fica no chão da esquerda, o de cancelamento na plataforma central e a super moeda no chão da direita; os tempos/valores ficam em `super_coin_seconds`, `super_coin_cooldown`, `super_coin_reward` e `super_coin_coins` no `ArenaConfig`. O renderer default desenha os botões e a super moeda; as skins alternativas podem não exibir esses elementos.
 - Mundo: física, recompensas, duração do episódio e contagens ficam em `arena/config.py`.
 - Vetorização: `--envs N` coleta em N workers paralelos e age em lote; vale para todos os algoritmos (exige adversário fixo e desliga render/telemetria por episódio).
 - Sobreposição: `--overlap` (só PPO/A2C) coleta o próximo rollout nos workers de CPU enquanto a GPU atualiza o anterior — ~30% mais episódios/hora no protocolo de 8 workers. A política fica defasada em um update; o PPO guarda o log-prob da coleta para o ratio continuar correto.
 
 ### 7. Seu próprio modelo e seu próprio algoritmo de RL
 
-Cada algoritmo é um diretório `arenas/algs/alg_<nome>` autocontido, com o modelo, o replay e o loop de aprendizado:
+Cada algoritmo é um diretório `arenas/algs/alg_<nome>` autocontido, com o modelo, o replay e o loop de aprendizado (a lista completa e o contrato estão em `arenas/algs/README.md` e `docs/algoritmos.md`):
 
 ```text
-algs/
+arenas/algs/
 ├── alg_registry.py               # descoberta, checkpoint e CheckpointPolicy
 ├── alg_dqn/                      # --alg dqn (padrão)
 │   ├── model.py                  # QNetwork: CNN -> 6 Q-valores diretos
@@ -175,7 +177,7 @@ Para colocar o seu no lugar:
 python -m pytest -q
 ```
 
-São 137 testes (~10–30 s, dependendo da carga da máquina). Rode depois de instalar e depois de cada mudança sua para confirmar que nada quebrou.
+São 354 testes (~10–30 s, dependendo da carga da máquina). Rode depois de instalar e depois de cada mudança sua para confirmar que nada quebrou.
 
 ## Referência
 
@@ -198,28 +200,40 @@ Ficar parado tem um custo pequeno: escolher `STOP` desconta `stop_penalty = -0.1
 
 ### Algoritmos
 
-Os algoritmos off-policy (`dqn` e `doubledqn_per_dueling`) usam a mesma observação, o mesmo contrato e um alvo fixo sincronizado a cada `C = 1000` `learn()` bem-sucedidos (a busca de hiperparâmetros mostrou que `C = 10` é agressivo demais para os dois). PPO e A2C usam a mesma observação e o mesmo formato de checkpoint, mas são on-policy:
+Os algoritmos off-policy (`dqn`, `doubledqn_per_dueling` e `mka`) usam a mesma observação, o mesmo contrato e um alvo fixo sincronizado a cada `C = 1000` `learn()` bem-sucedidos (a busca de hiperparâmetros mostrou que `C = 10` é agressivo demais para os dois). PPO, EPPO, PPO-AES, GTR e A2C usam a mesma observação e o mesmo formato de checkpoint, mas são on-policy:
 
 - **`dqn`** (padrão): o DQN enxuto do artigo — Q direto por ação, replay uniforme (toda transição com a mesma chance) e alvo `r + γ·max Q(s', ·)`.
 - **`doubledqn_per_dueling`**: três mudanças sobre o `dqn`:
   - **Double DQN**: a rede online escolhe a ação do próximo estado e a target avalia o valor, reduzindo a superestimação;
   - **PER**: a amostragem do replay favorece transições com erro de TD alto (prioridade `|erro| + 1e-6`, sorteio proporcional a `rank^-α` com α=0,6) e o loss pesa cada amostra pelo peso de importância `(N·p)^-β`, com β subindo de 0,4 até 1;
   - **Dueling**: a rede separa `V(s)` de `A(s, a)` e devolve `Q = V + A − média(A)`.
+- **`mka`**: variante didática do `dqn` com uma CNN custom (GELU e encoder embutido) no lugar da `QNetwork`. Serve para comparar arquiteturas mantendo o mesmo loop, replay e protocolo; não é um algoritmo novo.
 - **`ppo`**: on-policy, com ator categórico e crítico compartilhando a CNN. O rollout tem 1024 transições; o GAE(λ=0.95) usa a marca de fim de episódio para não misturar episódios, mas faz bootstrap no truncamento por tempo. O update tem 4 épocas de minibatches de 64, clip de razão 0.2, perda de valor 0.5, bônus de entropia 0.01 e grad clip 10. O rollout parcial é consumido em `finish_training()`.
+- **`eppo`**: PPO com crítico evidencial (distribuição NIG): o crítico estima incerteza, a vantagem vira `A_UCB = E[A] + κ√Var[A]` e a loss do crítico é a NLL evidencial com prior. Exploração guiada por incerteza, mantendo o surrogate recortado do PPO.
+- **`ppo_aes`**: PPO com **entropia adaptativa**. O coeficiente de entropia deixa de ser fixo: um scheduler olha o quantil 0,9 do erro de TD, suaviza por EMA e ajusta `λ` dentro de uma faixa. Útil quando o bônus fixo de entropia atrapalha a convergência.
+- **`gtr`**: PPO com **região de confiança gaussiana**: soma ao surrogate uma penalidade limitada `½(1−e^{−(r−1)²})` e mistura âncoras (as políticas de início de época) para limitar o passo sem o clip duro.
 - **`a2c`**: on-policy, com a mesma rede actor-critic, mas retornos n-step (`n_steps = batch_size`, 64 no protocolo) e um único passo de otimização por rollout. Quando o episódio termina antes de completar o rollout, `end_episode()` consome o rabo; o retorno usa bootstrap no truncamento e não atravessa a fronteira do episódio. Usa as mesmas perdas de valor e entropia do PPO.
 - **`ippo`**: on-policy multiagente. Todos os agentes compartilham uma rede actor-critic e têm um buffer de rollout próprio; o update calcula GAE por trajetória e concatena as transições (horizonte `rollout_steps` por agente). O crítico é local: cada agente estima `V(s)` só com a própria observação. A observação é egocêntrica e usa 6 canais: self no 1, inimigos no 2, aliados no 5. Serve para todos-contra-todos e times; nestes últimos a recompensa é a média dos membros. Na primeira versão não aceita `--envs > 1`, `--overlap` nem adversários baseline misturados.
+- **`sac_discrete`**: SAC com ator categórico, dois críticos e entropia automática; off-policy e compatível com `Discrete(6)`.
 - **`mappo`**: a mesma base do IPPO com **crítico centralizado** (CTDE). O ator compartilhado vê apenas a observação local, mas o crítico recebe as features de todos os agentes no mesmo passo (a grade egocêntrica de cada um já separa self/inimigos/aliados) mais um one-hot que identifica o agente consultado, e é esse estado conjunto que alimenta o GAE. O update agrupa as transições em passos conjuntos: a CNN roda uma vez por agente e serve às duas cabeças. O crítico centralizado reduz a variância do gradiente em troca de depender da observação conjunta na coleta; na execução nada global é consultado, então `evaluate.py`/`play.py` funcionam igual ao IPPO.
+- **`happo`**: multiagente **heterogêneo**: cada agente tem o seu ator (e o crítico centralizado vê o estado conjunto), mas o update é sequencial. Ao atualizar o agente `i`, a razão de probabilidade é corrigida pelo produto das razões dos agentes já atualizados, o que preserva o objetivo conjunto sem o "trust region" global do MAPPO. É o algoritmo indicado para papéis diferentes no mesmo time (ex.: `collectors-vs-pushers`).
 
 ```bash
 python train.py --episodes 300 --alg dqn
 python train.py --episodes 300 --alg doubledqn_per_dueling
+python train.py --episodes 300 --alg mka                    # variante de arquitetura
 python train.py --episodes 300 --alg ppo
+python train.py --episodes 300 --alg sac_discrete
+python train.py --episodes 300 --alg eppo
+python train.py --episodes 300 --alg ppo_aes
+python train.py --episodes 300 --alg gtr
 python train.py --episodes 300 --alg a2c
 python train.py --episodes 300 --alg ppo --envs 8 --opponent rule
 python train.py --episodes 300 --alg ppo --envs 8 --overlap --opponent rule
 python train.py --episodes 300 --alg ippo --agents 4 --scenario all-vs-all
 python train.py --episodes 300 --alg ippo --agents 4 --scenario teams --teams 2
 python train.py --episodes 300 --alg mappo --agents 4 --scenario teams --teams 2
+python train.py --episodes 300 --alg happo --agents 4 --scenario collectors-vs-pushers --teams 2
 ```
 
 PPO e A2C são on-policy; a política é estocástica no treino e gulosa na avaliação (`evaluate.py`/`play.py` chamam `act(..., greedy=True)`). Ambos aceitam `--envs N` (com adversário fixo): a coleta age em lote e os retornos são calculados em blocos por worker. Com `--overlap`, uma thread coleta o próximo rollout na CPU (cópia da política) enquanto a thread principal faz o update na GPU; a fila de tamanho 1 limita a defasagem a um rollout. O preço é que o treino deixa de ser bit a bit reprodutível (a versão de pesos usada em cada rollout depende do timing), embora as seeds continuem controlando ambientes e amostragem. Os retornos GAE/n-step são calculados em CPU mesmo com a rede em CUDA — a recorrência escalar na GPU sincroniza por passo (no A2C, o cálculo dos retornos de 64 passos cai de ~41 ms para ~10 ms e o update inteiro de ~45 ms para ~13 ms). Para alimentar melhor a GPU, aumente o minibatch do PPO (`--batch-size 256` reduz o update de 1024 amostras de ~160 ms para ~70 ms); no A2C o `--batch-size` também define o horizonte n-step, então mudá-lo altera o algoritmo.
@@ -248,6 +262,8 @@ python train.py --episodes 300 --checkpoint-dir /caminho/para/run1 --resume late
 
 O algoritmo, a versão de arquitetura, o número de ações e o formato da observação são validados **antes** de copiar qualquer peso: retomar com `--alg` diferente, com `frame_stack` diferente ou com um checkpoint antigo (formato `cnn-dqn-*`, 12 ações) falha com mensagem clara, sem deixar o agente com pesos parcialmente sobrescritos.
 
+O save periódico usa `--save-every N` (padrão 10); `--save-every 0` desliga o save periódico, mas o `latest.pt` final continua sendo gravado para permitir retomada. Os snapshots do protocolo A/B (`budget/ep050.pt`, `ep100.pt`, ...) são **opt-in**: use `--budget-snapshots`.
+
 ### Estatísticas e TensorBoard
 
 ```bash
@@ -269,7 +285,7 @@ Para treinos por tempo de parede, `--max-hours N` encerra de forma limpa após N
 
 ### Comparações controladas
 
-`scripts/compare_onpolicy.sh` repete o protocolo da comparação DQN/Double DQN para PPO e A2C: seed 7, 100 episódios, adversário `rule`, `frame_stack=4`, `frame_skip=3`, `batch_size=64`, TensorBoard e avaliação gulosa com 20 episódios (seed 1000) nos snapshots `budget/ep050.pt`, `budget/ep100.pt` e `best.pt`. O script grava treino, avaliações e logs em `logs/compare` e deixa cada run do TensorBoard com o nome `logs/runs/<alg>_configs_rule_fs4_fk3_lr<lr>_b64_seed7`; ele se recusa a sobrescrever checkpoints ou runs existentes.
+`scripts/compare_onpolicy.sh` repete o protocolo da comparação DQN/Double DQN para PPO e A2C: seed 7, 100 episódios, adversário `rule`, `frame_stack=4`, `frame_skip=3`, `batch_size=64`, TensorBoard, `--budget-snapshots` e avaliação gulosa com 20 episódios (seed 1000) nos snapshots `budget/ep050.pt`, `budget/ep100.pt` e `best.pt`. O script grava treino, avaliações e logs em `logs/compare` e deixa cada run do TensorBoard com o nome `logs/runs/<alg>_configs_rule_fs4_fk3_lr<lr>_b64_seed7`; ele se recusa a sobrescrever checkpoints ou runs existentes. A lista completa de scripts está em [`scripts/README.md`](scripts/README.md).
 
 ```bash
 PYTHON=venv/bin/python bash scripts/compare_onpolicy.sh
@@ -311,7 +327,7 @@ python play.py --player coins --opponent coins --record demonstracao.mp4
 
 Mudanças de ambiente que costumam acelerar o aprendizado (nenhuma está aplicada por padrão):
 
-- **Terminar o episódio na morte**, em vez de só truncar aos 45 s: encurta o retorno e dá um sinal de fim mais claro (a morte hoje só custa 5 s e 10 moedas).
+- **Terminar o episódio na morte**, em vez de só truncar aos 90 s: encurta o retorno e dá um sinal de fim mais claro (a morte hoje só custa 5 s e 10 moedas).
 - **Episódios mais curtos** (15–20 s): mais episódios por hora e menos passos em estados fáceis; combine com o término na morte.
 - **Adversário fixo** (`--opponent coins` ou `rule`) durante a comparação de algoritmos: menos não-estacionariedade que o currículo `auto`; use o `auto` depois.
 - **Estado compacto** (posições e velocidades dos personagens, moedas e plataformas) com um MLP no lugar da CNN: resolve a não-Markovianidade e treina muito mais rápido; mantenha `arenas/algs/alg_dqn` como variante com imagem.
@@ -320,31 +336,37 @@ Mudanças de ambiente que costumam acelerar o aprendizado (nenhuma está aplicad
 
 ### Estrutura
 
+O jogo vive no monorepo; o código específico do seek_coin está todo em
+`arenas/seek_coin/`, e o que é compartilhado fica em `arenas/common/` e
+`arenas/algs/`.
+
 ```text
 rl-arena/
-├── arena/                    # configuração, motor, ambiente, ações e renderizadores
-│   ├── scenario.py           # cenários multiagente (todos-contra-todos/times)
-│   ├── observations.py       # grade semântica (5 canais legado, 6 por viewer)
-│   ├── multi_environment.py  # ArenaMultiEnv: ações conjuntas por agente
-│   └── ...
-├── agents/                   # políticas baseline usadas como adversário
-├── algs/                     # algoritmos e infraestrutura comum
-│   ├── alg_registry.py       # descoberta dos alg_*, checkpoint e CheckpointPolicy
-│   ├── alg_dqn/              # DQN enxuto: QNetwork, replay uniforme, DQNAgent
-│   ├── alg_doubledqn_per_dueling/  # Double DQN + PER + dueling
-│   ├── alg_ppo/              # PPO: actor-critic, rollout com GAE
-│   ├── alg_a2c/              # A2C: actor-critic, retornos n-step
-│   ├── alg_ippo/             # IPPO: política compartilhada, buffer por agente
-│   └── alg_mappo/            # MAPPO: ator compartilhado, crítico centralizado
-├── scripts/                  # comparações controladas e sumarizador
-├── tests/
-├── train.py
-├── evaluate.py
-├── play.py
-├── requirements.txt
-└── README.md
+├── train.py / evaluate.py / play.py    # CLI unificado (--arena seek_coin)
+├── arenas/
+│   ├── common/                         # trainer, evaluator, checkpoint
+│   ├── algs/                           # algoritmos compartilhados (alg_*)
+│   └── seek_coin/
+│       ├── arena/                      # config, motor, ambiente, renderizadores
+│       │   ├── scenario.py             # cenários multiagente (todos-contra-todos/times)
+│       │   ├── observations.py         # grade semântica (5 canais legado, 6 por viewer)
+│       │   ├── multi_environment.py    # ArenaMultiEnv: ações conjuntas por agente
+│       │   ├── levels.py               # níveis 0/1/2/3 (plataformas, hazards, botões)
+│       │   └── renderer*.py            # skins descobertas por arquivo
+│       ├── agents/                     # políticas baseline do adversário
+│       ├── training/                   # telemetria, oponentes, avaliação e vídeo
+│       ├── docs/                       # aulas HTML dos algoritmos
+│       ├── scripts/                    # protocolos e filas de treino
+│       ├── tests/                      # testes da arena e dos algoritmos
+│       ├── train.py / evaluate.py / play.py
+│       └── README.md
+├── docs/                               # arquitetura, algoritmos, contribuição
+└── requirements.txt
 ```
 
+> Esta árvore substitui a estrutura antiga (`arena/`, `agents/`, `algs/` na
+> raiz), que existia antes da separação em `arenas/`. Os diretórios antigos
+> não fazem mais parte do repositório.
 
 ## Ambiente GPU (vetorizado)
 

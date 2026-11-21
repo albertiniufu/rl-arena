@@ -1,0 +1,32 @@
+# Melhor configuração de EPPO encontrada na campanha BO do nível 3.
+arena: seek_coin
+setup: S6
+alg: eppo
+level: 3
+episode_seconds: 90
+frame_stack: 4
+frame_skip: 3
+opponent: rule
+seed: 7
+
+training:
+  episodes: 1000000
+  max_hours: 6
+  save_every: 10
+  checkpoint_dir: checkpoints/eppo-level3
+  agent_params:
+    lr: 0.0005960087748299635
+    batch_size: 128
+    rollout_steps: 2048
+    epochs: 4
+    clip: 0.2800262855915594
+    entropy_coef: 0.008547273117776729
+    gae_lambda: 0.9156731636110801
+    max_grad_norm: 5.12988893677983
+    ucb_radius: 0.03585985265683301
+    evidential_coef: 0.025932201655941102
+    gae_variant: ind
+
+evaluation:
+  episodes: 50
+  seed: 1000

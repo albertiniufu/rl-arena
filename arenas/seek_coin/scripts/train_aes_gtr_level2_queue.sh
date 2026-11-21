@@ -12,7 +12,7 @@ set -u
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)"
 cd "$ROOT"
-PY="${PY:-$HOME/venvs/main/bin/python}"
+PY="${PY:-python}"
 TAG="${TAG:-overnight_l2}"
 LEVEL="${LEVEL:-2}"
 HOURS="${HOURS:-5.4208333}"   # bloco cheio de cada algoritmo (~5h25)

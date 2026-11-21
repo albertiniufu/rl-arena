@@ -16,8 +16,9 @@ from arenas.seek_coin.arena.environment import ArenaEnv
 from arenas.seek_coin.arena.multi_environment import ArenaMultiEnv
 from arenas.seek_coin.arena.scenario import Scenario
 from arenas.seek_coin.arena.config import ArenaConfig
-from arenas.seek_coin.arena.levels import get_hazard_kinds
+from arenas.seek_coin.arena.levels import get_level_channel_names
 from arenas.seek_coin.arena.skins import list_skins
+from arenas.common.yaml_config import add_config_args, apply_yaml_defaults
 from arenas.algs.alg_registry import (
     CheckpointPolicy,
     algorithm_from_checkpoint,
@@ -45,6 +46,15 @@ def validate_play_args(args):
     if args.player == "human" and args.opponent == "human":
         raise SystemExit("Use apenas um controle humano: escolha --player human "
                          "ou --opponent human, não ambos.")
+
+
+def apply_cli_overrides(cfg, args):
+    """Aplica `--level`/`--episode-seconds` por cima da config do checkpoint."""
+    if args.level is not None:
+        cfg.level = args.level
+    if getattr(args, "episode_seconds", None) is not None:
+        cfg.episode_seconds = args.episode_seconds
+    return cfg
 
 
 def resolve_opponent(spec, cfg, player_frame=None):
@@ -84,7 +94,8 @@ def resolve_opponent(spec, cfg, player_frame=None):
             "use checkpoints com o mesmo formato de observação.")
 
     apply_env_config(cfg, meta)
-    obs_shape = ((5 + len(get_hazard_kinds(cfg.level))) * cfg.frame_stack,
+    obs_shape = ((5 + len(get_level_channel_names(cfg.level)))
+                 * cfg.frame_stack,
                  cfg.height // cfg.cell, cfg.width // cfg.cell)
     agent = opp_alg.Agent(obs_shape, N_ACTIONS)
     load_checkpoint(spec, agent, resume=False)
@@ -95,6 +106,7 @@ def resolve_opponent(spec, cfg, player_frame=None):
 def parse_args(argv=None):
     """Argumentos da CLI; separado de `main` para poder ser testado."""
     ap = argparse.ArgumentParser()
+    add_config_args(ap)
     ap.add_argument("--checkpoint", default="checkpoints/best.pt")
     ap.add_argument("--episodes", type=int, default=3)
     ap.add_argument("--render", action="store_true")
@@ -112,11 +124,16 @@ def parse_args(argv=None):
                          "controlado pelo humano (padrão: 0). O colega de time e "
                          "os demais agentes usam o checkpoint")
     ap.add_argument("--level", type=int, default=None,
-                    help="nível do mapa (0 = histórico; 1 = plataforma móvel); "
-                         "sem o argumento, usa o nível do checkpoint")
+                    help="nível do mapa (0 = histórico; 1 = plataformas móveis; "
+                         "2 = areia/gelo; 3 = botões/super moeda); sem o "
+                         "argumento, usa o nível do checkpoint")
+    ap.add_argument("--episode-seconds", type=float, default=None,
+                    help="sobrescreve a duração do episódio gravada no "
+                         "checkpoint")
     ap.add_argument("--record", default=None, metavar="ARQUIVO.mp4",
                     help="grava a sessão em vídeo (ativa o render; com "
                          "SDL_VIDEODRIVER=dummy grava sem janela)")
+    apply_yaml_defaults(ap, argv, "play")
     return ap.parse_args(argv)
 
 
@@ -221,8 +238,7 @@ def main():
     validate_play_args(args)
     render_mode = "human" if needs_render(args) else None
     cfg = ArenaConfig()
-    if args.level is not None:
-        cfg.level = args.level
+    apply_cli_overrides(cfg, args)
     alg = meta = None
     player_frame = None
     if args.player == "human":
@@ -237,8 +253,7 @@ def main():
         if cand_alg is not None and getattr(
                 cand_alg.Agent, "multi_agent", False):
             apply_env_config(cfg, cand_meta)
-            if args.level is not None:
-                cfg.level = args.level
+            apply_cli_overrides(cfg, args)
             _play_multi(args, cand_alg, cfg, render_mode)
             return
     if args.player is None:
@@ -251,13 +266,13 @@ def main():
         except (ValueError, OSError) as exc:
             raise SystemExit(f"Checkpoint inválido: {exc}") from exc
         apply_env_config(cfg, meta)
-        if args.level is not None:
-            cfg.level = args.level
+        apply_cli_overrides(cfg, args)
         if getattr(alg.Agent, "multi_agent", False) or cfg.n_agents > 1:
             _play_multi(args, alg, cfg, render_mode)
             return
         player_frame = (cfg.frame_stack, cfg.frame_skip)
     opponent_policy = resolve_opponent(args.opponent, cfg, player_frame=player_frame)
+    apply_cli_overrides(cfg, args)
     env = ArenaEnv(cfg, render_mode=render_mode, opponent_policy=opponent_policy, skin=args.skin)
     obs, _ = env.reset(seed=1)
     video_writer = None
