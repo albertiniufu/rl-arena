@@ -106,6 +106,18 @@ tuning.
 > update diferentes, o número de passos de ambiente pode variar. O valor real
 > será reportado junto com o resultado.
 
+> **Interrupção e pausa (2026-11-20 22:26).** O treino EPPO da seed 123 foi
+> morto pelo `systemd-oomd` a ~7 min do fim do orçamento de 2 h, junto com o
+> servidor da Fila (22:08). Causa: vazamento do Samba do domínio (8.009
+> processos `rpcd_lsad`), swap 100% cheio e `ManagedOOMMemoryPressure=kill`
+> na slice do usuário. Nenhuma rodada concluída foi perdida (seeds 7 e 42
+> completas, seed 123/PPO completa); a seed 123/EPPO será refeita do zero por
+> não ter marcador `DONE`. A Fila ficou **pausada** para o reboot da máquina;
+> a retomada está descrita em
+> [`retomada-20261120.md`](retomada-20261120.md) — `retry` no job
+> `job-20261120-183301-9e4e70` continua de EPPO-123 e pula as rodadas
+> concluídas. Antes de retomar, libere a memória com `sudo pkill -f rpcd_lsad`.
+
 ## 8. Tuning
 
 - Espaço de busca: nenhum.

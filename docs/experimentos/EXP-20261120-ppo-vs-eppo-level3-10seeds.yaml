@@ -105,6 +105,10 @@ deviations:
     what: "Plano reduzido de 10 para 7 seeds (7, 42, 123, 314, 999, 2024, 2025) e família de testes restrita a {reward, coins} (deaths vira diagnóstico)."
     impact: "O tamanho da família define o número de seeds: com 5 pares o p bilateral mínimo é 0,0625 e com 6 pares 0,03125, mas Holm sobre 2 métricas multiplica por 2; só com 7 pares o menor p corrigível é 2 x 2/128 = 0,03125 < 0,05."
     mitigation: "`scripts/rigorous_validation.py` grava `family-tests.md`/`.json` com p bruto e p Holm por métrica; `report.py` faz a correção só dentro de cada relatório, por isso a família entre métricas é aplicada no runner."
+  - at: "2026-11-20T22:26:00-03:00"
+    what: "Treino EPPO da seed 123 interrompido pelo `systemd-oomd` (OOM-kill) a ~7 min do fim do orçamento de 2 h; o servidor da Fila também foi morto (22:08). Causa: vazamento do Samba do domínio (8.009 processos `rpcd_lsad`), swap 100% cheio e `ManagedOOMMemoryPressure=kill` na slice do usuário."
+    impact: "Seed 123/EPPO será refeita do zero (não há marcador `DONE`); nenhuma rodada concluída foi perdida. A máquina foi reiniciada e a Fila ficou pausada em 2026-11-20 22:45."
+    mitigation: "Retomada documentada em `docs/experimentos/retomada-20261120.md`: `retry` no job `job-20261120-183301-9e4e70` retoma de EPPO-123 e pula as rodadas com `DONE`. Antes, liberar a memória com `sudo pkill -f rpcd_lsad`."
 
 decision_criteria:
   support: "EPPO > PPO em reward ou em coins, com IC 95% da diferença pareada inteiramente acima de zero, p Holm < 0,05 e Cohen's d >= 0,5."
