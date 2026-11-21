@@ -1,0 +1,174 @@
+id: EXP-20261120-ppo-vs-eppo-level4-7seeds
+status: planned
+created_at: "2026-11-20T21:20:00-03:00"
+author: "equipe rl-arena"
+title: "PPO vs EPPO no nível 4 (visão local 9×9) — mesma confirmação de 7 seeds"
+
+question: "No nível 4 (visão local 9×9, sem super moeda) e com os presets herdados da BO do nível 3, o EPPO continua superando o PPO em recompensa gulosa quando o treino é repetido em 7 seeds?"
+hypothesis: "O EPPO mantém vantagem sobre o PPO em recompensa mesmo com observação parcial, porque o crítico evidencial reduz a variância da estimativa de valor — que fica mais ruidosa quando o agente vê apenas uma janela local."
+falsification: "A hipótese é refutada se o EPPO não for superior ao PPO em recompensa, se o IC 95% da diferença pareada incluir zero, se o PPO tiver recompensa significativamente maior ou se a vantagem observada no nível 3 desaparecer por completo no nível 4."
+claim_allowed: "Se o resultado vier na direção esperada, será possível afirmar que, em S7 (nível 4, view_size 9, sem super moeda), com estes presets fixos herdados da BO do nível 3 e 2 h por run, o EPPO tem recompensa gulosa média superior ao PPO. Não será possível afirmar que o nível 4 é melhor ou pior que o nível 3: o setup muda observação E mecânica (super moeda desligada), e os presets não foram re-tunados para o nível 4."
+
+evidence:
+  prior_experiments:
+    - EXP-20261115-bo-level3-6h
+    - EXP-20261120-ppo-vs-eppo-level3-10seeds
+  existing_setups:
+    - S6
+    - S7
+  gap: "A comparação multi-seed PPO × EPPO existe só no nível 3 (S6). O nível 4 muda o shape da observação (recorte egocêntrico 9×9) e desliga botões/super moeda por padrão; não se sabe se o ranking entre os algoritmos se mantém quando a observação passa a ser parcial."
+  analysis_only: false
+
+setup:
+  arena: seek_coin
+  level: 4
+  view_size: 9
+  super_coin: false
+  scenario: "single-agent contra adversário rule, observação local 9×9 sem botões/super moeda"
+  setup_id: S7
+  config_files:
+    - configs/seek_coin/ppo-level4.yaml
+    - configs/seek_coin/eppo-level4.yaml
+  frame_stack: 4
+  frame_skip: 3
+  episode_seconds: 90
+  reward: "recompensa do ambiente no nível 4 (moedas e sobrevivência; sem super moeda)"
+
+algorithms:
+  candidates:
+    - ppo
+    - eppo
+  baseline:
+    - ppo
+  ablations: []
+
+metrics:
+  primary:
+    name: reward
+    direction: maximize
+    definition: "reward guloso médio em 50 episódios de avaliação, por seed de treino"
+    target: null
+  secondary:
+    - coins
+  family:
+    - reward
+    - coins
+  diagnostic:
+    - deaths
+    - duration_steps
+    - env_steps_real
+
+budget:
+  seeds_train: [7, 42, 123, 314, 999, 2024, 2025]
+  seeds_eval: [2000]
+  eval_episodes: 50
+  env_steps_per_run: "~4M (estimativa; o orçamento controlado é 2 h de parede e o valor real será registrado no results.csv). A obs 9×9 é menor que a do nível 3 no canal de entrada; o custo por passo não deve ser maior."
+  wall_hours_per_run: 2
+  n_runs: 14
+  wall_hours_total: "~30 (28 h de treino + avaliações)"
+  hardware: "1× RTX 3050 6 GB; um treino por vez (PPO, depois EPPO, seed a seed)"
+
+tuning:
+  method: none
+  space_file: null
+  budget_hours: null
+  trials: null
+  validation_seeds: []
+  selection_rule: "presets fixos herdados da BO do nível 3 (configs/seek_coin/{ppo,eppo}-level4.yaml); sem tuning novo e sem re-tunar para o nível 4 (declarado como limitação)"
+
+evaluation:
+  checkpoint: latest
+  greedy: true
+  truncation: "sem bootstrap; recompensa acumulada do episódio"
+  same_protocol: true
+
+statistics:
+  independent_unit: train_seed
+  paired: true
+  test: wilcoxon
+  confidence: 0.95
+  effect_size: cohens_d
+  correction: holm
+  correction_scope: "Holm na família declarada {reward, coins}; deaths e demais métricas ficam como diagnóstico, fora da família"
+  primary_analysis: "uma linha por seed de treino; Wilcoxon pareado e Cohen's d"
+  secondary_analysis: "por episódio, apenas como diagnóstico e com ressalva de pseudo-replicação"
+
+risks:
+  - "Presets não tunados para o nível 4: os hiperparâmetros vêm de trials do nível 3 com super moeda ligada. Um resultado negativo pode refletir falta de tuning, não o algoritmo."
+  - "Observação parcial: o nível 4 recorta a grade em 9×9 células e não há memória recorrente (frame stack fixo). Parte da dificuldade pode dominar a diferença entre PPO e EPPO."
+  - "Comparação entre níveis é inválida: o nível 4 desliga botões/super moeda por padrão. Este experimento compara PPO × EPPO dentro de S7, não S6 × S7."
+  - "Orçamento de parede: PPO e EPPO podem dar números diferentes de passos de ambiente em 2 h."
+  - "Memória da máquina: o host está com pouca memória disponível (swap cheio); um OOM no meio da campanha invalidaria seeds. O runner pula runs com marcador DONE, então é possível retomar."
+  - "Poder limitado: com 7 pares o p bilateral mínimo do Wilcoxon é 0,015625 e, após Holm em 2 métricas, 0,03125 — só atinge 0,05 se o EPPO vencer nas 7 seeds."
+  - "Checkpoint latest pode não ser a melhor política de cada run."
+
+deviations: []
+
+decision_criteria:
+  support: "EPPO > PPO em reward ou em coins, com IC 95% da diferença pareada inteiramente acima de zero, p Holm < 0,05 e Cohen's d >= 0,5."
+  caveat: "Com 7 pares, o p bilateral mínimo do Wilcoxon é 0,015625; após Holm em 2 métricas é 0,03125, então o critério só é atingível se o EPPO vencer nas 7 seeds."
+  inconclusive: "IC da diferença inclui zero ou p Holm não significativo nas duas métricas; não declarar vencedor."
+  abandon: "PPO é significativamente melhor em reward ou o EPPO falha de forma sistemática; registrar o resultado negativo e revisar presets para o nível 4 antes de repetir."
+
+execution:
+  command:
+    - /home/albertini@win.ufu.br/venvs/main/bin/python
+    - scripts/rigorous_validation.py
+    - --hours
+    - "2"
+    - --seeds
+    - "7,42,123,314,999,2024,2025"
+    - --level
+    - "4"
+    - --view-size
+    - "9"
+    - --no-super-coin
+    - --family-metrics
+    - reward,coins
+    - --alpha
+    - "0.05"
+    - --eval-episodes
+    - "50"
+    - --eval-seed
+    - "2000"
+    - --ppo-config
+    - configs/seek_coin/ppo-level4.yaml
+    - --eppo-config
+    - configs/seek_coin/eppo-level4.yaml
+    - --out
+    - /home/albertini@win.ufu.br/rl-arena/experiments/EXP-20261120-ppo-vs-eppo-level4-7seeds
+  cwd: "/home/albertini@win.ufu.br/rl-arena/.claude/worktrees/level-4-visao-local"
+  max_runtime: 144000
+  priority: 0
+  depends_on:
+    - job-20261120-183301-9e4e70
+
+artifacts:
+  experiment_dir: "experiments/EXP-20261120-ppo-vs-eppo-level4-7seeds"
+  checkpoints:
+    - "experiments/EXP-20261120-ppo-vs-eppo-level4-7seeds/seed-*/{ppo,eppo}/checkpoints/latest.pt"
+  results_csv: "experiments/EXP-20261120-ppo-vs-eppo-level4-7seeds/results-by-train-seed.csv"
+  reports:
+    - "experiments/EXP-20261120-ppo-vs-eppo-level4-7seeds/report-by-seed-reward.md"
+    - "experiments/EXP-20261120-ppo-vs-eppo-level4-7seeds/report-by-seed-coins.md"
+    - "experiments/EXP-20261120-ppo-vs-eppo-level4-7seeds/report-by-seed-deaths.md"
+    - "experiments/EXP-20261120-ppo-vs-eppo-level4-7seeds/family-tests.md"
+  videos: []
+  stats:
+    - "experiments/EXP-20261120-ppo-vs-eppo-level4-7seeds/results.csv"
+    - "experiments/EXP-20261120-ppo-vs-eppo-level4-7seeds/campaign.json"
+    - "experiments/EXP-20261120-ppo-vs-eppo-level4-7seeds/family-tests.json"
+  documents:
+    - "docs/experimentos/EXP-20261120-ppo-vs-eppo-level4-7seeds.md"
+    - "docs/experimentos/EXP-20261120-ppo-vs-eppo-level4-7seeds.yaml"
+  commands: []
+
+registration:
+  registry_entry: "docs/experimentos/registro.md"
+  setup_entry: "S7"
+  backlog_item: "Nível 4 — visão local limitada"
+
+references:
+  - "Patterson et al., Empirical Design in Reinforcement Learning, JMLR, arXiv:2304.01315"
+  - "docs/experimentos/EXP-20261120-ppo-vs-eppo-level3-10seeds.md"
+  - "docs/experimentos/empirical-design.md"

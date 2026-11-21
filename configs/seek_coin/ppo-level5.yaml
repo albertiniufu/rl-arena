@@ -1,0 +1,32 @@
+# Preset fixo do PPO para o nível 5 (mundo procedural, visão local 9×9).
+# Herdado da BO do nível 3; não foi re-tunado para o nível 5.
+arena: seek_coin
+setup: S8
+alg: ppo
+level: 5
+view_size: 9
+episode_seconds: 90
+frame_stack: 4
+frame_skip: 3
+opponent: rule
+seed: 7
+
+training:
+  episodes: 1000000
+  max_hours: 6
+  save_every: 10
+  checkpoint_dir: checkpoints/ppo-level5
+  agent_params:
+    lr: 0.0006854892425731042
+    batch_size: 256
+    rollout_steps: 512
+    epochs: 4
+    clip: 0.16816582937835758
+    entropy_coef: 0.019246082533472705
+    gae_lambda: 0.9043933720019918
+    max_grad_norm: 3.315859829149825
+    value_coef: 0.3229967938087496
+
+evaluation:
+  episodes: 50
+  seed: 1000

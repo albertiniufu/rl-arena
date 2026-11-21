@@ -6,6 +6,7 @@
 | --- | --- | --- | --- | --- | --- | --- | --- | --- |
 | [EXP-20261115-bo-level3-6h](EXP-20261115-bo-level3-6h.md) | 2026-11-15 | concluído | S6 | seek_coin nível 3 | `ppo`, `eppo` | ~6 h BO cada | EPPO final: reward 288,77 vs PPO 263,71 | EPPO tunado foi significativamente melhor (p=0,0001; d=0,64) |
 | [EXP-20261120-ppo-vs-eppo-level3-10seeds](EXP-20261120-ppo-vs-eppo-level3-10seeds.md) | 2026-11-20 | rodando | S6 | seek_coin nível 3 | `ppo`, `eppo` | 2 h/run × 10 seeds | em execução | confirmação multi-seed do ranking da BO |
+| [EXP-20261120-ppo-vs-eppo-level4-7seeds](EXP-20261120-ppo-vs-eppo-level4-7seeds.md) | 2026-11-20 | planejado (na fila, depende de `job-20261120-183301-9e4e70`) | S7 | seek_coin nível 4 (visão local 9×9) | `ppo`, `eppo` | 2 h/run × 7 seeds | aguardando | o ranking PPO × EPPO se mantém com observação parcial? |
 | [EXP-20261115-ppo-vs-eppo-30min](EXP-20261115-ppo-vs-eppo-30min.md) | 2026-11-15 | concluído | S1 | seek_coin | `ppo`, `eppo` | 30 min cada | PPO latest: reward 8,48 vs EPPO 1,12 | PPO melhor no orçamento curto; EPPO sem tuning e com 1 seed |
 | [EXP-20261108-happo-vs-mappo](EXP-20261108-happo-vs-mappo.md) | 2026-11-08 | concluído | S4 | seek_coin | `happo`, `mappo` | ~8 h 16 | HAPPO best 6,05; MAPPO latest 4,71 | HAPPO tem o melhor pico; MAPPO latest é mais equilibrado; repetir com 3 seeds |
 
