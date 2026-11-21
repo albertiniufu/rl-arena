@@ -13,6 +13,24 @@ pisar no botão de ativação (chão da esquerda) liga a super moeda no chão da
 direita por `super_coin_seconds`; o botão de cancelamento fica na plataforma
 central e desliga a super moeda. Qualquer personagem pode ativar, cancelar ou
 coletar; a coleta paga `super_coin_reward` e adiciona `super_coin_coins`.
+
+O nível 4 usa o mapa do nível 3, mas com **observação local**: cada agente
+recebe apenas um recorte `(view_size, view_size)` da grade semântica,
+centrado em si (ver `observations.render_grid`). Por padrão a **mecânica de
+botões/super moeda fica desligada** (`super_coin_enabled=None` → ligada só no
+nível 3), para a visão local focar percepção e controle sem um objetivo do
+outro lado do mapa; `--super-coin` reativa os botões/canais extras. O mapa
+inteiro continua existindo no engine; a câmera é que acompanha o agente. Fora
+dos limites do mapa o recorte é preenchido com zeros (fundo). A visão local é
+ativada por `uses_local_view(level)` e não muda o espaço de ações.
+
+O nível 5 é um **mundo procedural infinito**: o mapa não é fixo, e sim gerado
+em chunks determinísticos por seed à medida que o agente avança; o mundo rola
+continuamente (as entidades andam para a esquerda quando o agente passa de
+~55% da largura) e o que fica para trás é descartado. Usa a visão local do
+nível 4 para manter o shape fixo, canais extras de areia/gelo/buraco e
+plataformas móveis ocasionais. É single-agent por enquanto (geração infinita
+multiagente ficou fora do escopo inicial).
 """
 from __future__ import annotations
 
@@ -115,6 +133,8 @@ HAZARD_KINDS = {
     1: (),
     2: ("sand", "ice"),
     3: (),
+    4: (),
+    5: ("sand", "ice"),
 }
 
 # Nível 3: mesmo mapa do nível 1, com botões e uma super moeda.
@@ -148,7 +168,79 @@ LEVEL_CHANNEL_NAMES = {
     1: (),
     2: ("sand", "ice"),
     3: ("activate_button", "cancel_button", "super_coin"),
+    5: ("sand", "ice", "hole"),
 }
+
+# Nível 4: mesmo mundo do nível 3 (botões/super moeda) com visão local.
+STATIC_PLATFORMS[4] = STATIC_PLATFORMS[3]
+FIXED_COIN_POSITIONS[4] = FIXED_COIN_POSITIONS[3]
+MOVING_COIN_SPECS[4] = MOVING_COIN_SPECS[3]
+MOVING_PLATFORMS[4] = MOVING_PLATFORMS[3]
+BUTTONS[4] = BUTTONS[3]
+SUPER_COIN_POSITIONS[4] = SUPER_COIN_POSITIONS[3]
+LEVEL_CHANNEL_NAMES[4] = LEVEL_CHANNEL_NAMES[3]
+
+# Nível 5: mundo procedural; o mapa fixo é vazio e as entidades nascem em
+# `endless.py` (a visão local mantém o shape do nível 4).
+STATIC_PLATFORMS[5] = ()
+FIXED_COIN_POSITIONS[5] = ()
+MOVING_COIN_SPECS[5] = ()
+MOVING_PLATFORMS[5] = ()
+BUTTONS[5] = ()
+SUPER_COIN_POSITIONS[5] = None
+
+# Níveis cuja observação é um recorte egocêntrico (visão parcial). Os demais
+# continuam entregando o mapa inteiro — mudar isso quebraria checkpoints e a
+# comparação entre níveis.
+LOCAL_VIEW_LEVELS = frozenset({4, 5})
+
+# Níveis com mundo gerado em chunks (sem mapa fixo).
+ENDLESS_LEVELS = frozenset({5})
+
+
+def uses_local_view(level: int) -> bool:
+    """O nível entrega apenas o recorte ao redor do agente?"""
+    return int(level) in LOCAL_VIEW_LEVELS
+
+
+def uses_endless_world(level: int) -> bool:
+    """O nível gera o mundo em chunks (mundo procedural infinito)?"""
+    return int(level) in ENDLESS_LEVELS
+
+
+def default_super_coin_enabled(level: int) -> bool:
+    """Mecânica de botões/super moeda ligada por padrão apenas no nível 3."""
+    return int(level) == 3
+
+
+def super_coin_enabled(cfg) -> bool:
+    """A mecânica de botões + super moeda está ligada para esta config?
+
+    `None` (default) segue o nível: ligada no 3 e desligada no 4, para a visão
+    local focar percepção/controle sem um objetivo no lado oposto do mapa.
+    Níveis sem botões (0/1/2/5) ignoram a chave e ficam sempre desligados.
+    """
+    level = int(cfg.level)
+    if level not in (3, 4):
+        return False
+    explicit = getattr(cfg, "super_coin_enabled", None)
+    if explicit is None:
+        return default_super_coin_enabled(level)
+    return bool(explicit)
+
+
+def observation_channel_names(cfg):
+    """Canais extras de observação considerando a config (não só o nível).
+
+    O nível 4 desligado não tem botões nem super moeda, então não carrega os
+    três canais extras — a observação volta aos 5 canais base.
+    """
+    names = get_level_channel_names(cfg.level)
+    if int(cfg.level) in (3, 4) and not super_coin_enabled(cfg):
+        return tuple(
+            name for name in names
+            if name not in ("activate_button", "cancel_button", "super_coin"))
+    return names
 
 
 def get_level(level: int):
@@ -182,7 +274,7 @@ def get_moving_coins(level: int):
 
 
 def get_hazard_kinds(level: int):
-    """Tipos de hazard que aparecem no nível (vazio nos níveis 0/1/3)."""
+    """Tipos de hazard que aparecem no nível (vazio nos níveis 0/1/3/4)."""
     level = int(level)
     if level not in STATIC_PLATFORMS:
         raise ValueError(

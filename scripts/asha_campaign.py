@@ -18,6 +18,10 @@ Exemplo:
         --rungs 5,15,30,60 --initial-trials 16 --eta 2 \
         --max-parallel 1 --budget-hours 6 \
         --out experiments/ASHA-level3
+
+As saídas (`trials.jsonl`, `results.csv`, `best.json` e `campaign.json`) são
+lidas pela aba **BO** da Fila de Experimentos; a faixa de orçamento usa os
+rungs para separar o ganho por orçamento.
 """
 from __future__ import annotations
 

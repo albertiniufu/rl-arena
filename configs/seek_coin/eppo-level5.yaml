@@ -1,0 +1,34 @@
+# Preset fixo do EPPO para o nível 5 (mundo procedural, visão local 9×9).
+# Herdado da BO do nível 3; não foi re-tunado para o nível 5.
+arena: seek_coin
+setup: S8
+alg: eppo
+level: 5
+view_size: 9
+episode_seconds: 90
+frame_stack: 4
+frame_skip: 3
+opponent: rule
+seed: 7
+
+training:
+  episodes: 1000000
+  max_hours: 6
+  save_every: 10
+  checkpoint_dir: checkpoints/eppo-level5
+  agent_params:
+    lr: 0.0005960087748299635
+    batch_size: 128
+    rollout_steps: 2048
+    epochs: 4
+    clip: 0.2800262855915594
+    entropy_coef: 0.008547273117776729
+    gae_lambda: 0.9156731636110801
+    max_grad_norm: 5.12988893677983
+    ucb_radius: 0.03585985265683301
+    evidential_coef: 0.025932201655941102
+    gae_variant: ind
+
+evaluation:
+  episodes: 50
+  seed: 1000

@@ -22,8 +22,8 @@ from gymnasium import spaces
 from .actions import N_ACTIONS, PUSH_LEFT, PUSH_RIGHT, STOP
 from .config import ArenaConfig
 from .engine import ArenaEngine
-from .levels import get_level_channel_names
-from .observations import render_grid
+from .levels import observation_channel_names, uses_endless_world
+from .observations import observation_grid_shape, render_grid
 from .reward_shaping import coin_potential
 from .scenario import Scenario
 from .skins import load_renderer_class
@@ -38,6 +38,13 @@ class ArenaMultiEnv:
 
     def __init__(self, config=None, scenario=None, render_mode=None, skin=None):
         self.cfg = config or ArenaConfig()
+        if uses_endless_world(self.cfg.level):
+            # A geração infinita multiagente ficou fora do escopo inicial do
+            # nível 5: a rolagem ancora no agente 0 e descartaria os demais.
+            raise ValueError(
+                f"o nível {self.cfg.level} (mundo procedural) é single-agent; "
+                "use ArenaEnv ou um nível com mapa fixo para o modo "
+                "multiagente.")
         if scenario is None:
             scenario = Scenario.from_config(self.cfg)
         self.scenario = scenario
@@ -51,11 +58,14 @@ class ArenaMultiEnv:
         self.action_space = spaces.Discrete(N_ACTIONS)
         self.grid_h = self.cfg.height // self.cfg.cell
         self.grid_w = self.cfg.width // self.cfg.cell
-        self.extra_channels = len(get_level_channel_names(self.cfg.level))
+        self.extra_channels = len(observation_channel_names(self.cfg))
+        # Nível 4: cada agente recebe o próprio recorte local; o shape é o
+        # mesmo para todos.
+        self.obs_h, self.obs_w = observation_grid_shape(self.cfg)
         self.observation_space = spaces.Box(
             0.0, 1.0,
             shape=((N_CHANNELS + self.extra_channels)
-                   * self.cfg.frame_stack, self.grid_h, self.grid_w),
+                   * self.cfg.frame_stack, self.obs_h, self.obs_w),
             dtype=np.float32,
         )
         # Um frame stack por agente: a visão é egocêntrica, então cada um tem

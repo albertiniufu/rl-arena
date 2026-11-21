@@ -27,9 +27,11 @@ o item foi implementado (arquivo + testes) quando terminar.
 | Sincronizar status do YAML com a Fila | ✅ concluído | [`arenas/common/job_queue.py`](arenas/common/job_queue.py) |
 | Abas de análise e proposta na Fila | ✅ concluído | [`arenas/common/job_queue_ui.py`](arenas/common/job_queue_ui.py) |
 | Aba de algoritmos por arena na Fila | ✅ concluído | [`arenas/common/algorithm_catalog.py`](arenas/common/algorithm_catalog.py) |
-| Visualização da evolução do BO na Fila | ⏳ pendente | — |
-| Nível 4 — visão local limitada | ⏳ pendente | — |
-| Nível 5 — mundo contínuo procedural | ⏳ pendente | — |
+| Visualização da evolução do BO na Fila | ✅ concluído | [`arenas/common/bo_analysis.py`](arenas/common/bo_analysis.py) |
+| Experimentos no nível 4 — custo da visão local | ⏳ pendente | — |
+| Experimentos no nível 5 — mundo procedural | ⏳ pendente | — |
+| Nível 4 — visão local limitada | ✅ concluído | [`arenas/seek_coin/arena/observations.py`](arenas/seek_coin/arena/observations.py) |
+| Nível 5 — mundo contínuo procedural | ✅ concluído | [`arenas/seek_coin/arena/endless.py`](arenas/seek_coin/arena/endless.py) |
 | Ambiente OOD para validar agentes do seek_coin | ⏳ pendente | — |
 | Testes de aprendizado off-policy | ⏳ pendente | — |
 | Offline RL (dataset fixo) | ⏳ pendente | — |
@@ -41,63 +43,27 @@ o item foi implementado (arquivo + testes) quando terminar.
 
 ## Pendentes
 
-### Visualização da evolução do BO na Fila de Experimentos
+### Experimentos no nível 4 — custo da visão local
 
-- [ ] **Adicionar à Fila de Experimentos uma visualização da evolução do BO de cada algoritmo em cada experimento.**
-  - Motivação: os dados brutos (`trials.jsonl`, `campaign.json`, `best.json`) já ficam no diretório do experimento, mas investigar convergência, efeito dos hiperparâmetros e melhoria exige abrir arquivos e montar gráficos manualmente.
-  - Acesso: botão/aba **BO** no painel do experimento e/ou seção na aba **Análise de resultados**, filtrável por experimento e algoritmo (`ppo`, `eppo`, etc.).
-  - Fonte de dados: ler `campaign.json`, `best.json` e `trials.jsonl` de cada algoritmo; suportar também os `trials.jsonl`/`results.csv` do ASHA. Não recalcular treino nem inventar trials.
-  - Tabela de trials: índice, status, score, reward, coins, deaths, duração, parâmetros testados, caminho do log e link para o artefato; ordenável e filtrável por status.
-  - **Convergência do BO**:
-    - score por trial e melhor score acumulado (*best-so-far*) ao longo dos trials/tempo;
-    - reward/coins/deaths do melhor trial ao longo da campanha;
-    - marcação do trial escolhido como `best` e da validação final;
-    - comparação lado a lado entre algoritmos no mesmo experimento.
-  - **Efeito de cada parâmetro**:
-    - para parâmetros numéricos: dispersão `parâmetro × score`, com tendência/µ de bins e correlação de Spearman;
-    - para parâmetros categóricos: box/violin/strip por escolha;
-    - *marginal effect*: score médio por faixa do parâmetro, com n e IC quando houver trials suficientes;
-    - ranking de importância dos parâmetros (ex.: Spearman absoluto, variância explicada ou permutation importance) com aviso de que 32 trials é amostra pequena;
-    - parallel coordinates dos melhores trials e heatmap de interação para os dois parâmetros mais relevantes.
-  - **Melhoria**:
-    - comparar o melhor trial com o default/base e com a mediana dos trials;
-    - mostrar `best_so_far − baseline` e a curva de melhoria;
-    - separar ganho por algoritmo e por faixa de orçamento (trial curto × validação final).
-  - Backend: endpoints para listar campanhas BO de um experimento e devolver trials normalizados; validar caminhos dentro do repo e não executar código arbitrário.
-  - UI: reutilizar Plotly (como em `report_html.py`), manter filtros/estado na URL e permitir exportar os dados filtrados em CSV/JSON.
-  - Estatística: deixar explícito que os plots são **exploratórios**; com poucos trials não declarar causalidade nem “melhor parâmetro” sem incerteza. Reportar trials falhos e não esconder outliers.
-  - Testes: parser de `trials.jsonl`/ASHA, normalização de parâmetros, best-so-far, agregação por bin, parâmetro categórico, trial falho, campanha ausente e API/rota.
-  - Documentar em `docs/fila-de-experimentos.md` e no README de `scripts/bo_campaign.py`/`asha_campaign.py`.
+- [ ] **Medir o custo da visão local e a contribuição da janela/frame stack.**
+  - Pergunta primária: com o mesmo orçamento em **passos de ambiente**, quanto o nível 4 (`view_size=9`) perde para o nível 3 (mapa inteiro) em recompensa gulosa, moedas e passos até o alvo?
+  - Hipótese/falsificação: a visão local aumenta a necessidade de memória e reduz a eficiência; se o desempenho for equivalente ao nível 3, a percepção global não era o gargalo. Registrar a hipótese e a métrica primária antes de rodar.
+  - Protocolo: setups S6 (nível 3) × S7 (nível 4) em [`docs/experimentos/setups.md`](docs/experimentos/setups.md); mesmo `frame_skip`, `frame_stack=4`, adversário `rule`, orçamento em passos (não horas), 3+ seeds de treino (ex.: 7, 17, 27) e o mesmo conjunto de avaliação gulosa (50 eps, seed 1000).
+  - Secundários: `view_size` 7 × 9 × 11; `frame_stack` 1 × 4; PPO e EPPO (ou DQN) com presets fixos de BO; sem tuning por condição.
+  - Métricas: recompensa/moedas/mortes na avaliação, passos até um alvo de recompensa, distância percorrida e custo de obs/rede; reportar média ± IC, teste pareado por seed e tamanho de efeito com [`arenas/common/report.py`](arenas/common/report.py).
+  - Registro: `docs/experimentos/EXP-AAAAMMDD-visao-local.md` (+ `.yaml` da skill `experimenter-helper`), linha em [`registro.md`](docs/experimentos/registro.md) e artefatos em `experiments/<ID>/`.
+  - Riscos: poucas seeds, troca de métrica depois de ver o resultado e vazamento de tune; usar held-out de avaliação e não escolher melhor `view_size` com os mesmos episódios de teste.
+  - Depende de: nível 4 implementado; não bloqueia o nível 5.
 
-### Nível 4 — visão local limitada
+### Experimentos no nível 5 — mundo procedural
 
-- [ ] **Criar o nível 4 do seek_coin com observação parcial**: o agente não vê a tela inteira, apenas um quadrado limitado ao redor dele.
-  - Motivação: testar percepção local, generalização e necessidade de memória; o nível 3 ainda entrega o mapa inteiro, o que facilita planejamento global.
-  - Observação: recorte `(view_size, view_size)` da grade semântica centrado no agente (ex.: 7×7 ou 9×9 células). Fora dos limites do mapa, preencher com um valor fixo (ex.: 0 ou canal de borda). O agente fica sempre no centro do recorte.
-  - Configuração: `view_size`/`view_radius` em `ArenaConfig`, ativo no nível 4; gravar no checkpoint e validar na retomada. Decidir se o default dos níveis 0–3 continua a tela inteira.
-  - Entidades: moedas, adversários, botões e super moeda só aparecem se estiverem dentro do recorte. Não vazar informação global por `info`/renderer de treino.
-  - Multiagente: cada agente recebe o próprio recorte centrado em si (visão egocêntrica); shapes iguais entre agentes.
-  - Algoritmos: começar com frame stack; documentar que a observação é parcialmente observável e que memória recorrente (RNN/Transformer) fica como evolução futura.
-  - Render: manter o renderer da tela inteira para humanos e adicionar um modo de depuração mostrando o recorte do agente (ou uma máscara de névoa).
-  - Testes: shape do recorte, agente no centro, padding nas bordas, entidades fora do recorte invisíveis, ausência de canais globais, seed, checkpoint com `view_size` e smoke single/multiagente.
-  - Avaliação: comparar nível 3 (visão global) × nível 4 (visão local) no mesmo orçamento e seeds; medir queda de desempenho e necessidade de memória.
-  - Documentar no README/CLAUDE, `arena/levels.py` e [`docs/experimentos/`](docs/experimentos/README.md).
-  - Fora de escopo inicial: campo de visão cônico, oclusão por paredes/plataformas e arquitetura recorrente dedicada.
-
-### Nível 5 — mundo contínuo procedural
-
-- [ ] **Criar o nível 5: um ambiente continuamente gerado e em movimento**, que posiciona novos elementos aleatoriamente (moedas, plataformas, areia, gelo e buracos) enquanto o agente avança.
-  - Motivação: sair do mapa fixo e testar generalização contínua, percepção local e controle em um mundo que não termina; é o passo natural depois do nível 4 (visão local).
-  - Mundo: chunks/segmentos gerados proceduralmente à frente e descartados atrás; a câmera acompanha o agente (ou o mundo rola continuamente). A posição do agente pode ser relativa ao chunk atual.
-  - Elementos: moedas, plataformas estáticas/móveis, areia, gelo e **buracos** (novo hazard: cair custa morte/respawn ou termina o episódio, a decidir). Taxas de spawn e dificuldade crescem com a distância/tempo.
-  - Determinismo: geração por seed e por índice de chunk; o mesmo seed produz a mesma sequência de chunks. Não usar RNG global fora do gerador do ambiente.
-  - Observação: usar a visão local do nível 4 (recorte ao redor do agente) para manter shape fixo; o mundo infinito não cabe na tela. Canais extras para areia/gelo/buraco e, se necessário, distância/velocidade.
-  - Física: plataformas e buracos precisam interagir com o engine atual; buracos podem ser regiões sem colisão de chão ou zonas fatais. Garantir que moedas não nasçam dentro de buracos/paredes.
-  - Memória: remover chunks/elementos fora da visão para manter memória e custo por passo limitados; medir isso em um episódio longo.
-  - Render: câmera rolante, desenhar só os chunks visíveis e indicar buracos com clareza.
-  - Testes: geração determinística por seed, spawn/despawn de chunks, limites de memória, colisão com buraco, areia/gelo, observação local, checkpoint com nível 5, evaluate/play e smoke de episódio longo.
-  - Avaliação: comparar com nível 4 em distância até a morte/queda e moedas por 1.000 passos; reportar por seed.
-  - Fora de escopo inicial: geração infinita multiagente, editor de mapas e curriculum automático de dificuldade.
+- [ ] **Medir generalização e custo do mundo infinito contra o mapa fixo local.**
+  - Pergunta: no mesmo orçamento em passos, o nível 5 mantém recompensa/moedas por 1.000 passos e distância até a morte/queda próximas do nível 4? O agente transfere habilidades do mapa fixo para chunks nunca vistos?
+  - Protocolo: setup S8 × S7; seeds e avaliação fixas; avaliar também zero-shot no nível 5 de um checkpoint treinado no nível 4 (e vice-versa) para separar generalização de aprendizado.
+  - Métricas: distância percorrida, moedas por 1.000 passos, mortes por queda, recompensa, chunks visitados e custo por passo/memória; reportar por seed e com IC.
+  - Verificações de ambiente antes do treino: geração determinística por seed, spawn/despawn de chunks, moedas fora dos buracos e limites de memória em episódio longo.
+  - Registro: `docs/experimentos/EXP-AAAAMMDD-mundo-procedural.md` + `registro.md`; documentar seeds ruins e falhas de geração, não só a média.
+  - Depende de: nível 5 implementado; usar o protocolo de [`TEMPLATE.md`](docs/experimentos/TEMPLATE.md).
 
 ### Ambiente OOD para validar agentes do seek_coin
 
@@ -216,6 +182,90 @@ o item foi implementado (arquivo + testes) quando terminar.
 
 > Os detalhes abaixo preservam o plano original; use-os como registro do
 > que foi implementado, não como tarefas em aberto.
+
+### Visualização da evolução do BO na Fila de Experimentos
+
+> Implementado em [`arenas/common/bo_analysis.py`](arenas/common/bo_analysis.py)
+> (descoberta de campanhas, parser de `trials.jsonl`/`results.csv` BO e ASHA,
+> normalização, best-so-far, bins/IC, Spearman, η², importância, interação e
+> melhoria), endpoints `GET /api/bo?path=` e `GET /api/jobs/<id>/bo` em
+> [`scripts/job_queue_server.py`](scripts/job_queue_server.py), aba **BO** em
+> [`arenas/common/job_queue_ui.py`](arenas/common/job_queue_ui.py) (Plotly,
+> tabela ordenável/filtrável, URL state e export CSV/JSON) e botão **Ver BO**
+> no painel do experimento. Documentação em
+> [`docs/fila-de-experimentos.md`](docs/fila-de-experimentos.md) e nos
+> docstrings de [`scripts/bo_campaign.py`](scripts/bo_campaign.py)/
+> [`scripts/asha_campaign.py`](scripts/asha_campaign.py). Testes:
+> `test_bo_analysis.py`, `test_queue_workbench_api.py` e smoke headless da UI.
+
+- [x] **Adicionar à Fila de Experimentos uma visualização da evolução do BO de cada algoritmo em cada experimento.**
+  - Motivação: os dados brutos (`trials.jsonl`, `campaign.json`, `best.json`) já ficam no diretório do experimento, mas investigar convergência, efeito dos hiperparâmetros e melhoria exige abrir arquivos e montar gráficos manualmente.
+  - Acesso: aba **BO** e botão **Ver BO** no painel do experimento, filtrável por experimento, algoritmo, parâmetro e status.
+  - Fonte de dados: `campaign.json`, `best.json` e `trials.jsonl` de cada algoritmo; ASHA via `results.csv`/`trials.jsonl`. Nada é recalculado nem inventado.
+  - Tabela de trials: índice, status, score, reward, coins, deaths, duração, parâmetros, log/artefato e erro; ordenável e filtrável por status.
+  - **Convergência do BO**: score por trial e best-so-far, marcação do `best` (★) e da validação final (◆), comparação entre algoritmos.
+  - **Efeito de cada parâmetro**: dispersão + média por faixa com IC e Spearman; box/strip com η² para categóricos; ranking de importância; parallel coordinates e heatmap de interação dos dois parâmetros mais relevantes.
+  - **Melhoria**: melhor vs mediana/primeiro/default (params da config base) e faixas de orçamento (rungs do ASHA e validação final do BO).
+  - Backend: rotas com validação de caminhos dentro do repositório, sem execução de código.
+  - UI: Plotly, estado na URL e exportação dos trials filtrados em CSV/JSON.
+  - Estatística: avisos de amostra pequena, trials falhos e outliers explícitos; gráficos exploratórios.
+  - Testes: parser/ASHA, normalização, best-so-far, bins, categórico, trial falho, campanha ausente, rotas e smoke headless da aba.
+  - Documentado em `docs/fila-de-experimentos.md` e nos scripts de campanha.
+
+### Nível 4 — visão local limitada
+
+> Implementado em [`arenas/seek_coin/arena/levels.py`](arenas/seek_coin/arena/levels.py)
+> (`LOCAL_VIEW_LEVELS`/`uses_local_view`, nível 4 = mapa do nível 3 com
+> botões/super moeda desligados por padrão via `super_coin_enabled=None` e
+> `--super-coin`), [`arenas/seek_coin/arena/observations.py`](arenas/seek_coin/arena/observations.py)
+> (recorte egocêntrico com padding zero e `observation_grid_shape`),
+> [`arenas/seek_coin/arena/environment.py`](arenas/seek_coin/arena/environment.py)
+> e [`arenas/seek_coin/arena/multi_environment.py`](arenas/seek_coin/arena/multi_environment.py)
+> (shapes por agente), `view_size` em `ArenaConfig` e `--view-size` em
+> train/evaluate/play, checkpoint com `level`/`view_size` validados na
+> retomada e névoa no renderer default. Testes em
+> `arenas/seek_coin/tests/test_level4.py`. O protocolo de comparação
+> nível 3 × nível 4 está em
+> [`docs/experimentos/setups.md`](docs/experimentos/setups.md) (S7).
+
+- [x] **Criar o nível 4 do seek_coin com observação parcial**: o agente não vê a tela inteira, apenas um quadrado limitado ao redor dele.
+  - Motivação: testar percepção local, generalização e necessidade de memória; o nível 3 ainda entrega o mapa inteiro, o que facilita planejamento global.
+  - Observação: recorte `(view_size, view_size)` da grade semântica centrado no agente (default 9×9 células; `--view-size` aceita 7×7 etc.). Fora dos limites do mapa, preenchimento com 0. O agente fica sempre no centro do recorte.
+  - Configuração: `view_size` em `ArenaConfig`, ativo só no nível 4; gravado no checkpoint e validado na retomada. Os níveis 0–3 continuam com a tela inteira. A mecânica de botões/super moeda fica desligada por padrão no nível 4 (`super_coin_enabled=None`, 5 canais); `--super-coin` reativa os botões e os 3 canais extras (8 canais).
+  - Entidades: moedas, adversários, botões e super moeda só aparecem se estiverem dentro do recorte. Nenhuma informação global entra na observação.
+  - Multiagente: cada agente recebe o próprio recorte centrado em si (visão egocêntrica); shapes iguais entre agentes.
+  - Algoritmos: funciona com o frame stack existente; a observação é parcialmente observável e memória recorrente (RNN/Transformer) fica como evolução futura.
+  - Render: renderer da tela inteira para humanos com névoa fora do recorte do agente 0.
+  - Testes: shape do recorte, agente no centro, padding nas bordas, entidades fora do recorte invisíveis, ausência de canais globais, seed, checkpoint com `view_size`, CLI e smoke single/multiagente.
+  - Avaliação: protocolo nível 3 (visão global) × nível 4 (visão local) documentado no setup S7; a execução fica como próximo experimento.
+  - Fora de escopo inicial: campo de visão cônico, oclusão por paredes/plataformas e arquitetura recorrente dedicada.
+
+### Nível 5 — mundo contínuo procedural
+
+> Implementado em [`arenas/seek_coin/arena/endless.py`](arenas/seek_coin/arena/endless.py)
+> (`ChunkGenerator` determinístico por `(seed, índice)`, `Mover` e constantes
+> de chunk/chão), [`arenas/seek_coin/arena/engine.py`](arenas/seek_coin/arena/engine.py)
+> (rolagem contínua, geração/descarte de chunks, buracos e respawn próximo),
+> [`arenas/seek_coin/arena/levels.py`](arenas/seek_coin/arena/levels.py)
+> (`uses_endless_world`, canais areia/gelo/buraco), `observations.py`
+> (canal `hole`), `environment.py` (info `distance`/`chunks`),
+> `renderer.py` (buracos e névoa da visão local) e `--level 5` na CLI.
+> Multiagente é recusado (fora do escopo inicial). Testes em
+> `arenas/seek_coin/tests/test_level5.py`. Protocolo de comparação em
+> [`docs/experimentos/setups.md`](docs/experimentos/setups.md) (S8).
+
+- [x] **Criar o nível 5: um ambiente continuamente gerado e em movimento**, que posiciona novos elementos aleatoriamente (moedas, plataformas, areia, gelo e buracos) enquanto o agente avança.
+  - Motivação: sair do mapa fixo e testar generalização contínua, percepção local e controle em um mundo que não termina; é o passo natural depois do nível 4 (visão local).
+  - Mundo: chunks de 480 px gerados à frente e descartados atrás; o mundo rola quando o agente passa de ~55% da largura (`world_offset`), e a posição de tela permanece limitada ao mapa.
+  - Elementos: moedas, plataformas de chão/elevadas, plataformas móveis a cada ~3 chunks, areia, gelo e buracos (gaps no chão; cair custa morte/respawn). Buracos e frequência crescem com o índice do chunk (dificuldade).
+  - Determinismo: RNG por `(seed, índice do chunk)` via `SeedSequence`; dois episódios com a mesma seed produzem a mesma sequência, independentemente da ordem de geração.
+  - Observação: visão local do nível 4 (`view_size` 9×9) com canais extras `sand`, `ice` e `hole`.
+  - Física: chão em segmentos com gaps de 32–110 px; buracos são regiões sem colisão (queda abaixo do mapa) e o respawn acontece na plataforma de chão mais próxima do agente.
+  - Memória: entidades atrás de `-DROP_MARGIN` são descartadas e os índices de plataforma remapeados; em 1.500 passos o número de plataformas/moedas/buracos fica limitado ao que está na tela + margem.
+  - Render: o world continua em coordenadas de tela (rolagem já aplicada pelo engine), buracos são desenhados como poços e a névoa da visão local do nível 4 se aplica.
+  - Testes: determinismo por seed, emenda de chunks, rolagem/geração/descarte, memória limitada, moedas fora dos buracos, canal `hole`, morte por queda e respawn, areia/gelo, checkpoint, CLI, rejeição de multiagente/GPU e smoke de episódio com `distance`.
+  - Avaliação: protocolo no setup S8 e item pendente “Experimentos no nível 5”; execução fica para a próxima rodada.
+  - Fora de escopo inicial: geração infinita multiagente (o `ArenaMultiEnv` recusa o nível 5), editor de mapas e curriculum automático de dificuldade.
 
 ### Aba de algoritmos por arena na Fila de Experimentos
 

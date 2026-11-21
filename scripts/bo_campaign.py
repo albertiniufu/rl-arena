@@ -15,6 +15,11 @@ em `configs/<arena>/base-*.yaml`. Exemplo:
         --hours-per-alg 6 --trial-minutes 10 --final-minutes 30 \
         --eval-episodes 20 --final-eval-episodes 50 \
         --out experiments/BO-level3-6h
+
+As saídas (`trials.jsonl`, `best.json` e `campaign.json`, uma subpasta por
+algoritmo) são lidas pela aba **BO** da Fila de Experimentos, que mostra
+convergência, efeito dos parâmetros, melhoria e a tabela de trials. Nada é
+recalculado: a aba apenas lê os arquivos.
 """
 from __future__ import annotations
 

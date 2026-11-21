@@ -36,10 +36,12 @@ def test_main_runs_one_training_at_a_time(tmp_path, monkeypatch):
     import pytest
 
     calls = []
-    monkeypatch.setattr(
-        rv, "run_one",
-        lambda algorithm, seed, params, out, hours, eval_episodes, eval_seed:
-            calls.append((algorithm, seed)))
+
+    def fake_run_one(algorithm, seed, params, out, hours, eval_episodes,
+                     eval_seed, level=3, view_size=None, super_coin=None):
+        calls.append((algorithm, seed, level, view_size, super_coin))
+
+    monkeypatch.setattr(rv, "run_one", fake_run_one)
 
     with pytest.raises(SystemExit):
         rv.main([
@@ -49,7 +51,48 @@ def test_main_runs_one_training_at_a_time(tmp_path, monkeypatch):
             "--out", str(tmp_path / "experimento"),
         ])
 
-    assert calls == [("ppo", 7), ("eppo", 7), ("ppo", 42), ("eppo", 42)]
+    assert [(alg, seed) for alg, seed, *_ in calls] == [
+        ("ppo", 7), ("eppo", 7), ("ppo", 42), ("eppo", 42)]
+    # O nível 3 vem do preset e não inventa view_size/super moeda.
+    assert {(call[2], call[3]) for call in calls} == {(3, None)}
+
+
+def test_main_passes_level4_scenario_from_presets(tmp_path, monkeypatch):
+    """Nível 4: nível, view_size e super moeda saem dos presets do nível 4."""
+    import pytest
+
+    calls = []
+
+    def fake_run_one(algorithm, seed, params, out, hours, eval_episodes,
+                     eval_seed, level=3, view_size=None, super_coin=None):
+        calls.append((level, view_size, super_coin))
+
+    monkeypatch.setattr(rv, "run_one", fake_run_one)
+
+    with pytest.raises(SystemExit):
+        rv.main([
+            "--hours", "0.01", "--seeds", "7",
+            "--ppo-config", "configs/seek_coin/ppo-level4.yaml",
+            "--eppo-config", "configs/seek_coin/eppo-level4.yaml",
+            "--out", str(tmp_path / "experimento4"),
+        ])
+
+    assert calls == [(4, 9, False), (4, 9, False)]
+
+
+def test_scenario_cli_overrides_presets():
+    args = rv.parse_args([
+        "--level", "5", "--view-size", "7", "--super-coin",
+        "--ppo-config", "configs/seek_coin/ppo-level4.yaml",
+        "--eppo-config", "configs/seek_coin/eppo-level4.yaml",
+    ])
+    scenarios = {
+        "ppo": rv._load_config_scenario(args.ppo_config),
+        "eppo": rv._load_config_scenario(args.eppo_config),
+    }
+    assert rv._resolve_scenario(args, scenarios) == (5, 7, True)
+    assert rv._scenario_args(4, 9, False) == [
+        "--level", "4", "--view-size", "9", "--no-super-coin"]
 
 
 def test_runner_does_not_spawn_parallel_processes():

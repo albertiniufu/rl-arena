@@ -36,6 +36,10 @@ class ArenaConfig:
     super_coin_cooldown: float = 5.0
     super_coin_reward: float = 25.0
     super_coin_coins: int = 10
+    # Liga botões + super moeda (níveis 3/4). None = padrão do nível:
+    # ligado no nível 3 e desligado no nível 4 (visão local sem o objetivo
+    # distante). `--super-coin`/`--no-super-coin` sobrescreve.
+    super_coin_enabled: bool | None = None
     death_penalty: float = -2.0
     stop_penalty: float = -0.1 # escolher STOP (ficar parado) a cada step do agente
     push_miss_penalty: float = -0.1 # empurrar sem oponente em contato no início do step
@@ -52,6 +56,10 @@ class ArenaConfig:
     map_version: str = "arena-v1"
     level: int = 0  # 0 = histórico; 1 = plataformas móveis; 2 = areia/gelo; 3 = botões/super moeda
     agent_roles: tuple = ()  # papéis por agente (HAPPO); () = simétrico
+    # Nível 4: visão local. A observação é um recorte egocêntrico de
+    # `view_size x view_size` células centrado no agente (ímpar; 9 = ~180 px).
+    # Ignorado nos níveis 0..3, que continuam entregando o mapa inteiro.
+    view_size: int = 9
 
     # Hazards temporários do nível 2 (ignorados nos níveis 0/1)
     hazard_count: int = 2  # por tipo (areia e gelo)

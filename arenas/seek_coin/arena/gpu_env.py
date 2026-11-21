@@ -27,6 +27,7 @@ import torch
 from .actions import PUSH_LEFT, PUSH_RIGHT, STOP
 from .config import ArenaConfig
 from .gpu_engine import GpuSeekCoin
+from .levels import uses_local_view
 
 
 class GpuArenaVecEnv(GpuSeekCoin):
@@ -41,6 +42,11 @@ class GpuArenaVecEnv(GpuSeekCoin):
             team_ids=tuple(team_ids or range(n_agents)))
         self.cfg = cfg
         self.n_agents = int(n_agents)
+        if uses_local_view(cfg.level):
+            raise NotImplementedError(
+                "GpuArenaVecEnv não suporta visão local (nível "
+                f"{cfg.level}); use ArenaEnv/ArenaMultiEnv em CPU ou um "
+                "nível com mapa inteiro.")
         if isinstance(obs_dtype, str):
             obs_dtype = {
                 "float32": torch.float32,

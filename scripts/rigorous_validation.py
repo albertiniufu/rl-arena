@@ -1,8 +1,11 @@
 #!/usr/bin/env python3
-"""Validação multi-seed de PPO/EPPO no nível 3.
+"""Validação multi-seed de PPO/EPPO (nível configurável).
 
 Por padrão lê os presets fixos de `configs/seek_coin/{ppo,eppo}-level3.yaml`;
 também aceita `--bo-root` para carregar os `best.json` de uma campanha BO.
+O nível, o `view_size` e o estado da super moeda vêm do preset (ou de
+`--level`/`--view-size`/`--super-coin`), então o mesmo script serve para os
+níveis 3, 4 (visão local) e 5 (mundo procedural).
 
 Roda `--hours` por seed para os dois algoritmos, **um treino por vez**
 (PPO, depois EPPO, seed a seed): a máquina é compartilhada, então dois
@@ -23,6 +26,11 @@ Uso:
     python scripts/rigorous_validation.py --hours 2 \
         --seeds 7,42,123 --eval-episodes 50 --eval-seed 2000 \
         --out experiments/EXP-20261120-ppo-vs-eppo-level3-10seeds
+
+    python scripts/rigorous_validation.py --hours 2 --level 4 \
+        --ppo-config configs/seek_coin/ppo-level4.yaml \
+        --eppo-config configs/seek_coin/eppo-level4.yaml \
+        --out experiments/EXP-20261121-ppo-vs-eppo-level4-7seeds
 
 Pode ser retomado: runs com `DONE` são pulados.
 """
@@ -57,6 +65,52 @@ def _load_config_params(path: str | Path) -> dict:
     return params
 
 
+def _load_config_scenario(path: str | Path) -> dict:
+    """Lê nível/visão/super moeda de um preset (todos opcionais)."""
+    payload = yaml.safe_load(Path(path).read_text(encoding="utf-8")) or {}
+    scenario = {}
+    for key in ("level", "view_size"):
+        if payload.get(key) is not None:
+            scenario[key] = int(payload[key])
+    if payload.get("super_coin") is not None:
+        scenario["super_coin"] = bool(payload["super_coin"])
+    return scenario
+
+
+def _resolve_scenario(args, scenarios: dict) -> tuple[int, int | None,
+                                                      bool | None]:
+    """Prioriza CLI; depois exige que os dois presets concordem."""
+    def unanimous(key):
+        values = {scenario[key] for scenario in scenarios.values()
+                  if key in scenario}
+        if len(values) > 1:
+            raise SystemExit(
+                f"presets discordam em {key}: {sorted(values)}; use a flag "
+                "da CLI para definir")
+        return values.pop() if values else None
+
+    level = args.level if args.level is not None else unanimous("level")
+    if level is None:
+        level = 3
+    view_size = (args.view_size if args.view_size is not None
+                 else unanimous("view_size"))
+    if args.super_coin is not None:
+        super_coin = bool(args.super_coin)
+    else:
+        super_coin = unanimous("super_coin")
+    return int(level), view_size, super_coin
+
+
+def _scenario_args(level: int, view_size: int | None,
+                   super_coin: bool | None) -> list[str]:
+    args = ["--level", str(level)]
+    if view_size is not None:
+        args += ["--view-size", str(view_size)]
+    if super_coin is not None:
+        args.append("--super-coin" if super_coin else "--no-super-coin")
+    return args
+
+
 def _run_command(command, cwd: Path, log_path: Path, timeout: float):
     with log_path.open("w", encoding="utf-8") as handle:
         try:
@@ -72,7 +126,9 @@ def _done_marker(run_dir: Path) -> Path:
 
 
 def run_one(algorithm: str, seed: int, params: dict, out: Path,
-            hours: float, eval_episodes: int, eval_seed: int):
+            hours: float, eval_episodes: int, eval_seed: int,
+            level: int = 3, view_size: int | None = None,
+            super_coin: bool | None = None):
     run_dir = out / f"seed-{seed}" / algorithm
     run_dir.mkdir(parents=True, exist_ok=True)
     marker = _done_marker(run_dir)
@@ -83,7 +139,8 @@ def run_one(algorithm: str, seed: int, params: dict, out: Path,
     eval_log = run_dir / "eval.log"
     command = [
         sys.executable, str(ROOT / "train.py"),
-        "--arena", "seek_coin", "--alg", algorithm, "--level", "3",
+        "--arena", "seek_coin", "--alg", algorithm,
+        *_scenario_args(level, view_size, super_coin),
         "--episodes", "1000000", "--max-hours", str(hours),
         "--opponent", "rule", "--seed", str(seed),
         "--frame-stack", "4", "--frame-skip", "3",
@@ -302,6 +359,14 @@ def parse_args(argv=None):
     parser.add_argument("--seeds", default="7,42,123")
     parser.add_argument("--eval-episodes", type=int, default=50)
     parser.add_argument("--eval-seed", type=int, default=1000)
+    parser.add_argument("--level", type=int, default=None,
+                        help="nível (padrão: o do preset; sem preset, 3)")
+    parser.add_argument("--view-size", type=int, default=None,
+                        help="view_size do nível 4/5 (padrão: o do preset)")
+    parser.add_argument("--super-coin", action=argparse.BooleanOptionalAction,
+                        default=None,
+                        help="liga/desliga botões + super moeda "
+                             "(padrão: o do preset; nível 4 desligado)")
     parser.add_argument("--bo-root", default=None,
                         help="opcional: diretório da BO com ppo/eppo best.json")
     parser.add_argument("--ppo-config",
@@ -337,6 +402,11 @@ def main(argv=None) -> None:
             "eppo": _load_config_params(args.eppo_config),
         }
         params_source = f"{args.ppo_config}, {args.eppo_config}"
+    scenarios = {
+        "ppo": _load_config_scenario(args.ppo_config),
+        "eppo": _load_config_scenario(args.eppo_config),
+    }
+    level, view_size, super_coin = _resolve_scenario(args, scenarios)
     seeds = [int(seed) for seed in args.seeds.split(",") if seed.strip()]
     out = Path(args.out)
     out.mkdir(parents=True, exist_ok=True)
@@ -351,6 +421,9 @@ def main(argv=None) -> None:
         "params_source": params_source,
         "ppo_config": args.ppo_config,
         "eppo_config": args.eppo_config,
+        "level": level,
+        "view_size": view_size,
+        "super_coin": super_coin,
         "started_at": time.strftime("%Y-%m-%d %H:%M:%S"),
         "params": params,
     }
@@ -362,7 +435,8 @@ def main(argv=None) -> None:
         # Um treino por vez: nada de PPO+EPPO simultâneos dividindo a máquina.
         for algorithm in ("ppo", "eppo"):
             run_one(algorithm, seed, params[algorithm], out, args.hours,
-                    args.eval_episodes, args.eval_seed)
+                    args.eval_episodes, args.eval_seed, level, view_size,
+                    super_coin)
 
     rows = []
     for seed in seeds:
